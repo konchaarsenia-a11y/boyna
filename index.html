@@ -91,14 +91,13 @@
     </div>
   </div>
   <script>
-    // Жестко привязываем запуск движка к полной готовности экрана на Айфоне
     document.addEventListener("DOMContentLoaded", function() {
       const tg = window.Telegram.WebApp;
       tg.expand();
       tg.ready();
 
-      // СЮДА ВСТАВЬ СВОЙ URL ВЕБХУКА КУСКА GOOGLE ИЗ ТАБЛИЦЫ:
-      const GOOGLE_WEBHOOK_URL = "https://google.com";
+      // СЮДА СТРОГО ВСТАВЬ СВОЙ URL ВЕБХУКА ТАБЛИЦЫ ИЗ APPS SCRIPT:
+      const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwplxLYmgHeAjIsefEJqVIZ-j8yMQGJbDRimIdpcmoKBuBzQQ4ScEYidMctN_QmMP4z/exec";
 
       const catalog = {
         dressura: {
@@ -143,12 +142,12 @@
       let basket = [];
       let currentCategory = "";
 
-      // Вешаем железные слушатели на цветные кнопки категорий (Обходим блокировки iOS)
-      document.getElementById('btnDressura').addEventListener('click', () => openProductSelector('dressura'));
-      document.getElementById('btnChew').addEventListener('click', () => openProductSelector('chew'));
-      document.getElementById('btnOther').addEventListener('click', () => openProductSelector('other'));
-      document.getElementById('btnPowder').addEventListener('click', () => openProductSelector('powder'));
-      document.getElementById('btnVeg').addEventListener('click', () => openProductSelector('veg'));
+      // Железное нативное связывание кнопок через события
+      document.getElementById('btnDressura').addEventListener('click', function() { openProductSelector('dressura'); });
+      document.getElementById('btnChew').addEventListener('click', function() { openProductSelector('chew'); });
+      document.getElementById('btnOther').addEventListener('click', function() { openProductSelector('other'); });
+      document.getElementById('btnPowder').addEventListener('click', function() { openProductSelector('powder'); });
+      document.getElementById('btnVeg').addEventListener('click', function() { openProductSelector('veg'); });
       document.getElementById('btnConfirm').addEventListener('click', addItemToBasket);
       document.getElementById('btnSaveOrder').addEventListener('click', sendEntireOrder);
       document.getElementById('mainSelect').addEventListener('change', onProductChange);
@@ -170,7 +169,6 @@
         document.getElementById('volumeInput').value = "";
         
         document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
-        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
       }
 
       function onProductChange() {
@@ -207,7 +205,6 @@
         renderBasket();
         
         document.getElementById('selectorCard').style.display = "none";
-        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
       }
 
       function renderBasket() {
@@ -246,7 +243,6 @@
       function deleteBasketItem(id) { 
         basket = basket.filter(item => item.id !== id); 
         renderBasket(); 
-        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium"); 
       }
 
       function sendEntireOrder() {
