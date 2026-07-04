@@ -65,205 +65,214 @@
         <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
       </div>
     </div>
+    
     <div class="section-title">🛒 Корзина заказа</div>
     <div id="basketContainer"></div>
+    
     <div class="section-title">➕ Добавить товар в чек</div>
     <div class="grid-buttons">
-      <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">🍖 Добавить Дрессуру</button>
-      <button class="btn-action btn-orange" onclick="openProductSelector('chew')">🦴 Добавить Жевалки</button>
-      <button class="btn-action btn-purple" onclick="openProductSelector('other')">📦 Добавить Другое</button>
-      <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
-      <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
+      <button class="btn-action btn-blue" id="btnDressura">🍖 Добавить Дрессуру</button>
+      <button class="btn-action btn-orange" id="btnChew">🦴 Добавить Жевалки</button>
+      <button class="btn-action btn-purple" id="btnOther">📦 Добавить Другое</button>
+      <button class="btn-action btn-brown" id="btnPowder">✨ Добавить Присыпки</button>
+      <button class="btn-action btn-green" id="btnVeg">🍏 Добавить Овощи/Фрукты</button>
     </div>
     
     <div class="card" id="selectorCard" style="display: none;">
       <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
-      <div class="form-group">
-        <label>Наименование</label>
-        <select id="mainSelect" onchange="onProductChange()"></select>
-      </div>
-      <div class="form-group" id="fractionGroup" style="display: none;">
-        <label>Фракция нарезки</label>
-        <select id="fractionSelect"></select>
-      </div>
-      <div class="form-group">
-        <label id="valueLabel">Объем</label>
-        <input type="number" id="volumeInput" placeholder="0" inputmode="numeric">
-      </div>
-      <button class="btn-action btn-blue" style="height:42px;" onclick="addItemToBasket()">✅ Подтвердить позицию</button>
+      <div class="form-group"><label>Наименование</label><select id="mainSelect"></select></div>
+      <div class="form-group" id="fractionGroup" style="display: none;"><label>Фракция нарезки</label><select id="fractionSelect"></select></div>
+      <div class="form-group"><label id="valueLabel">Объем</label><input type="number" id="volumeInput" placeholder="0" inputmode="numeric"></div>
+      <button class="btn-action btn-blue" style="height:42px;" id="btnConfirm">✅ Подтвердить позицию</button>
     </div>
     
     <div style="margin-top: 30px;">
-      <button class="btn-action btn-save" onclick="sendEntireOrder()">💾 Сохранить весь заказ</button>
+      <button class="btn-action btn-save" id="btnSaveOrder">💾 Сохранить весь заказ</button>
     </div>
   </div>
-
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    tg.ready();
+    // Жестко привязываем запуск движка к полной готовности экрана на Айфоне
+    document.addEventListener("DOMContentLoaded", function() {
+      const tg = window.Telegram.WebApp;
+      tg.expand();
+      tg.ready();
 
-    // СЮДА ВСТАВЬ СВОЙ URL ВЕБХУКА КУСКА GOOGLE ИЗ ТАБЛИЦЫ:
-    const GOOGLE_WEBHOOK_URL = "https://google.com";
+      // СЮДА ВСТАВЬ СВОЙ URL ВЕБХУКА КУСКА GOOGLE ИЗ ТАБЛИЦЫ:
+      const GOOGLE_WEBHOOK_URL = "https://google.com";
 
-    const catalog = {
-      dressura: {
-        title: "🍖 Новая Дрессура",
-        items: ["ЛЁГКОЕ", "ПОЧКИ", "СЕРДЦЕ", "РУБЕЦ Т", "БАРАНЬЕ ЛЁГКОЕ"],
-        fractions: {
-          "ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"],
-          "СЕРДЦЕ": ["Мелкое", "Целое"],
-          "ПОЧКИ": ["Мелкое", "Целое"],
-          "РУБЕЦ Т": ["Мелкое", "Среднее", "Крупное", "Целое"],
-          "БАРАНЬЕ ЛЁГКОЕ": ["Мелкое", "Среднее", "Целое"]
+      const catalog = {
+        dressura: {
+          title: "🍖 Новая Дрессура",
+          items: ["ЛЁГКОЕ", "ПОЧКИ", "СЕРДЦЕ", "РУБЕЦ Т", "БАРАНЬЕ ЛЁГКОЕ"],
+          fractions: {
+            "ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"],
+            "СЕРДЦЕ": ["Мелкое", "Целое"],
+            "ПОЧКИ": ["Мелкое", "Целое"],
+            "РУБЕЦ Т": ["Мелкое", "Среднее", "Крупное", "Целое"],
+            "БАРАНЬЕ ЛЁГКОЕ": ["Мелкое", "Среднее", "Целое"]
+          }
+        },
+        chew: {
+          title: "🦴 Новая Жевалка",
+          items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
+          fractions: {
+            "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
+            "ТРАХЕЯ": ["МАЛ", "ПЛАСТ", "СРЕД", "БОЛ", "ОГР"],
+            "СТАНОВАЯ ЖИЛА": ["ПАЛК", "СРЕД", "БОЛ"],
+            "УХО Г": ["Обычное", "ПОЛОВИНКА"],
+            "АОРТА": ["ПОЛОВИНКА", "Обычная"]
+          }
+        },
+        other: {
+          title: "📦 Новая Позиция (Другое)",
+          items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО"],
+          fractions: {}
+        },
+        powder: {
+          title: "✨ Новая Присыпка",
+          items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК"],
+          fractions: {}
+        },
+        veg: {
+          title: "🍏 Новый Овощ / Фрукт",
+          items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"],
+          fractions: {}
         }
-      },
-      chew: {
-        title: "🦴 Новая Жевалка",
-        items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
-        fractions: {
-          "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
-          "ТРАХЕЯ": ["МАЛ", "ПЛАСТ", "СРЕД", "БОЛ", "ОГР"],
-          "СТАНОВАЯ ЖИЛА": ["ПАЛК", "СРЕД", "БОЛ"],
-          "УХО Г": ["Обычное", "ПОЛОВИНКА"],
-          "АОРТА": ["ПОЛОВИНКА", "Обычная"]
+      };
+
+      let basket = [];
+      let currentCategory = "";
+
+      // Вешаем железные слушатели на цветные кнопки категорий (Обходим блокировки iOS)
+      document.getElementById('btnDressura').addEventListener('click', () => openProductSelector('dressura'));
+      document.getElementById('btnChew').addEventListener('click', () => openProductSelector('chew'));
+      document.getElementById('btnOther').addEventListener('click', () => openProductSelector('other'));
+      document.getElementById('btnPowder').addEventListener('click', () => openProductSelector('powder'));
+      document.getElementById('btnVeg').addEventListener('click', () => openProductSelector('veg'));
+      document.getElementById('btnConfirm').addEventListener('click', addItemToBasket);
+      document.getElementById('btnSaveOrder').addEventListener('click', sendEntireOrder);
+      document.getElementById('mainSelect').addEventListener('change', onProductChange);
+
+      function openProductSelector(catKey) {
+        currentCategory = catKey;
+        const cat = catalog[catKey];
+        
+        document.getElementById('selectorTitle').innerText = cat.title;
+        document.getElementById('selectorCard').style.display = "block";
+        
+        let itemHtml = '<option value="">-- Выбрать из списка --</option>';
+        cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
+        
+        const mainSelect = document.getElementById('mainSelect');
+        mainSelect.innerHTML = itemHtml;
+        
+        document.getElementById('fractionGroup').style.display = "none";
+        document.getElementById('volumeInput').value = "";
+        
+        document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+      }
+
+      function onProductChange() {
+        const mainVal = document.getElementById('mainSelect').value;
+        const fracGroup = document.getElementById('fractionGroup');
+        const fracSelect = document.getElementById('fractionSelect');
+        const valLabel = document.getElementById('valueLabel');
+        const cat = catalog[currentCategory];
+        
+        if (mainVal === "ПЕРЕПЁЛКИ шт." || currentCategory === 'chew') { valLabel.innerText = "Количество (в шт.)"; } 
+        else { valLabel.innerText = "Вес (в граммах)"; }
+        
+        if (cat.fractions && cat.fractions[mainVal]) {
+          fracGroup.style.display = "block";
+          let fracHtml = "";
+          cat.fractions[mainVal].forEach(f => { fracHtml += `<option value="${f}">${f}</option>`; });
+          fracSelect.innerHTML = fracHtml;
+        } else { 
+          fracGroup.style.display = "none"; 
+          fracSelect.innerHTML = ""; 
         }
-      },
-      other: {
-        title: "📦 Новая Позиция (Другое)",
-        items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО"],
-        fractions: {}
-      },
-      powder: {
-        title: "✨ Новая Присыпка",
-        items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК"],
-        fractions: {}
-      },
-      veg: {
-        title: "🍏 Новый Овощ / Фрукт",
-        items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"],
-        fractions: {}
       }
-    };
 
-    let basket = [];
-    let currentCategory = "";
-
-    function openProductSelector(catKey) {
-      currentCategory = catKey;
-      const cat = catalog[catKey];
-      
-      document.getElementById('selectorTitle').innerText = cat.title;
-      document.getElementById('selectorCard').style.display = "block";
-      
-      let itemHtml = '<option value="">-- Выбрать из списка --</option>';
-      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
-      
-      const mainSelect = document.getElementById('mainSelect');
-      mainSelect.innerHTML = itemHtml;
-      
-      document.getElementById('fractionGroup').style.display = "none";
-      document.getElementById('volumeInput').value = "";
-      
-      const valLabel = (catKey === 'chew' || mainSelect.value === "ПЕРЕПЁЛКИ шт.") ? "Количество (в шт.)" : "Вес (в граммах)";
-      document.getElementById('valueLabel').innerText = valLabel;
-      
-      if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-    }
-
-    function onProductChange() {
-      const mainVal = document.getElementById('mainSelect').value;
-      const fracGroup = document.getElementById('fractionGroup');
-      const fracSelect = document.getElementById('fractionSelect');
-      const valLabel = document.getElementById('valueLabel');
-      const cat = catalog[currentCategory];
-      
-      if (mainVal === "ПЕРЕПЁЛКИ шт." || currentCategory === 'chew') { valLabel.innerText = "Количество (в шт.)"; } 
-      else { valLabel.innerText = "Вес (в граммах)"; }
-      
-      if (cat.fractions && cat.fractions[mainVal]) {
-        fracGroup.style.display = "block";
-        let fracHtml = "";
-        cat.fractions[mainVal].forEach(f => { fracHtml += `<option value="${f}">${f}</option>`; });
-        fracSelect.innerHTML = fracHtml;
-      } else { 
-        fracGroup.style.display = "none"; 
-        fracSelect.innerHTML = ""; 
+      function addItemToBasket() {
+        const mainVal = document.getElementById('mainSelect').value;
+        const fracVal = document.getElementById('fractionSelect').value;
+        const inputVal = Number(document.getElementById('volumeInput').value) || 0;
+        
+        if (!mainVal) { tg.showAlert("❌ Выберите наименование!"); return; }
+        if (inputVal <= 0) { tg.showAlert("❌ Укажите количество/вес больше нуля!"); return; }
+        
+        const uniqueId = Date.now();
+        basket.push({ id: uniqueId, cat: currentCategory, main: mainVal, sub: fracVal, value: inputVal });
+        renderBasket();
+        
+        document.getElementById('selectorCard').style.display = "none";
+        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
       }
-    }
 
-    function addItemToBasket() {
-      const mainVal = document.getElementById('mainSelect').value;
-      const fracVal = document.getElementById('fractionSelect').value;
-      const inputVal = Number(document.getElementById('volumeInput').value) || 0;
-      
-      if (!mainVal) { tg.showAlert("❌ Выберите наименование!"); return; }
-      if (inputVal <= 0) { tg.showAlert("❌ Укажите количество/вес больше нуля!"); return; }
-      
-      const uniqueId = Date.now();
-      basket.push({ id: uniqueId, cat: currentCategory, main: mainVal, sub: fracVal, value: inputVal });
+      function renderBasket() {
+        const container = document.getElementById('basketContainer'); 
+        container.innerHTML = "";
+        
+        if (basket.length === 0) { 
+          container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>`; 
+          return; 
+        }
+        
+        basket.forEach(item => {
+          let itemTitle = item.main; 
+          let subText = ""; 
+          let unit = (item.cat === 'chew' || item.main === "ПЕРЕПЁЛКИ шт.") ? " шт." : " гр";
+          
+          if (item.cat === "dressura") { subText = "Фракция: " + item.sub; } 
+          else if (item.cat === "chew" && catalog.chew.fractions[item.main]) { subText = "Тип нарезки: " + item.sub; } 
+          else { subText = "Категория: " + item.cat.toUpperCase(); }
+          
+          const itemElId = `del_${item.id}`;
+          container.innerHTML += `
+            <div class="basket-card ${item.cat}">
+              <button class="btn-inline-del" id="${itemElId}">Удалить</button>
+              <div class="basket-info">${itemTitle} → ${item.value}${unit}</div>
+              <div class="basket-sub">${subText}</div>
+            </div>`;
+            
+          setTimeout(() => {
+            const delBtn = document.getElementById(itemElId);
+            if(delBtn) { delBtn.addEventListener('click', () => deleteBasketItem(item.id)); }
+          }, 50);
+        });
+      }
+
+      function deleteBasketItem(id) { 
+        basket = basket.filter(item => item.id !== id); 
+        renderBasket(); 
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium"); 
+      }
+
+      function sendEntireOrder() {
+        const clientName = document.getElementById('client').value.trim();
+        if (!clientName) { tg.showAlert("❌ Введите имя/ник клиента!"); return; }
+        if (basket.length === 0) { tg.showAlert("❌ Корзина пуста! Добавьте товары."); return; }
+        
+        tg.showPopup({
+          title: "Сохранение чека",
+          message: "Записать весь заказ (" + basket.length + " поз.) для клиента " + clientName + " в базу?",
+          buttons: [{type: "ok", text: "Да, записать"}, {type: "cancel", text: "Отмена"}]
+        }, function(buttonId) {
+          if (buttonId === "ok") {
+            fetch(GOOGLE_WEBHOOK_URL, {
+              method: "POST",
+              mode: "no-cors",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "saveOrder", day: document.getElementById('day').value, client: clientName, basket: basket })
+            });
+            tg.showAlert("🎉 Весь заказ успешно отправлен в таблицу! Склад обновился.");
+            tg.close();
+          }
+        });
+      }
       renderBasket();
-      
-      document.getElementById('selectorCard').style.display = "none";
-      if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
-    }
-
-    function renderBasket() {
-      const container = document.getElementById('basketContainer'); 
-      container.innerHTML = "";
-      
-      if (basket.length === 0) { 
-        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>`; 
-        return; 
-      }
-      
-      basket.forEach(item => {
-        let itemTitle = item.main; 
-        let subText = ""; 
-        let unit = (item.cat === 'chew' || item.main === "ПЕРЕПЁЛКИ шт.") ? " шт." : " гр";
-        
-        if (item.cat === "dressura") { subText = "Фракция: " + item.sub; } 
-        else if (item.cat === "chew" && catalog.chew.fractions[item.main]) { subText = "Тип нарезки: " + item.sub; } 
-        else { subText = "Категория: " + item.cat.toUpperCase(); }
-        
-        container.innerHTML += `
-          <div class="basket-card ${item.cat}">
-            <button class="btn-inline-del" onclick="deleteBasketItem(${item.id})">Удалить</button>
-            <div class="basket-info">${itemTitle} → ${item.value}${unit}</div>
-            <div class="basket-sub">${subText}</div>
-          </div>`;
-      });
-    }
-
-    function deleteBasketItem(id) { 
-      basket = basket.filter(item => item.id !== id); 
-      renderBasket(); 
-      if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium"); 
-    }
-
-    function sendEntireOrder() {
-      const clientName = document.getElementById('client').value.trim();
-      if (!clientName) { tg.showAlert("❌ Введите имя/ник клиента!"); return; }
-      if (basket.length === 0) { tg.showAlert("❌ Корзина пуста! Добавьте товары."); return; }
-      
-      tg.showPopup({
-        title: "Сохранение чека",
-        message: "Записать весь заказ (" + basket.length + " поз.) для клиента " + clientName + " в базу?",
-        buttons: [{type: "ok", text: "Да, записать"}, {type: "cancel", text: "Отмена"}]
-      }, function(buttonId) {
-        if (buttonId === "ok") {
-          fetch(GOOGLE_WEBHOOK_URL, {
-            method: "POST",
-            mode: "no-cors",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "saveOrder", day: document.getElementById('day').value, client: clientName, basket: basket })
-          });
-          tg.showAlert("🎉 Весь заказ успешно отправлен в таблицу! Склад обновился.");
-          tg.close();
-        }
-      });
-    }
-    renderBasket();
+    });
   </script>
 </body>
 </html>
