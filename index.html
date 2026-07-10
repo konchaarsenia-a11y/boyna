@@ -149,7 +149,7 @@
       document.getElementById('tabViewClients').classList.toggle('active', screenId === 'clientsScreen');
     }
 
-       // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ЧЕРЕЗ JSONP (100% ОБХОД ЛЮБЫХ БЛОКИРОВОК CORS БРАУЗЕРА)
+          // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ЧЕРЕЗ JSONP (С ИДЕАЛЬНОЙ ОЧИСТКОЙ ОТ ЗАПЯТЫХ И МУСОРА)
     function loadClientsForDay() {
       const selectedDay = document.getElementById('viewDaySelect').value;
       const container = document.getElementById('clientsContainer');
@@ -157,26 +157,42 @@
       
       container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Выгружаю людей из таблицы...</p>`;
       
-      // Создаем уникальное имя глобальной функции для приема ответа от Гугла
       const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
       
       window[callbackName] = function(res) {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = "";
-          res.clients.forEach((name, index) => {
-            container.innerHTML += `
-              <div class="client-row">
-                <span class="client-num">#${index + 1}</span>
-                <span class="client-name">${name}</span>
-              </div>`;
+          let displayedCount = 0;
+
+          res.clients.forEach((rawName) => {
+            // Магия очистки: убираем все запятые, пробелы и очищаем имя до блеска!
+            let nameClean = rawName.replace(/,/g, '').trim();
+            
+            // Выводим только если имя не пустое и реальное
+            if (nameClean !== "" && nameClean.length > 1) {
+              displayedCount++;
+              container.innerHTML += `
+                <div class="client-row">
+                  <span class="client-num">#${displayedCount}</span>
+                  <span class="client-name">${nameClean}</span>
+                </div>`;
+            }
           });
+
+          if (displayedCount === 0) {
+            container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">🚫 На этот день пока никто не записан.</p>`;
+          }
         } else {
           container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">🚫 На этот день пока никто не записан.</p>`;
         }
-        // Удаляем временный скрипт после завершения работы
         document.body.removeChild(script);
         delete window[callbackName];
       };
+
+      const script = document.createElement('script');
+      script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
+      document.body.appendChild(script);
+    }
 
       // Магия: создаем динамический тег скрипта, который пробивает CORS намертво
       const script = document.createElement('script');
