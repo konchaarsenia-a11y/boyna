@@ -312,7 +312,7 @@
       renderBasket(); 
     }
 
-       // НАДЁЖНАЯ ПАКЕТНАЯ ОТПРАВКА ЧЕРЕЗ НАТИВНОЕ ОКНО TELEGRAM POPUP (БЕЗ confirm)
+         // НАДЁЖНАЯ ПАКЕТНАЯ ОТПРАВКА С АДРЕСОМ И ПРИМЕЧАНИЕМ (БЕЗ confirm)
     function sendEntireOrder() {
       const clientName = document.getElementById('client').value.trim();
       const clientAddress = document.getElementById('addressInput').value.trim();
@@ -321,7 +321,6 @@
       if (!clientName) { alert("❌ Введите имя/ник клиента!"); return; }
       if (basket.length === 0) { alert("❌ Корзина пуста! Добавьте товары."); return; }
       
-      // Вызываем ахуенное фирменное окно Telegram вместо кривого confirm()
       tg.showPopup({
         title: "💾 Сохранение чека",
         message: "Записать весь заказ (" + basket.length + " поз.) для клиента " + clientName + " в базу?",
@@ -330,7 +329,6 @@
           { type: "cancel", text: "Отмена" }
         ]
       }, function(buttonId) {
-        // Если менеджер нажал "Да, записать"
         if (buttonId === "ok") {
           fetch(GOOGLE_WEBHOOK_URL, {
             method: "POST",
@@ -353,14 +351,12 @@
           document.getElementById('addressInput').value = "";
           document.getElementById('noteInput').value = "";
           
-          // Плавно закрываем приложение после успешного сохранения
           setTimeout(() => { tg.close(); }, 500);
         }
       });
     }
 
-
-    // ВЫГРУЗКА БАЗЫ С ОРАНЖЕВЫМИ НАПОМИНАЛКАМИ КУРЬЕРА
+    // БЕЗОТКАЗНЫЙ И ЧИСТЫЙ МЕХАНИЗМ ВЫГРУЗКИ БАЗЫ С ОРАНЖЕВЫМИ НАПОМИНАЛКАМИ
     function loadClientsForDay() {
       const selectedDay = document.getElementById('viewDaySelect').value;
       const container = document.getElementById('clientsContainer');
@@ -380,7 +376,7 @@
       window[callbackName] = function(res) {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = "";
-          let totalClientsCount = res.clients.length; // Считаем живое количество человек
+          let totalClientsCount = res.clients.length;
 
           res.clients.forEach((client, index) => {
             let basketHtml = "";
@@ -396,15 +392,13 @@
               basketHtml = `<p style="color:var(--text-muted); font-style:italic; margin:0; font-size:13px;">В чеке пока нет активных позиций.</p>`;
             }
 
-            // Напоминалка: Выводим блоки адреса и времени только если они не пустые в таблице
             let deliveryBoxHtml = "";
             if (client.address || client.note) {
               let addrLine = client.address ? `<div class="delivery-line addr-line">📍 Адрес: ${client.address}</div>` : "";
-              let noteLine = client.note ? `<div class="delivery-line time-alert">⏱️ Примечание: ${client.note}</div>` : "";
+              let noteLine = client.note ? `<div class="delivery-line time-alert">⏱️ Напоминалка: ${client.note}</div>` : "";
               deliveryBoxHtml = `<div class="delivery-info-box">${noteLine}${addrLine}</div>`;
             }
 
-            // Выводим красивую плитку клиента
             container.innerHTML += `
               <div class="client-item-card" onclick="toggleOrderDetail(${index})">
                 <div class="client-main-row">
@@ -418,7 +412,6 @@
               </div>`;
           });
 
-          // ВЫВОДИМ СЧЕТЧИК КОЛИЧЕСТВА КЛИЕНТОВ НА ДЕНЬ В САМЫЙ ВЕРХ СТРАНИЦЫ
           summaryContainer.innerHTML = `
             <div class="total-summary-badge">
               📊 Всего клиентов на ${selectedDay}: <span style="color:var(--success-color); font-size:17px; font-weight:800;">${totalClientsCount} чел.</span>
