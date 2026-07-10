@@ -2,7 +2,6 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <!-- Мета-тег ниже намертво блокирует зум и приближение на Айфоне! -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Конвейер Бойня</title>
   <style>
@@ -18,12 +17,17 @@
       overflow-x: hidden; overflow-y: auto; box-sizing: border-box;
     }
     .app { padding: 16px; padding-bottom: 40px; max-width: 600px; margin: 0 auto; box-sizing: border-box; }
-    .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 20px; }
+    .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 16px; }
+    
+    /* СТИЛЬНЫЕ ВКЛАДКИ МЕНЮ КАК В WALLET */
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 20px; background: #1c1c1e; padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); }
+    .tab-link { flex: 1; text-align: center; background: none; border: none; color: var(--text-muted); padding: 10px 0; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 8px; transition: all 0.15s ease; }
+    .tab-link.active { background-color: var(--accent-color); color: #fff; }
+
     .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin: 24px 0 8px 4px; }
     .card { background-color: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); border: 1px solid var(--border-color); margin-bottom: 16px; box-sizing: border-box; width: 100%; }
     .form-group { margin-bottom: 16px; }
     label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: #e5e5ea; }
-    /* Шрифт 16px и высота 48px — Айфон больше НИКОГДА не приблизится при вводе! */
     select, input {
       width: 100%; height: 48px; background-color: #2c2c2e; border: 1px solid var(--border-color);
       border-radius: 10px; color: #fff; font-size: 16px; padding: 0 14px; box-sizing: border-box; outline: none;
@@ -43,175 +47,203 @@
     .basket-info { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
     .basket-sub { font-size: 13px; color: var(--text-muted); }
     .btn-inline-del { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--danger-color); font-size: 14px; font-weight: 600; cursor: pointer; }
+    
+    /* СТИЛИ ДЛЯ СПИСКА КЛИЕНТОВ */
+    .client-row { display: flex; align-items: center; height: 50px; border-bottom: 1px solid var(--border-color); font-size: 16px; font-weight: 600; color: #fff; padding-left: 4px; }
+    .client-row:last-child { border-bottom: none; }
+    .client-num { color: var(--accent-color); margin-right: 12px; font-size: 14px; }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="header-main">🏭 Конвейер: Новый заказ</div>
-    <div class="card">
-      <div class="form-group">
-        <label>День отгрузки</label>
-        <select id="day">
-          <option value="Понедельник">Понедельник</option>
-          <option value="Вторник">Вторник</option>
-          <option value="Среда">Среда</option>
-          <option value="Четверг">Четверг</option>
-          <option value="Пятница">Пятница</option>
-          <option value="Будущая неделя">Будущая неделя</option>
-        </select>
+    <div class="header-main">🏭 Бойня-Конвейер v4.0</div>
+    
+    <!-- ВЕРХНЯЯ НАВИГАЦИЯ -->
+    <div class="nav-tabs">
+      <button class="tab-link active" id="tabNewOrder" onclick="switchTab('orderScreen')">➕ Новый заказ</button>
+      <button class="tab-link" id="tabViewClients" onclick="switchTab('clientsScreen')">📅 Записи на неделю</button>
+    </div>
+
+    <!-- ЭКРАН 1: ПРИЕМ ЗАКАЗОВ -->
+    <div id="orderScreen">
+      <div class="card">
+        <div class="form-group">
+          <label>День отгрузки</label>
+          <select id="day">
+            <option value="Понедельник">Понедельник</option>
+            <option value="Вторник">Вторник</option>
+            <option value="Среда">Среда</option>
+            <option value="Четверг">Четверг</option>
+            <option value="Пятница">Пятница</option>
+            <option value="Будущая неделя">Будущая неделя</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Ник / Имя клиента в Telegram</label>
+          <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
+        </div>
       </div>
-      <div class="form-group">
-        <label>Ник / Имя клиента в Telegram</label>
-        <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
+      
+      <div class="section-title">🛒 Корзина заказа</div>
+      <div id="basketContainer">
+        <p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>
+      </div>
+      <div class="section-title">➕ Добавить товар в чек</div>
+      <div class="grid-buttons">
+        <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">🍖 Добавить Дрессуру</button>
+        <button class="btn-action btn-orange" onclick="openProductSelector('chew')">🦴 Добавить Жевалки</button>
+        <button class="btn-action btn-purple" onclick="openProductSelector('other')">📦 Добавить Другое</button>
+        <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
+        <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
+      </div>
+      
+      <div class="card" id="selectorCard" style="display: none;">
+        <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
+        <div class="form-group"><label>Наименование</label><select id="mainSelect" onchange="onProductChange()"></select></div>
+        <div class="form-group" id="fractionGroup" style="display: none;"><label>Фракция нарезки</label><select id="fractionSelect"></select></div>
+        <div class="form-group"><label id="valueLabel">Объем</label><input type="number" id="volumeInput" placeholder="0" inputmode="numeric"></div>
+        <button class="btn-action btn-blue" style="height:42px;" onclick="addItemToBasket()">✅ Подтвердить позицию</button>
+      </div>
+      
+      <div style="margin-top: 30px;"><button class="btn-action btn-save" onclick="sendEntireOrder()">💾 Сохранить весь заказ</button></div>
+    </div>
+
+    <!-- ЭКРАН 2: ПРОСМОТР КЛИЕНТОВ НА ДЕНЬ -->
+    <div id="clientsScreen" style="display: none;">
+      <div class="card">
+        <div class="form-group">
+          <label>Выберите день для просмотра записей</label>
+          <select id="viewDaySelect" onchange="loadClientsForDay()">
+            <option value="">-- Выбрать день --</option>
+            <option value="Понедельник">Понедельник</option>
+            <option value="Вторник">Вторник</option>
+            <option value="Среда">Среда</option>
+            <option value="Четверг">Четверг</option>
+            <option value="Пятница">Пятница</option>
+            <option value="Будущая неделя">Будущая неделя</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-title">👥 Записанные клиенты</div>
+      <div class="card" id="clientsContainer">
+        <p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день отгрузки выше для загрузки списка людей...</p>
       </div>
     </div>
-    
-    <div class="section-title">🛒 Корзина заказа</div>
-    <div id="basketContainer">
-      <p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>
-    </div>
-    <div class="section-title">➕ Добавить товар в чек</div>
-    <div class="grid-buttons">
-      <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">🍖 Добавить Дрессуру</button>
-      <button class="btn-action btn-orange" onclick="openProductSelector('chew')">🦴 Добавить Жевалки</button>
-      <button class="btn-action btn-purple" onclick="openProductSelector('other')">📦 Добавить Другое</button>
-      <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
-      <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
-    </div>
-    
-    <div class="card" id="selectorCard" style="display: none;">
-      <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
-      <div class="form-group"><label>Наименование</label><select id="mainSelect" onchange="onProductChange()"></select></div>
-      <div class="form-group" id="fractionGroup" style="display: none;"><label>Фракция нарезки</label><select id="fractionSelect"></select></div>
-      <div class="form-group"><label id="valueLabel">Объем</label><input type="number" id="volumeInput" placeholder="0" inputmode="numeric"></div>
-      <button class="btn-action btn-blue" style="height:42px;" onclick="addItemToBasket()">✅ Подтвердить позицию</button>
-    </div>
-    
-    <div style="margin-top: 30px;">
-      <button class="btn-action btn-save" onclick="sendEntireOrder()">💾 Сохранить весь заказ</button>
-    </div>
+
   </div>
 
   <script>
-    // ВСТАВЬ СВОЙ URL ВЕБХУКА ТАБЛИЦЫ ВНУТРЬ КАВЫЧЕК НИЖЕ:
+    const tg = window.Telegram.WebApp;
+    if(tg) { tg.expand(); tg.ready(); }
+
+    // ТВОЙ АДРЕС ТАБЛИЦЫ:
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwplxLYmgHeAjIsefEJqVIZ-j8yMQGJbDRimIdpcmoKBuBzQQ4ScEYidMctN_QmMP4z/exec";
 
+    // Умный переключатель экранов без перезагрузки страницы
+    function switchTab(screenId) {
+      document.getElementById('orderScreen').style.display = (screenId === 'orderScreen') ? 'block' : 'none';
+      document.getElementById('clientsScreen').style.display = (screenId === 'clientsScreen') ? 'block' : 'none';
+      
+      document.getElementById('tabNewOrder').classList.toggle('active', screenId === 'orderScreen');
+      document.getElementById('tabViewClients').classList.toggle('active', screenId === 'clientsScreen');
+    }
+
+    // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ИЗ ЯЧЕЕК ТАБЛИЦЫ
+    function loadClientsForDay() {
+      const selectedDay = document.getElementById('viewDaySelect').value;
+      const container = document.getElementById('clientsContainer');
+      if (!selectedDay) { container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день отгрузки выше...</p>`; return; }
+      
+      container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Выгружаю людей из таблицы...</p>`;
+      
+      fetch(GOOGLE_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "getClients", day: selectedDay })
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === "success" && res.clients && res.clients.length > 0) {
+          container.innerHTML = "";
+          res.clients.forEach((name, index) => {
+            container.innerHTML += `
+              <div class="client-row">
+                <span class="client-num">#${index + 1}</span>
+                <span class="client-name">${name}</span>
+              </div>`;
+          });
+        } else {
+          container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">🚫 На этот день пока никто не записан.</p>`;
+        }
+      })
+      .catch(err => {
+        container.innerHTML = `<p style="color:var(--danger-color); font-weight:600; margin:0;">❌ Не удалось связаться с базой.</p>`;
+      });
+    }
+    // КАТАЛОГ И ОСТАЛЬНЫЕ ФУНКЦИИ КОРЗИНЫ
     const catalog = {
       dressura: {
-        title: "🍖 Новая Дрессура",
-        items: ["ЛЁГКОЕ", "ПОЧКИ", "СЕРДЦЕ", "РУБЕЦ Т", "БАРАНЬЕ ЛЁГКОЕ"],
+        title: "🍖 Новая Дрессура", items: ["ЛЁГКОЕ", "ПОЧКИ", "СЕРДЦЕ", "РУБЕЦ Т", "БАРАНЬЕ ЛЁГКОЕ"],
         fractions: {
-          "ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"],
-          "СЕРДЦЕ": ["Мелкое", "Целое"],
-          "ПОЧКИ": ["Мелкое", "Целое"],
-          "РУБЕЦ Т": ["Мелкое", "Среднее", "Крупное", "Целое"],
-          "БАРАНЬЕ ЛЁГКОЕ": ["Мелкое", "Среднее", "Целое"]
+          "ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"], "СЕРДЦЕ": ["Мелкое", "Целое"],
+          "ПОЧКИ": ["Мелкое", "Целое"], "РУБЕЦ Т": ["Мелкое", "Среднее", "Крупное", "Целое"], "БАРАНЬЕ ЛЁГКОЕ": ["Мелкое", "Среднее", "Целое"]
         }
       },
       chew: {
-        title: "🦴 Новая Жевалка",
-        items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
+        title: "🦴 Новая Жевалка", items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
         fractions: {
-          "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
-          "ТРАХЕЯ": ["МАЛ", "ПЛАСТ", "СРЕД", "БОЛ", "ОГР"],
-          "СТАНОВАЯ ЖИЛА": ["ПАЛК", "СРЕД", "БОЛ"],
-          "УХО Г": ["Обычное", "ПОЛОВИНКА"],
-          "АОРТА": ["ПОЛОВИНКА", "Обычная"]
+          "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"], "ТРАХЕЯ": ["МАЛ", "ПЛАСТ", "СРЕД", "БОЛ", "ОГР"],
+          "СТАНОВАЯ ЖИЛА": ["ПАЛК", "СРЕД", "БОЛ"], "УХО Г": ["Обычное", "ПОЛОВИНКА"], "АОРТА": ["ПОЛОВИНКА", "Обычная"]
         }
       },
-      other: {
-        title: "📦 Новая Позиция (Другое)",
-        items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО"],
-        fractions: {}
-      },
-      powder: {
-        title: "✨ Новая Присыпка",
-        items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК"],
-        fractions: {}
-      },
-      veg: {
-        title: "🍏 Новый Овощ / Фрукт",
-        items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"],
-        fractions: {}
-      }
+      other: { title: "📦 Новая Позиция (Другое)", items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО"], fractions: {} },
+      powder: { title: "✨ Новая Присыпка", items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК"], fractions: {} },
+      veg: { title: "🍏 Новый Овощ / Фрукт", items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"], fractions: {} }
     };
 
-    let basket = [];
-    let currentCategory = "";
+    let basket = []; let currentCategory = "";
 
     function openProductSelector(catKey) {
-      currentCategory = catKey;
-      const cat = catalog[catKey];
-      
+      currentCategory = catKey; const cat = catalog[catKey];
       document.getElementById('selectorTitle').innerText = cat.title;
       document.getElementById('selectorCard').style.display = "block";
-      
       let itemHtml = '<option value="">-- Выбрать из списка --</option>';
       cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
-      
-      const mainSelect = document.getElementById('mainSelect');
-      mainSelect.innerHTML = itemHtml;
-      
-      document.getElementById('fractionGroup').style.display = "none";
-      document.getElementById('volumeInput').value = "";
-      
+      const mainSelect = document.getElementById('mainSelect'); mainSelect.innerHTML = itemHtml;
+      document.getElementById('fractionGroup').style.display = "none"; document.getElementById('volumeInput').value = "";
       document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
     }
 
     function onProductChange() {
       const mainVal = document.getElementById('mainSelect').value;
-      const fracGroup = document.getElementById('fractionGroup');
-      const fracSelect = document.getElementById('fractionSelect');
-      const valLabel = document.getElementById('valueLabel');
-      const cat = catalog[currentCategory];
-      
-      if (mainVal === "ПЕРЕПЁЛКИ шт." || currentCategory === 'chew') { valLabel.innerText = "Количество (в шт.)"; } 
-      else { valLabel.innerText = "Вес (в граммах)"; }
-      
+      const fracGroup = document.getElementById('fractionGroup'); const fracSelect = document.getElementById('fractionSelect');
+      const valLabel = document.getElementById('valueLabel'); const cat = catalog[currentCategory];
+      if (mainVal === "ПЕРЕПЁЛКИ шт." || currentCategory === 'chew') { valLabel.innerText = "Количество (в шт.)"; } else { valLabel.innerText = "Вес (в граммах)"; }
       if (cat.fractions && cat.fractions[mainVal]) {
-        fracGroup.style.display = "block";
-        let fracHtml = "";
+        fracGroup.style.display = "block"; let fracHtml = "";
         cat.fractions[mainVal].forEach(f => { fracHtml += `<option value="${f}">${f}</option>`; });
         fracSelect.innerHTML = fracHtml;
-      } else { 
-        fracGroup.style.display = "none"; 
-        fracSelect.innerHTML = ""; 
-      }
+      } else { fracGroup.style.display = "none"; fracSelect.innerHTML = ""; }
     }
 
     function addItemToBasket() {
-      const mainVal = document.getElementById('mainSelect').value;
-      const fracVal = document.getElementById('fractionSelect').value;
+      const mainVal = document.getElementById('mainSelect').value; const fracVal = document.getElementById('fractionSelect').value;
       const inputVal = Number(document.getElementById('volumeInput').value) || 0;
-      
-      if (!mainVal) { alert("❌ Выберите наименование!"); return; }
-      if (inputVal <= 0) { alert("❌ Укажите количество/вес больше нуля!"); return; }
-      
+      if (!mainVal) { alert("❌ Выберите наименование!"); return; } if (inputVal <= 0) { alert("❌ Укажите количество/вес больше нуля!"); return; }
       const uniqueId = Date.now();
       basket.push({ id: uniqueId, cat: currentCategory, main: mainVal, sub: fracVal, value: inputVal });
-      renderBasket();
-      
-      document.getElementById('selectorCard').style.display = "none";
+      renderBasket(); document.getElementById('selectorCard').style.display = "none";
     }
 
     function renderBasket() {
-      const container = document.getElementById('basketContainer'); 
-      container.innerHTML = "";
-      
-      if (basket.length === 0) { 
-        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>`; 
-        return; 
-      }
-      
+      const container = document.getElementById('basketContainer'); container.innerHTML = "";
+      if (basket.length === 0) { container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>`; return; }
       basket.forEach(item => {
-        let itemTitle = item.main; 
-        let subText = ""; 
-        let unit = (item.cat === 'chew' || item.main === "ПЕРЕПЁЛКИ шт.") ? " шт." : " гр";
-        
+        let itemTitle = item.main; let subText = ""; let unit = (item.cat === 'chew' || item.main === "ПЕРЕПЁЛКИ шт.") ? " шт." : " гр";
         if (item.cat === "dressura") { subText = "Фракция: " + item.sub; } 
         else if (item.cat === "chew" && catalog.chew.fractions[item.main]) { subText = "Тип нарезки: " + item.sub; } 
         else { subText = "Категория: " + item.cat.toUpperCase(); }
-        
         container.innerHTML += `
           <div class="basket-card ${item.cat}">
             <button class="btn-inline-del" onclick="deleteBasketItem(${item.id})">Удалить</button>
@@ -221,16 +253,11 @@
       });
     }
 
-    function deleteBasketItem(id) { 
-      basket = basket.filter(item => item.id !== id); 
-      renderBasket(); 
-    }
+    function deleteBasketItem(id) { basket = basket.filter(item => item.id !== id); renderBasket(); }
 
     function sendEntireOrder() {
       const clientName = document.getElementById('client').value.trim();
-      if (!clientName) { alert("❌ Введите имя/ник клиента!"); return; }
-      if (basket.length === 0) { alert("❌ Корзина пуста! Добавьте товары."); return; }
-      
+      if (!clientName) { alert("❌ Введите имя/ник клиента!"); return; } if (basket.length === 0) { alert("❌ Корзина пуста!"); return; }
       if (confirm("Записать весь заказ (" + basket.length + " поз.) для клиента " + clientName + " в базу?")) {
         fetch(GOOGLE_WEBHOOK_URL, {
           method: "POST",
@@ -239,11 +266,10 @@
           body: JSON.stringify({ action: "saveOrder", day: document.getElementById('day').value, client: clientName, basket: basket })
         });
         alert("🎉 Весь заказ успешно отправлен в таблицу! Склад обновился.");
-        basket = [];
-        renderBasket();
-        document.getElementById('client').value = "";
+        basket = []; renderBasket(); document.getElementById('client').value = "";
       }
     }
+    renderBasket();
   </script>
 </body>
 </html>
