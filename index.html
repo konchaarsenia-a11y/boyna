@@ -149,7 +149,7 @@
       document.getElementById('tabViewClients').classList.toggle('active', screenId === 'clientsScreen');
     }
 
-        // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ИЗ ЯЧЕЕК ТАБЛИЦЫ (БЕЗ БЛОКИРОВОК БРАУЗЕРА)
+    // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ИЗ ЯЧЕЕК ТАБЛИЦЫ (УЛЬТРА-ОБХОД CORS)
     function loadClientsForDay() {
       const selectedDay = document.getElementById('viewDaySelect').value;
       const container = document.getElementById('clientsContainer');
@@ -157,14 +157,18 @@
       
       container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Подключаюсь к конвейеру, выгружаю людей...</p>`;
       
+      // Заставляем браузер слать скрытый текстовый поток без проверок безопасности
       fetch(GOOGLE_WEBHOOK_URL, {
         method: "POST",
-        mode: "cors", // Включаем режим кросс-доменного обмена
+        mode: "cors",
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ action: "getClients", day: selectedDay })
       })
-      .then(res => res.text()) // Сначала читаем ответ как чистый текст
-      .then(text => {
-        const res = JSON.parse(text); // Превращаем в JSON вручную без CORS-сбоев
+      .then(res => {
+        if (!res.ok) throw new Error();
+        return res.json();
+      })
+      .then(res => {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = "";
           res.clients.forEach((name, index) => {
@@ -182,6 +186,7 @@
         container.innerHTML = `<p style="color:var(--danger-color); font-weight:600; margin:0;">❌ Не удалось связаться с базой.</p>`;
       });
     }
+
 
     // КАТАЛОГ И ОСТАЛЬНЫЕ ФУНКЦИИ КОРЗИНЫ
     const catalog = {
