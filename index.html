@@ -149,21 +149,22 @@
       document.getElementById('tabViewClients').classList.toggle('active', screenId === 'clientsScreen');
     }
 
-    // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ИЗ ЯЧЕЕК ТАБЛИЦЫ
+        // ЖИВАЯ ВЫГРУЗКА КЛИЕНТОВ ИЗ ЯЧЕЕК ТАБЛИЦЫ (БЕЗ БЛОКИРОВОК БРАУЗЕРА)
     function loadClientsForDay() {
       const selectedDay = document.getElementById('viewDaySelect').value;
       const container = document.getElementById('clientsContainer');
       if (!selectedDay) { container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день отгрузки выше...</p>`; return; }
       
-      container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Выгружаю людей из таблицы...</p>`;
+      container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Подключаюсь к конвейеру, выгружаю людей...</p>`;
       
       fetch(GOOGLE_WEBHOOK_URL, {
         method: "POST",
-        headers: { "Content-Type": "text/plain" },
+        mode: "cors", // Включаем режим кросс-доменного обмена
         body: JSON.stringify({ action: "getClients", day: selectedDay })
       })
-      .then(res => res.json())
-      .then(res => {
+      .then(res => res.text()) // Сначала читаем ответ как чистый текст
+      .then(text => {
+        const res = JSON.parse(text); // Превращаем в JSON вручную без CORS-сбоев
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = "";
           res.clients.forEach((name, index) => {
@@ -181,6 +182,7 @@
         container.innerHTML = `<p style="color:var(--danger-color); font-weight:600; margin:0;">❌ Не удалось связаться с базой.</p>`;
       });
     }
+
     // КАТАЛОГ И ОСТАЛЬНЫЕ ФУНКЦИИ КОРЗИНЫ
     const catalog = {
       dressura: {
