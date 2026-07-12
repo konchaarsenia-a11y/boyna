@@ -24,7 +24,7 @@
     .tab-link.active { background-color: var(--accent-color); color: #fff; }
 
     .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin: 24px 0 8px 4px; }
-    .card { background-color: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); border: 1px solid var(--border-color); margin-bottom: 16px; box-sizing: border-box; width: 100%; }
+    .card { background-color: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 4px 166px rgba(0,0,0,0.25); border: 1px solid var(--border-color); margin-bottom: 16px; box-sizing: border-box; width: 100%; }
     .form-group { margin-bottom: 16px; }
     label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: #e5e5ea; }
     select, input {
@@ -69,6 +69,7 @@
     .order-detail-volume { font-weight: 700; color: var(--success-color); }
     
     .total-summary-badge { background: linear-gradient(135deg, #1d1d1f, #2c2c2e); padding: 14px; border-radius: 12px; border: 1px dashed var(--success-color); font-size: 15px; font-weight: 700; text-align: center; color: #fff; margin-bottom: 16px; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
@@ -79,7 +80,6 @@
       <button class="tab-link active" id="tabNewOrder" onclick="switchTab('orderScreen')">➕ Новый заказ</button>
       <button class="tab-link" id="tabViewClients" onclick="switchTab('clientsScreen')">📅 Записи на неделю</button>
     </div>
-
     <!-- ЭКРАН №1: ОФОРМЛЕНИЕ И РЕДАКТИРОВАНИЕ ЗАКАЗА -->
     <div id="orderScreen">
       <div class="card">
@@ -121,7 +121,6 @@
         <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
         <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
       </div>
-      <!-- ВЫЕЗЖАЮЩЕЕ ОКНО ВВОДА ВЕСА/ШТУК -->
       <div class="card" id="selectorCard" style="display: none;">
         <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
         <div class="form-group">
@@ -170,6 +169,7 @@
     </div>
   </div>
 
+  <script src="https://telegram.org"></script>
   <script>
     const tg = window.Telegram.WebApp;
     if (tg) { tg.expand(); tg.ready(); }
@@ -191,7 +191,7 @@
       },
       chew: {
         title: "🦴 Новая Жевалка",
-        items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
+        items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "П ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
         fractions: {
           "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
           "ТРАХЕЯ": ["МАЛ", "ПЛАСТ", "СРЕД", "БОЛ", "ОГР"],
@@ -232,20 +232,6 @@
       }
     }
 
-    function openProductSelector(catKey) {
-      currentCategory = catKey;
-      const cat = catalog[catKey];
-      document.getElementById('selectorTitle').innerText = cat.title;
-      document.getElementById('selectorCard').style.display = "block";
-      let itemHtml = '<option value="">-- Выбрать из списка --</option>';
-      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
-      const mainSelect = document.getElementById('mainSelect');
-      mainSelect.innerHTML = itemHtml;
-      document.getElementById('fractionGroup').style.display = "none";
-      document.getElementById('volumeInput').value = "";
-      document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
-    }
-
     function onProductChange() {
       const mainVal = document.getElementById('mainSelect').value;
       const fracGroup = document.getElementById('fractionGroup');
@@ -267,6 +253,7 @@
         fracSelect.innerHTML = ""; 
       }
     }
+
     function addItemToBasket() {
       const mainVal = document.getElementById('mainSelect').value;
       const fracVal = document.getElementById('fractionSelect').value;
@@ -304,7 +291,6 @@
       basket = basket.filter(item => item.id !== id); 
       renderBasket(); 
     }
-
     function sendEntireOrder() {
       const clientName = document.getElementById('client').value.trim();
       const clientAddress = document.getElementById('addressInput').value.trim();
@@ -341,7 +327,10 @@
       }
       container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Выгружаю людей из таблицы...</p>`;
       summaryContainer.innerHTML = "";
+      
       const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+      
+      // ИНИЦИАЛИЗИРУЕМ ШПИОНА ВЫГРУЗКИ КЛИЕНТОВ ДНЯ
       window[callbackName] = function(res) {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = ""; loadedClientsRawData = res.clients;
@@ -381,12 +370,20 @@
           container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">🚫 На этот день пока никто не записан.</p>`;
           summaryContainer.innerHTML = "";
         }
-        document.body.removeChild(script); delete window[callbackName];
+        
+        // БЕЗОПАСНАЯ УТИЛИЗАЦИЯ ИСПОЛЬЗОВАННОГО JSONP-ТЕГА ПОСЛЕ ПОЛНОГО ОТВЕТА СЕРВЕРА
+        const activeScriptTag = document.getElementById(callbackName);
+        if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
+        delete window[callbackName];
       };
+      
+      // СОЗДАНИЕ И ОТПРАВКА СЕТЕВОГО ТЕГА С УНИКАЛЬНЫМ ID ИСКЛЮЧАЕТ ОШИБКИ ИНИЦИАЛИЗАЦИИ
       const script = document.createElement('script');
+      script.id = callbackName;
       script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
       document.body.appendChild(script);
     }
+
     function toggleOrderDetail(index, event) {
       if (event.target.closest('.crm-mini-btn')) return;
       const detailsBlock = document.getElementById(`details_${index}`);
@@ -396,74 +393,53 @@
       }
     }
 
-    // CRM ФУНКЦИЯ №1: РЕДАКТИРОВАНИЕ (КАРАНДАШ)
     function crmEditClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const selectedDay = document.getElementById('viewDaySelect').value;
-      
       document.getElementById('isEditMode').value = "true";
       document.getElementById('appHeaderTitle').innerText = "✏️ Изменение: " + client.name;
       document.getElementById('btnMainSave').innerText = "🆙 Обновить запись в базе";
-      
       document.getElementById('day').value = selectedDay;
       document.getElementById('client').value = client.name;
       document.getElementById('client').readOnly = true;
       document.getElementById('addressInput').value = client.address;
       document.getElementById('noteInput').value = client.note;
-      
       basket = [];
       if(client.basket && client.basket.length > 0) {
         client.basket.forEach(goods => {
-          let sVal = goods.sub; 
-          if (Array.isArray(goods.sub)) { sVal = goods.sub.join(" / "); }
-          basket.push({ 
-            id: Date.now() + Math.random(), 
-            cat: goods.cat, 
-            main: goods.name, 
-            sub: sVal, 
-            value: goods.val 
-          });
+          let sVal = goods.sub; if (Array.isArray(goods.sub)) { sVal = goods.sub.join(" / "); }
+          basket.push({ id: Date.now() + Math.random(), cat: goods.cat, main: goods.name, sub: sVal, value: goods.val });
         });
       }
-      renderBasket(); 
-      switchTab('orderScreen');
+      renderBasket(); switchTab('orderScreen');
     }
 
-    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАПИСИ
     function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const oldDay = document.getElementById('viewDaySelect').value;
       const newDay = prompt("🔄 Введите день недели:", oldDay);
       if (!newDay) return;
-      
       if (confirm("Перенести клиента " + client.name + "?")) {
         fetch(GOOGLE_WEBHOOK_URL, {
-          method: "POST", 
-          mode: "no-cors", 
-          headers: { "Content-Type": "application/json" },
+          method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "moveClient", client: client.name, oldDay: oldDay, newDay: newDay })
         });
-        alert("🚀 Заказ перенесен!"); 
-        setTimeout(() => { loadClientsForDay(); }, 500);
+        alert("🚀 Заказ перенесен!"); setTimeout(() => { loadClientsForDay(); }, 500);
       }
     }
 
-    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ ЗАПИСИ
     function crmDeleteClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const selectedDay = document.getElementById('viewDaySelect').value;
       if (confirm("🗑️ Удалить клиента " + client.name + "?")) {
         fetch(GOOGLE_WEBHOOK_URL, {
-          method: "POST", 
-          mode: "no-cors", 
-          headers: { "Content-Type": "application/json" },
+          method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "deleteClient", client: client.name, day: selectedDay })
         });
-        alert("🗑️ Клиент удален!"); 
-        setTimeout(() => { loadClientsForDay(); }, 500);
+        alert("🗑️ Клиент удален!"); setTimeout(() => { loadClientsForDay(); }, 500);
       }
     }
     renderBasket();
