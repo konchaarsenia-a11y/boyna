@@ -80,6 +80,7 @@
       <button class="tab-link active" id="tabNewOrder" onclick="switchTab('orderScreen')">➕ Новый заказ</button>
       <button class="tab-link" id="tabViewClients" onclick="switchTab('clientsScreen')">📅 Записи на неделю</button>
     </div>
+
     <!-- ЭКРАН №1: ОФОРМЛЕНИЕ И РЕДАКТИРОВАНИЕ ЗАКАЗА -->
     <div id="orderScreen">
       <div class="card">
@@ -121,7 +122,6 @@
         <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
         <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
       </div>
-      <!-- ВЫЕЗЖАЮЩЕЕ ОКНО ВВОДА ВЕСА/ШТУК -->
       <div class="card" id="selectorCard" style="display: none;">
         <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
         <div class="form-group">
@@ -170,9 +170,8 @@
     </div>
   </div>
 
-  <script src="https://telegram.org"></script>
   <script>
-    // ТВОЙ УНИКАЛЬНЫЙ ВЕБХУК: ОН ДОЛЖЕН ЗАКАНЧИВАТЬСЯ НА /exec
+    // ТВОЙ СОБСТВЕННЫЙ АДРЕС ВЕБХУКА ТАБЛИЦЫ, КОТОРЫЙ ТЫ СКОПИРОВАЛ ИЗ APPS SCRIPT
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwWMPuVD-KuObrI_PQzs3gonyWX4xdYI8P9QlITz3bJGklWu7MoXuqo8BIOCzMTHiIn/exec";
 
     const catalog = {
@@ -230,6 +229,20 @@
       }
     }
 
+    function openProductSelector(catKey) {
+      currentCategory = catKey;
+      const cat = catalog[catKey];
+      document.getElementById('selectorTitle').innerText = cat.title;
+      document.getElementById('selectorCard').style.display = "block";
+      let itemHtml = '<option value="">-- Выбрать из списка --</option>';
+      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
+      const mainSelect = document.getElementById('mainSelect');
+      mainSelect.innerHTML = itemHtml;
+      document.getElementById('fractionGroup').style.display = "none";
+      document.getElementById('volumeInput').value = "";
+      document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
+    }
+
     function onProductChange() {
       const mainVal = document.getElementById('mainSelect').value;
       const fracGroup = document.getElementById('fractionGroup');
@@ -251,7 +264,6 @@
         fracSelect.innerHTML = ""; 
       }
     }
-
     function addItemToBasket() {
       const mainVal = document.getElementById('mainSelect').value;
       const fracVal = document.getElementById('fractionSelect').value;
@@ -289,6 +301,7 @@
       basket = basket.filter(item => item.id !== id); 
       renderBasket(); 
     }
+
     function sendEntireOrder() {
       const clientName = document.getElementById('client').value.trim();
       const clientAddress = document.getElementById('addressInput').value.trim();
@@ -328,7 +341,6 @@
       
       const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
       
-      // ИНИЦИАЛИЗИРУЕМ ШПИОНА ВЫГРУЗКИ КЛИЕНТОВ ДНЯ
       window[callbackName] = function(res) {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = ""; loadedClientsRawData = res.clients;
@@ -369,20 +381,17 @@
           summaryContainer.innerHTML = "";
         }
         
-        // БЕЗОПАСНАЯ УТИЛИЗАЦИЯ ИСПОЛЬЗОВАННОГО JSONP-ТЕГА ПОСЛЕ ПОЛНОГО ОТВЕТА СЕРВЕРА
         const activeScriptTag = document.getElementById(callbackName);
         if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
         delete window[callbackName];
       };
       
-      // СОЗДАНИЕ И ОТПРАВКА СЕТЕВОГО ТЕГА С УНИКАЛЬНЫМ ID ИСКЛЮЧАЕТ ОШИБКИ ИНИЦИАЛИЗАЦИИ
       const script = document.createElement('script');
       script.id = callbackName;
       script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
       document.body.appendChild(script);
     }
-
-      function toggleOrderDetail(index, event) {
+    function toggleOrderDetail(index, event) {
       if (event.target.closest('.crm-mini-btn')) return;
       const detailsBlock = document.getElementById(`details_${index}`);
       if (detailsBlock) {
@@ -432,7 +441,6 @@
       if (!newDay) return;
       
       if (confirm("Перенести клиента " + client.name + " с дня " + oldDay + " на " + newDay + "?")) {
-        // Упаковываем данные в нативный URL-формат, который Apple никогда не заблокирует
         const payload = new URLSearchParams();
         payload.append('action', 'moveClient');
         payload.append('client', client.name);
