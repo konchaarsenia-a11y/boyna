@@ -48,7 +48,6 @@
     .basket-sub { font-size: 13px; color: var(--text-muted); }
     .btn-inline-del { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--danger-color); font-size: 14px; font-weight: 600; cursor: pointer; }
     
-    /* СТИЛЬНЫЕ КНОПКИ СТРОКИ КЛИЕНТОВ CRM */
     .client-item-card { background-color: #1c1c1e; border-radius: 12px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border-color); box-sizing: border-box; }
     .client-main-row { display: flex; justify-content: space-between; align-items: center; }
     .client-title { font-size: 16px; font-weight: 700; color: #fff; }
@@ -80,7 +79,8 @@
       <button class="tab-link active" id="tabNewOrder" onclick="switchTab('orderScreen')">➕ Новый заказ</button>
       <button class="tab-link" id="tabViewClients" onclick="switchTab('clientsScreen')">📅 Записи на неделю</button>
     </div>
-    <!-- ЭКРАН №1: ПРИЕМ И ОФОРМЛЕНИЕ ЗАКАЗА -->
+
+    <!-- ЭКРАН №1: ОФОРМЛЕНИЕ И РЕДАКТИРОВАНИЕ ЗАКАЗА -->
     <div id="orderScreen">
       <div class="card">
         <input type="hidden" id="isEditMode" value="false">
@@ -121,7 +121,7 @@
         <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
         <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
       </div>
-      
+      <!-- ВЫЕЗЖАЮЩЕЕ ОКНО ВВОДА ВЕСА/ШТУК -->
       <div class="card" id="selectorCard" style="display: none;">
         <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
         <div class="form-group">
@@ -169,6 +169,7 @@
       </div>
     </div>
   </div>
+
   <script>
     const tg = window.Telegram.WebApp;
     if (tg) { tg.expand(); tg.ready(); }
@@ -230,27 +231,121 @@
         document.getElementById('btnMainSave').innerText = "💾 Сохранить весь заказ";
       }
     }
-    // БЕЗОТКАЗНЫЙ МЕХАНИЗМ ВЫГРУЗКИ БАЗЫ ДАННЫХ JSONP С КНОПКАМИ КОНТРОЛЯ
+
+    function openProductSelector(catKey) {
+      currentCategory = catKey;
+      const cat = catalog[catKey];
+      document.getElementById('selectorTitle').innerText = cat.title;
+      document.getElementById('selectorCard').style.display = "block";
+      let itemHtml = '<option value="">-- Выбрать из списка --</option>';
+      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
+      const mainSelect = document.getElementById('mainSelect');
+      mainSelect.innerHTML = itemHtml;
+      document.getElementById('fractionGroup').style.display = "none";
+      document.getElementById('volumeInput').value = "";
+      document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
+    }
+
+    function onProductChange() {
+      const mainVal = document.getElementById('mainSelect').value;
+      const fracGroup = document.getElementById('fractionGroup');
+      const fracSelect = document.getElementById('fractionSelect');
+      const valLabel = document.getElementById('valueLabel');
+      const cat = catalog[currentCategory];
+      if (mainVal === "ПЕРЕПЁЛКИ шт." || currentCategory === 'chew') { 
+        valLabel.innerText = "Количество (в шт.)"; 
+      } else { 
+        valLabel.innerText = "Вес (в граммах)"; 
+      }
+      if (cat.fractions && cat.fractions[mainVal]) {
+        fracGroup.style.display = "block";
+        let fracHtml = "";
+        cat.fractions[mainVal].forEach(f => { fracHtml += `<option value="${f}">${f}</option>`; });
+        fracSelect.innerHTML = fracHtml;
+      } else { 
+        fracGroup.style.display = "none"; 
+        fracSelect.innerHTML = ""; 
+      }
+    }
+    function addItemToBasket() {
+      const mainVal = document.getElementById('mainSelect').value;
+      const fracVal = document.getElementById('fractionSelect').value;
+      const inputVal = Number(document.getElementById('volumeInput').value) || 0;
+      if (!mainVal) { alert("❌ Выберите наименование!"); return; }
+      if (inputVal <= 0) { alert("❌ Укажите количество/вес больше нуля!"); return; }
+      const uniqueId = Date.now();
+      basket.push({ id: uniqueId, cat: currentCategory, main: mainVal, sub: fracVal, value: inputVal });
+      renderBasket();
+      document.getElementById('selectorCard').style.display = "none";
+    }
+
+    function renderBasket() {
+      const container = document.getElementById('basketContainer'); 
+      container.innerHTML = "";
+      if (basket.length === 0) { 
+        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>`; 
+        return; 
+      }
+      basket.forEach(item => {
+        let itemTitle = item.main; let subText = ""; let unit = (item.cat === 'chew' || item.main === "ПЕРЕПЁЛКИ шт.") ? " шт." : " гр";
+        if (item.cat === "dressura") { subText = "Фракция: " + item.sub; } 
+        else if (item.cat === "chew" && catalog.chew.fractions[item.main]) { subText = "Тип нарезки: " + item.sub; } 
+        else { subText = "Категория: " + item.cat.toUpperCase(); }
+        container.innerHTML += `
+          <div class="basket-card ${item.cat}">
+            <button class="btn-inline-del" onclick="deleteBasketItem(${item.id})">Удалить</button>
+            <div class="basket-info">${itemTitle} → ${item.value}${unit}</div>
+            <div class="basket-sub">${subText}</div>
+          </div>`;
+      });
+    }
+
+    function deleteBasketItem(id) { 
+      basket = basket.filter(item => item.id !== id); 
+      renderBasket(); 
+    }
+
+    function sendEntireOrder() {
+      const clientName = document.getElementById('client').value.trim();
+      const clientAddress = document.getElementById('addressInput').value.trim();
+      const clientNote = document.getElementById('noteInput').value.trim();
+      const isEdit = document.getElementById('isEditMode').value === 'true';
+      if (!clientName) { alert("❌ Введите имя/ник клиента!"); return; }
+      if (basket.length === 0) { alert("❌ Корзина пуста! Добавьте товары."); return; }
+      const popupMsg = isEdit ? "Перезаписать изменения для клиента " + clientName + " в базу?" : "Записать весь заказ (" + basket.length + " поз.) для клиента " + clientName + " в базу?";
+      if (confirm(popupMsg)) {
+        fetch(GOOGLE_WEBHOOK_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "saveOrder", day: document.getElementById('day').value, client: clientName, address: clientAddress, note: clientNote, basket: basket })
+        });
+        alert(isEdit ? "🎉 Заказ успешно отредактирован!" : "🎉 Весь заказ отправлен в таблицу!");
+        document.getElementById('isEditMode').value = "false";
+        document.getElementById('appHeaderTitle').innerText = "🏭 Бойня-Конвейер v4.0";
+        document.getElementById('btnMainSave').innerText = "💾 Сохранить весь заказ";
+        document.getElementById('client').readOnly = false;
+        basket = []; renderBasket();
+        document.getElementById('client').value = ""; document.getElementById('addressInput').value = ""; document.getElementById('noteInput').value = "";
+        switchTab('orderScreen');
+      }
+    }
+
     function loadClientsForDay() {
       const selectedDay = document.getElementById('viewDaySelect').value;
       const container = document.getElementById('clientsContainer');
       const summaryContainer = document.getElementById('totalDaySummaryContainer');
-      
       if (!selectedDay) { 
         container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день...</p>`; 
         summaryContainer.innerHTML = ""; return; 
       }
-      
       container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Выгружаю людей из таблицы...</p>`;
       summaryContainer.innerHTML = "";
-      
       const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-      
       window[callbackName] = function(res) {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = ""; loadedClientsRawData = res.clients;
           let totalClientsCount = res.clients.length;
-          
           res.clients.forEach((client, index) => {
             let basketHtml = "";
             if (client.basket && client.basket.length > 0) {
@@ -260,14 +355,12 @@
                 basketHtml += `<div class="order-detail-line"><span>• ${goods.name}${fracText}</span><span class="order-detail-volume">${goods.val} ${unitText}</span></div>`;
               });
             } else { basketHtml = `<p style="color:var(--text-muted); font-style:italic; margin:0; font-size:13px;">В чеке нет позиций.</p>`; }
-            
             let deliveryBoxHtml = "";
             if (client.address || client.note) {
               let addrLine = client.address ? `<div class="delivery-line addr-line">📍 Адрес: ${client.address}</div>` : "";
               let noteLine = client.note ? `<div class="delivery-line time-alert">⏱️ Напоминалка: ${client.note}</div>` : "";
               deliveryBoxHtml = `<div class="delivery-info-box">${noteLine}${addrLine}</div>`;
             }
-            
             container.innerHTML += `
               <div class="client-item-card">
                 <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
@@ -283,7 +376,6 @@
                 <div class="client-order-details" id="details_${index}">${basketHtml}</div>
               </div>`;
           });
-          
           summaryContainer.innerHTML = `<div class="total-summary-badge">📊 Всего клиентов на ${selectedDay}: <span style="color:var(--success-color); font-size:17px; font-weight:800;">${totalClientsCount} чел.</span></div>`;
         } else {
           container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">🚫 На этот день пока никто не записан.</p>`;
@@ -291,7 +383,6 @@
         }
         document.body.removeChild(script); delete window[callbackName];
       };
-      
       const script = document.createElement('script');
       script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
       document.body.appendChild(script);
