@@ -382,7 +382,7 @@
       document.body.appendChild(script);
     }
 
-    function toggleOrderDetail(index, event) {
+      function toggleOrderDetail(index, event) {
       if (event.target.closest('.crm-mini-btn')) return;
       const detailsBlock = document.getElementById(`details_${index}`);
       if (detailsBlock) {
@@ -391,53 +391,81 @@
       }
     }
 
+    // CRM ФУНКЦИЯ №1: ОЖИВЛЕНИЕ КАРАНДАША (ИСПРАВЛЕНЫ ПЕРЕМЕННЫЕ)
     function crmEditClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const selectedDay = document.getElementById('viewDaySelect').value;
+      
       document.getElementById('isEditMode').value = "true";
       document.getElementById('appHeaderTitle').innerText = "✏️ Изменение: " + client.name;
       document.getElementById('btnMainSave').innerText = "🆙 Обновить запись в базе";
+      
       document.getElementById('day').value = selectedDay;
       document.getElementById('client').value = client.name;
       document.getElementById('client').readOnly = true;
       document.getElementById('addressInput').value = client.address;
       document.getElementById('noteInput').value = client.note;
+      
       basket = [];
       if(client.basket && client.basket.length > 0) {
         client.basket.forEach(goods => {
-          let sVal = goods.sub; if (Array.isArray(goods.sub)) { sVal = goods.sub.join(" / "); }
-          basket.push({ id: Date.now() + Math.random(), cat: goods.cat, main: goods.name, sub: sVal, value: goods.val });
+          basket.push({ 
+            id: Date.now() + Math.random(), 
+            cat: goods.cat, 
+            main: goods.name, 
+            sub: goods.sub, 
+            value: goods.val 
+          });
         });
       }
-      renderBasket(); switchTab('orderScreen');
+      renderBasket(); 
+      switchTab('orderScreen');
     }
 
+    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАПИСИ (БРОНЕБОЙНЫЙ ОБХОД CORS БЕЗ ПОТЕРИ ДАННЫХ)
     function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const oldDay = document.getElementById('viewDaySelect').value;
-      const newDay = prompt("🔄 Введите день недели:", oldDay);
+      const newDay = prompt("🔄 Введите день недели для переноса (Понедельник, Вторник, Среда, Четверг, Пятница, Будущая неделя):", oldDay);
       if (!newDay) return;
-      if (confirm("Перенести клиента " + client.name + "?")) {
-        fetch(GOOGLE_WEBHOOK_URL, {
-          method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "moveClient", client: client.name, oldDay: oldDay, newDay: newDay })
-        });
-        alert("🚀 Заказ перенесен!"); setTimeout(() => { loadClientsForDay(); }, 500);
+      
+      if (confirm("Перенести клиента " + client.name + " с дня " + oldDay + " на " + newDay + "?")) {
+        // Упаковываем данные в нативный URL-формат, который Apple никогда не заблокирует
+        const payload = new URLSearchParams();
+        payload.append('action', 'moveClient');
+        payload.append('client', client.name);
+        payload.append('oldDay', oldDay);
+        payload.append('newDay', newDay);
+
+        const formScript = document.createElement('script');
+        formScript.src = GOOGLE_WEBHOOK_URL + '?' + payload.toString();
+        document.body.appendChild(formScript);
+        
+        alert("🚀 Запрос на перенос отправлен в таблицу!"); 
+        setTimeout(() => { loadClientsForDay(); document.body.removeChild(formScript); }, 1000);
       }
     }
 
+    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ КЛИЕНТА (ОБХОД CORS)
     function crmDeleteClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const selectedDay = document.getElementById('viewDaySelect').value;
-      if (confirm("🗑️ Удалить клиента " + client.name + "?")) {
-        fetch(GOOGLE_WEBHOOK_URL, {
-          method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "deleteClient", client: client.name, day: selectedDay })
-        });
-        alert("🗑️ Клиент удален!"); setTimeout(() => { loadClientsForDay(); }, 500);
+      
+      if (confirm("🗑️ Полностью удалить клиента " + client.name + " и очистить столбец?")) {
+        const payload = new URLSearchParams();
+        payload.append('action', 'deleteClient');
+        payload.append('client', client.name);
+        payload.append('day', selectedDay);
+
+        const formScript = document.createElement('script');
+        formScript.src = GOOGLE_WEBHOOK_URL + '?' + payload.toString();
+        document.body.appendChild(formScript);
+        
+        alert("🗑️ Запрос на удаление отправлен в таблицу!"); 
+        setTimeout(() => { loadClientsForDay(); document.body.removeChild(formScript); }, 1000);
       }
     }
     renderBasket();
