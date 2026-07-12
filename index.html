@@ -48,15 +48,12 @@
     .basket-sub { font-size: 13px; color: var(--text-muted); }
     .btn-inline-del { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--danger-color); font-size: 14px; font-weight: 600; cursor: pointer; }
     
-    /* НОВЫЙ UX ПЛИТОК КЛИЕНТОВ С ПАНЕЛЬЮ СЮРПРИЗОВ CRM */
     .client-item-card { background-color: #2c2c2e; border-radius: 12px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border-color); box-sizing: border-box; }
-    .client-main-row { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .client-main-row { display: flex; justify-content: space-between; align-items: center; }
     .client-title { font-size: 16px; font-weight: 700; color: #fff; }
     .client-right-block { display: flex; align-items: center; gap: 8px; }
     
-    /* СТИЛЬНЫЕ ИКОНКИ УПРАВЛЕНИЯ CRM ДЛЯ АЙФОНА */
-    .crm-mini-btn { width: 34px; height: 34px; border-radius: 8px; border: none; display: flex; align-items: center; justify-content: center; font-size: 15px; cursor: pointer; transition: transform 0.1s ease; }
-    .crm-mini-btn:active { transform: scale(0.9); }
+    .crm-mini-btn { width: 34px; height: 34px; border-radius: 8px; border: none; display: flex; align-items: center; justify-content: center; font-size: 15px; cursor: pointer; }
     .crm-edit { background-color: rgba(255, 149, 0, 0.15); color: #ff9500; }
     .crm-move { background-color: rgba(175, 82, 222, 0.15); color: #af52de; }
     .crm-delete { background-color: rgba(255, 69, 58, 0.15); color: #ff453a; }
@@ -86,7 +83,6 @@
     <!-- ЭКРАН №1: ОФОРМЛЕНИЕ И РЕДАКТИРОВАНИЕ ЗАКАЗА -->
     <div id="orderScreen">
       <div class="card">
-        <!-- Скрытый индикатор, чтобы код понимал, это новый клиент или редактирование старого -->
         <input type="hidden" id="isEditMode" value="false">
         
         <div class="form-group">
@@ -148,7 +144,7 @@
       </div>
     </div>
 
-    <!-- ЭКРАН №2: СПИСОК ЗАПИСЕЙ И КАРТОЧКИ CRM -->
+    <!-- ЭКРАН №2: ПРОСМОТР СПИСКА КЛИЕНТОВ НА ДЕНЬ -->
     <div id="clientsScreen" style="display: none;">
       <div class="card">
         <div class="form-group">
@@ -174,7 +170,10 @@
     </div>
   </div>
   <script>
-    // СЮДА ЖЕСТКО СКОПИРУЙ И ВСТАВЬ СВОЙ URL ВЕБХУКА ТАБЛИЦЫ, КОТОРЫЙ ЗАКАНЧИВАЕТСЯ НА /exec
+    const tg = window.Telegram.WebApp;
+    if (tg) { tg.expand(); tg.ready(); }
+
+    // СЮДА ЖЕСТКО ВСТАВЬ СВОЙ URL ВЕБХУКА ТАБЛИЦЫ, КОТОРЫЙ ЗАКАНЧИВАЕТСЯ НА /exec
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwWMPuVD-KuObrI_PQzs3gonyWX4xdYI8P9QlITz3bJGklWu7MoXuqo8BIOCzMTHiIn/exec";
 
     const catalog = {
@@ -219,22 +218,18 @@
 
     let basket = [];
     let currentCategory = "";
-    let loadedClientsRawData = []; // Локальный сейф, чтобы хранить чеки клиентов для карандаша
+    let loadedClientsRawData = [];
 
     function switchTab(screenId) {
       document.getElementById('orderScreen').style.display = (screenId === 'orderScreen') ? 'block' : 'none';
       document.getElementById('clientsScreen').style.display = (screenId === 'clientsScreen') ? 'block' : 'none';
-      
       document.getElementById('tabNewOrder').classList.toggle('active', screenId === 'orderScreen');
       document.getElementById('tabViewClients').classList.toggle('active', screenId === 'clientsScreen');
-      
-      // Сбрасываем режим редактирования при возврате на главный экран
-      if(screenId === 'orderScreen' && document.getElementById('isEditMode').value === 'false') {
+      if (screenId === 'orderScreen' && document.getElementById('isEditMode').value === 'false') {
         document.getElementById('appHeaderTitle').innerText = "🏭 Бойня-Конвейер v4.0";
         document.getElementById('btnMainSave').innerText = "💾 Сохранить весь заказ";
       }
     }
-
     function openProductSelector(catKey) {
       currentCategory = catKey;
       const cat = catalog[catKey];
@@ -243,7 +238,7 @@
       document.getElementById('selectorCard').style.display = "block";
       
       let itemHtml = '<option value="">-- Выбрать из списка --</option>';
-      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>'; });
+      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
       
       const mainSelect = document.getElementById('mainSelect');
       mainSelect.innerHTML = itemHtml;
@@ -253,6 +248,7 @@
       
       document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
     }
+
     function onProductChange() {
       const mainVal = document.getElementById('mainSelect').value;
       const fracGroup = document.getElementById('fractionGroup');
@@ -323,7 +319,6 @@
       basket = basket.filter(item => item.id !== id); 
       renderBasket(); 
     }
-
     function sendEntireOrder() {
       const clientName = document.getElementById('client').value.trim();
       const clientAddress = document.getElementById('addressInput').value.trim();
@@ -349,7 +344,7 @@
             basket: basket 
           })
         });
-        alert(isEdit ? "🎉 Заказ успешно отредактирован и сохранен!" : "🎉 Весь заказ успешно отправлен в таблицу! Склад обновился.");
+        alert(isEdit ? "🎉 Заказ успешно отредактирован!" : "🎉 Весь заказ отправлен в таблицу!");
         
         document.getElementById('isEditMode').value = "false";
         document.getElementById('appHeaderTitle').innerText = "🏭 Бойня-Конвейер v4.0";
@@ -361,18 +356,17 @@
         document.getElementById('client').value = "";
         document.getElementById('addressInput').value = "";
         document.getElementById('noteInput').value = "";
-        
         switchTab('orderScreen');
       }
     }
-    // БЕЗОТКАЗНЫЙ И ЧИСТЫЙ МЕХАНИЗМ ВЫГРУЗКИ БАЗЫ JSONP УРОВНЯ WALLET С КНОПКАМИ УПРАВЛЕНИЯ
+
     function loadClientsForDay() {
       const selectedDay = document.getElementById('viewDaySelect').value;
       const container = document.getElementById('clientsContainer');
       const summaryContainer = document.getElementById('totalDaySummaryContainer');
       
       if (!selectedDay) { 
-        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день отгрузки выше для загрузки списка людей...</p>`; 
+        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день отгрузки выше...</p>`; 
         summaryContainer.innerHTML = "";
         return; 
       }
@@ -385,7 +379,7 @@
       window[callbackName] = function(res) {
         if (res.status === "success" && res.clients && res.clients.length > 0) {
           container.innerHTML = "";
-          loadedClientsRawData = res.clients; // Сохраняем в локальную память для Карандаша
+          loadedClientsRawData = res.clients;
           let totalClientsCount = res.clients.length;
 
           res.clients.forEach((client, index) => {
@@ -396,12 +390,12 @@
                 let fracText = goods.sub ? " (" + goods.sub + ")" : "";
                 basketHtml += `
                   <div class="order-detail-line">
-                    <span>• ${goods.main}${fracText}</span>
-                    <span class="order-detail-volume">${goods.value} ${unitText}</span>
+                    <span>• ${goods.name}${fracText}</span>
+                    <span class="order-detail-volume">${goods.val} ${unitText}</span>
                   </div>`;
               });
             } else {
-              basketHtml = `<p style="color:var(--text-muted); font-style:italic; margin:0; font-size:13px;">В чеке пока нет active позиций.</p>`;
+              basketHtml = `<p style="color:var(--text-muted); font-style:italic; margin:0; font-size:13px;">В чеке пока нет активных позиций.</p>`;
             }
 
             let deliveryBoxHtml = "";
@@ -416,7 +410,6 @@
                 <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
                   <span class="client-title">${index + 1}. ${client.name}</span>
                   <div class="client-right-block">
-                    <!-- НАДЁЖНЫЕ КНОПКИ CRM-КОНТРОЛЯ С ОГРАНИЧЕНИЕМ КЛИКА -->
                     <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
                     <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
                     <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
@@ -447,9 +440,8 @@
       script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
       document.body.appendChild(script);
     }
-
     function toggleOrderDetail(index, event) {
-      if (event.target.closest('.crm-mini-btn')) return; // Защита: не раскрывать чек при нажатии на ✏️ 🔄 🗑️
+      if (event.target.closest('.crm-mini-btn')) return;
       const detailsBlock = document.getElementById(`details_${index}`);
       if (detailsBlock) {
         const isHidden = detailsBlock.style.display === 'none' || detailsBlock.style.display === '';
@@ -457,7 +449,7 @@
       }
     }
 
-    // CRM ФУНКЦИЯ №1: РЕДАКТИРОВАНИЕ СУЩЕСТВУЮЩЕГО ЧЕКА (КАРАНДАШ)
+    // CRM ФУНКЦИЯ №1: РЕДАКТИРОВАНИЕ (КАРАНДАШ)
     function crmEditClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
@@ -469,20 +461,23 @@
       
       document.getElementById('day').value = selectedDay;
       document.getElementById('client').value = client.name;
-      document.getElementById('client').readOnly = true; // Блокируем имя, чтобы не сбить ячейку столбца
+      document.getElementById('client').readOnly = true;
       document.getElementById('addressInput').value = client.address;
       document.getElementById('noteInput').value = client.note;
       
-      // Вытягиваем старую корзину обратно на экран смартфона менеджера
       basket = [];
       if(client.basket && client.basket.length > 0) {
         client.basket.forEach(goods => {
+          let sVal = goods.sub;
+          if (Array.isArray(goods.sub)) {
+            sVal = goods.sub.join(" / ");
+          }
           basket.push({
             id: Date.now() + Math.random(),
             cat: goods.cat,
-            main: goods.main,
-            sub: Array.isArray(goods.sub) ? goods.sub.join(" / ") : goods.sub,
-            value: goods.value
+            main: goods.name,
+            sub: sVal,
+            value: goods.val
           });
         });
       }
@@ -490,7 +485,7 @@
       switchTab('orderScreen');
     }
 
-    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАКАЗА КЛИЕНТА НА ДРУГОЙ ДЕНЬ
+    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАПИСИ
     function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
@@ -519,7 +514,7 @@
       }
     }
 
-    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ КЛИЕНТА И ОЧИСТКА ЯЧЕЕК
+    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ ЗАПИСИ
     function crmDeleteClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
