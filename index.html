@@ -122,6 +122,7 @@
         <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
         <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
       </div>
+      <!-- ВЫЕЗЖАЮЩЕЕ ОКНО ВВОДА ВЕСА/ШТУК -->
       <div class="card" id="selectorCard" style="display: none;">
         <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
         <div class="form-group">
@@ -165,15 +166,18 @@
 
       <div class="section-title">👥 Записанные клиенты</div>
       <div class="card" id="clientsContainer">
-        <p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день отгрузки выше для загрузки списка людей...</p>
+        <p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день...</p>
       </div>
     </div>
   </div>
 
+  <script src="https://telegram.org"></script>
   <script>
-    // ТВОЙ СОБСТВЕННЫЙ АДРЕС ВЕБХУКА ТАБЛИЦЫ, КОТОРЫЙ ТЫ СКОПИРОВАЛ ИЗ APPS SCRIPT
-    const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwWMPuVD-KuObrI_PQzs3gonyWX4xdYI8P9QlITz3bJGklWu7MoXuqo8BIOCzMTHiIn/exec";
+    const tg = window.Telegram.WebApp;
+    if (tg) { tg.expand(); tg.ready(); }
 
+    // СЮДА СТРОГО ВСТАВЬ СВОЙ URL ВЕБХУКА ТАБЛИЦЫ, КОТОРЫЙ ЗАКАНЧИВАЕТСЯ НА /exec
+    const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwWMPuVD-KuObrI_PQzs3gonyWX4xdYI8P9QlITz3bJGklWu7MoXuqo8BIOCzMTHiIn/exec";
     const catalog = {
       dressura: {
         title: "🍖 Новая Дрессура",
@@ -228,7 +232,6 @@
         document.getElementById('btnMainSave').innerText = "💾 Сохранить весь заказ";
       }
     }
-
     function openProductSelector(catKey) {
       currentCategory = catKey;
       const cat = catalog[catKey];
@@ -264,6 +267,7 @@
         fracSelect.innerHTML = ""; 
       }
     }
+
     function addItemToBasket() {
       const mainVal = document.getElementById('mainSelect').value;
       const fracVal = document.getElementById('fractionSelect').value;
@@ -432,48 +436,63 @@
       switchTab('orderScreen');
     }
 
-    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАПИСИ (БРОНЕБОЙНЫЙ ОБХОД CORS БЕЗ ПОТЕРИ ДАННЫХ)
+    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАПИСИ (НАДЁЖНОЕ ОКНО-МЕНЮ И ИСПРАВЛЕННЫЙ ВЕБХУК)
     function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const oldDay = document.getElementById('viewDaySelect').value;
-      const newDay = prompt("🔄 Введите день недели для переноса (Понедельник, Вторник, Среда, Четверг, Пятница, Будущая неделя):", oldDay);
-      if (!newDay) return;
       
-      if (confirm("Перенести клиента " + client.name + " с дня " + oldDay + " на " + newDay + "?")) {
-        const payload = new URLSearchParams();
-        payload.append('action', 'moveClient');
-        payload.append('client', client.name);
-        payload.append('oldDay', oldDay);
-        payload.append('newDay', newDay);
-
-        const formScript = document.createElement('script');
-        formScript.src = GOOGLE_WEBHOOK_URL + '?' + payload.toString();
-        document.body.appendChild(formScript);
-        
-        alert("🚀 Запрос на перенос отправлен в таблицу!"); 
-        setTimeout(() => { loadClientsForDay(); document.body.removeChild(formScript); }, 1000);
+      // Всплывающее меню выбора вместо текстовой клавиатуры
+      let menuText = "🔄 Выберите день для переноса заказа клиента " + client.name + ":\n\n" +
+                     "1 - Понедельник\n2 - Вторник\n3 - Среда\n4 - Четверг\n5 - Пятница\n6 - Будущая неделя";
+      
+      let choice = prompt(menuText, "1");
+      if (!choice) return;
+      
+      let dayMap = {
+        "1": "Понедельник", "2": "Вторник", "3": "Среда", 
+        "4": "Четверг", "5": "Пятница", "6": "Будущая неделя"
+      };
+      
+      let newDay = dayMap[choice.trim()];
+      if (!newDay) { alert("❌ Неверный выбор! Укажите цифру от 1 до 6."); return; }
+      
+      if (confirm("Перенести " + client.name + " с дня " + oldDay + " на " + newDay + "?")) {
+        fetch(GOOGLE_WEBHOOK_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "moveClient",
+            client: client.name,
+            oldDay: oldDay,
+            newDay: newDay
+          })
+        });
+        alert("🚀 Команда переноса отправлена в таблицу!"); 
+        setTimeout(() => { loadClientsForDay(); }, 800);
       }
     }
 
-    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ КЛИЕНТА (ОБХОД CORS)
+    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ КЛИЕНТА (ИСПРАВЛЕННЫЙ ВЕБХУК)
     function crmDeleteClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const selectedDay = document.getElementById('viewDaySelect').value;
       
-      if (confirm("🗑️ Полностью удалить клиента " + client.name + " и очистить столбец?")) {
-        const payload = new URLSearchParams();
-        payload.append('action', 'deleteClient');
-        payload.append('client', client.name);
-        payload.append('day', selectedDay);
-
-        const formScript = document.createElement('script');
-        formScript.src = GOOGLE_WEBHOOK_URL + '?' + payload.toString();
-        document.body.appendChild(formScript);
-        
-        alert("🗑️ Запрос на удаление отправлен в таблицу!"); 
-        setTimeout(() => { loadClientsForDay(); document.body.removeChild(formScript); }, 1000);
+      if (confirm("🗑️ Полностью удалить клиента " + client.name + " и очистить его столбец?")) {
+        fetch(GOOGLE_WEBHOOK_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "deleteClient",
+            client: client.name,
+            day: selectedDay
+          })
+        });
+        alert("🗑️ Команда удаления отправлена в таблицу!"); 
+        setTimeout(() => { loadClientsForDay(); }, 800);
       }
     }
     renderBasket();
