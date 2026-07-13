@@ -34,7 +34,7 @@
     .btn-orange { background-color: #ff9500; } .btn-orange:active { background-color: #e08500; }
     .btn-purple { background-color: #af52de; } .btn-purple:active { background-color: #963ec8; }
     .btn-brown { background-color: #ac8e68; } .btn-brown:active { background-color: #8d7454; }
-    .btn-save { height: 54px; background-color: var(--success-color); font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(48, 209, 88, 0.2); width: 100%; box-sizing: border-box; border: none; cursor: pointer; border-radius: 10px; }
+    .btn-save { height: 54px; background-color: var(--success-color); font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(48, 209, 88, 0.2); width: 100%; box-sizing: border-box; border: none; cursor: pointer; border-radius: 10px; color: #fff; }
     .btn-save:active { background-color: #24b34b; }
     .basket-card { background-color: #2c2c2e; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; border-left: 4px solid var(--accent-color); position: relative; box-sizing: border-box; width: 100%; }
     .basket-card.chew { border-left-color: #ff9500; } .basket-card.other { border-left-color: #af52de; } .basket-card.powder { border-left-color: #ac8e68; } .basket-card.veg { border-left-color: var(--success-color); }
@@ -98,7 +98,6 @@
           <input type="text" id="noteInput" placeholder="Например: Марине до 17:00" autocomplete="off">
         </div>
       </div>
-      
       <div class="section-title">🛒 Корзина заказа</div>
       <div class="card" id="basketContainer"></div>
       
@@ -132,7 +131,6 @@
         <button class="btn-action btn-save" onclick="sendEntireOrder()" id="btnMainSave">💾 Сохранить весь заказ</button>
       </div>
     </div>
-
     <!-- ЭКРАН №2: СПИСОК ЗАПИСЕЙ НА НЕДЕЛЮ -->
     <div id="clientsScreen" style="display: none;">
       <div class="card">
@@ -149,9 +147,7 @@
           </select>
         </div>
       </div>
-
       <div id="totalDaySummaryContainer"></div>
-
       <div class="section-title">👥 Записанные клиенты</div>
       <div class="card" id="clientsContainer">
         <p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день...</p>
@@ -161,12 +157,11 @@
 
   <script src="https://telegram.org"></script>
   <script>
-    // 🌟 ИНИЦИАЛИЗАЦИЯ ИНТЕРНЕТ-ШЛЮЗА И ПОДКЛЮЧЕНИЕ ПЕРЕМЕННЫХ НА САМОМ СТАРТЕ
+    // 🌟 ГЛАВНЫЙ ИНТЕРНЕТ-ШЛЮЗ СЕТИ (ОБЪЯВЛЕН ДО ЛЮБЫХ ФУНКЦИЙ)
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwWMPuVD-KuObrI_PQzs3gonyWX4xdYI8P9QlITz3bJGklWu7MoXuqo8BIOCzMTHiIn/exec";
 
-    // Безопасное подключение Telegram без вылетов на ПК и Айфоне
     let tg = null;
-    try { if (window.Telegram && window.Telegram.WebApp) { tg = window.Telegram.WebApp; tg.expand(); tg.ready(); } } catch(e) { console.log("Открыто в обычном браузере компьютера"); }
+    try { if (window.Telegram && window.Telegram.WebApp) { tg = window.Telegram.WebApp; tg.expand(); tg.ready(); } } catch(e) { console.log("Браузер"); }
     const catalog = {
       dressura: {
         title: "🍖 Новая Дрессура",
@@ -268,6 +263,7 @@
       renderBasket();
       document.getElementById('selectorCard').style.display = "none";
     }
+
     function renderBasket() {
       const container = document.getElementById('basketContainer'); 
       container.innerHTML = "";
@@ -382,6 +378,7 @@
       script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
       document.body.appendChild(script);
     }
+
     function toggleOrderDetail(index, event) {
       if (event.target.closest('.crm-mini-btn')) return;
       const detailsBlock = document.getElementById(`details_${index}`);
@@ -391,7 +388,6 @@
       }
     }
 
-    // CRM ФУНКЦИЯ №1: КАРАНДАШ (РЕДАКТИРОВАНИЕ)
     function crmEditClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
@@ -410,20 +406,12 @@
       basket = [];
       if(client.basket && client.basket.length > 0) {
         client.basket.forEach(goods => {
-          basket.push({ 
-            id: Date.now() + Math.random(), 
-            cat: goods.cat, 
-            main: goods.name, 
-            sub: goods.sub, 
-            value: goods.val 
-          });
+          basket.push({ id: Date.now() + Math.random(), cat: goods.cat, main: goods.name, sub: goods.sub, value: goods.val });
         });
       }
-      renderBasket(); 
-      switchTab('orderScreen');
+      renderBasket(); switchTab('orderScreen');
     }
 
-    // CRM ФУНКЦИЯ №2: ПЕРЕНОС ЗАПИСИ (НАДЁЖНОЕ ОКНО-МЕНЮ И ИСПРАВЛЕННЫЙ ВЕБХУК)
     function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
@@ -435,32 +423,24 @@
       let choice = prompt(menuText, "1");
       if (!choice) return;
       
-      let dayMap = {
-        "1": "Понедельник", "2": "Вторник", "3": "Среда", 
-        "4": "Четверг", "5": "Пятница", "6": "Будущая неделя"
-      };
-      
+      let dayMap = { "1": "Понедельник", "2": "Вторник", "3": "Среда", "4": "Четверг", "5": "Пятница", "6": "Будущая неделя" };
       let newDay = dayMap[choice.trim()];
       if (!newDay) { alert("❌ Неверный выбор! Укажите цифру от 1 до 6."); return; }
       
       if (confirm("Перенести " + client.name + " с дня " + oldDay + " на " + newDay + "?")) {
         const callbackName = 'jsonp_move_' + Math.round(100000 * Math.random());
         window[callbackName] = function(res) {
-          alert("🚀 Заказ успешно перенесен!");
-          loadClientsForDay();
+          alert("🚀 Заказ успешно перенесен!"); loadClientsForDay();
           const activeScriptTag = document.getElementById(callbackName);
           if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
           delete window[callbackName];
         };
-
-        const script = document.createElement('script');
-        script.id = callbackName;
+        const script = document.createElement('script'); script.id = callbackName;
         script.src = GOOGLE_WEBHOOK_URL + '?action=moveClient&client=' + encodeURIComponent(client.name) + '&oldDay=' + encodeURIComponent(oldDay) + '&newDay=' + encodeURIComponent(newDay) + '&callback=' + callbackName;
         document.body.appendChild(script);
       }
     }
 
-    // CRM ФУНКЦИЯ №3: ПОЛНОЕ УДАЛЕНИЕ КЛИЕНТА (ИСПРАВЛЕННЫЙ ВЕБХУК)
     function crmDeleteClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
@@ -469,15 +449,12 @@
       if (confirm("🗑️ Полностью удалить клиента " + client.name + " и очистить его столбец?")) {
         const callbackName = 'jsonp_del_' + Math.round(100000 * Math.random());
         window[callbackName] = function(res) {
-          alert("🗑️ Клиент успешно удален из таблицы!");
-          loadClientsForDay();
+          alert("🗑️ Клиент успешно удален из таблицы!"); loadClientsForDay();
           const activeScriptTag = document.getElementById(callbackName);
           if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
           delete window[callbackName];
         };
-
-        const script = document.createElement('script');
-        script.id = callbackName;
+        const script = document.createElement('script'); script.id = callbackName;
         script.src = GOOGLE_WEBHOOK_URL + '?action=deleteClient&client=' + encodeURIComponent(client.name) + '&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
         document.body.appendChild(script);
       }
