@@ -228,11 +228,112 @@
     }
     .time-wheel-label span { flex: 1; text-align: center; }
     .time-wheel-label span:nth-child(2) { flex: 0 0 18px; }
+    .depot-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .fx-burst {
+      pointer-events: none; position: fixed; inset: 0; z-index: 10001;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fx-burst-ring {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 3px solid var(--success-color);
+      animation: fxPop 0.7s ease-out forwards;
+    }
+    .fx-burst-check {
+      position: absolute; font-size: 42px; font-weight: 800; color: var(--success-color);
+      animation: fxCheck 0.75s ease-out forwards;
+      text-shadow: 0 8px 24px rgba(48,209,88,0.35);
+    }
+    @keyframes fxPop {
+      0% { transform: scale(0.4); opacity: 1; }
+      100% { transform: scale(14); opacity: 0; }
+    }
+    @keyframes fxCheck {
+      0% { transform: scale(0.2) rotate(-12deg); opacity: 0; }
+      40% { transform: scale(1.15) rotate(0deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 0; }
+    }
+    .fx-tyan {
+      position: fixed; inset: 0; z-index: 10002;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+      background: radial-gradient(ellipse at center, rgba(255,120,180,0.35) 0%, rgba(0,0,0,0.88) 70%);
+      animation: tyanFade 2.6s ease-in-out forwards;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .fx-tyan-spark {
+      position: absolute; width: 8px; height: 8px; border-radius: 50%;
+      background: #fff; opacity: 0;
+      animation: sparkFly 1.4s ease-out forwards;
+      box-shadow: 0 0 12px #ffb6e0;
+    }
+    .fx-tyan img {
+      width: min(92vw, 420px); height: auto; max-height: 78vh;
+      object-fit: contain;
+      transform-origin: bottom center;
+      animation: tyanSlam 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      filter: drop-shadow(0 20px 40px rgba(255, 80, 160, 0.45));
+    }
+    .fx-tyan-banner {
+      position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
+      font-size: clamp(22px, 7vw, 34px); font-weight: 800; color: #fff;
+      text-align: center; letter-spacing: -0.3px;
+      text-shadow: 0 4px 24px rgba(255,80,160,0.8), 0 0 40px rgba(255,180,220,0.5);
+      animation: bannerPop 2.6s ease-out forwards;
+      white-space: nowrap;
+      padding: 0 12px;
+    }
+    @keyframes tyanSlam {
+      0% { transform: translateY(110%) scale(0.7) rotate(-6deg); opacity: 0; }
+      18% { transform: translateY(0) scale(1.08) rotate(2deg); opacity: 1; }
+      28% { transform: translateY(0) scale(0.96) rotate(-1deg); }
+      40% { transform: translateY(0) scale(1.02) rotate(0deg); }
+      75% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(18%) scale(0.92) rotate(0deg); opacity: 0; }
+    }
+    @keyframes tyanFade {
+      0% { opacity: 0; }
+      8% { opacity: 1; }
+      78% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    @keyframes bannerPop {
+      0% { opacity: 0; transform: translateX(-50%) scale(0.5) translateY(-20px); }
+      15% { opacity: 1; transform: translateX(-50%) scale(1.12) translateY(0); }
+      25% { transform: translateX(-50%) scale(0.96) translateY(0); }
+      70% { opacity: 1; transform: translateX(-50%) scale(1) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) scale(1.05) translateY(-10px); }
+    }
+    @keyframes sparkFly {
+      0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+      20% { opacity: 1; }
+      100% { transform: translate(var(--sx), var(--sy)) scale(0); opacity: 0; }
+    }
+    .card.fx-success {
+      animation: cardFlash 0.65s ease;
+    }
+    @keyframes cardFlash {
+      0% { box-shadow: 0 0 0 0 rgba(48,209,88,0.55); }
+      100% { box-shadow: 0 0 0 18px rgba(48,209,88,0); }
+    }
+    .courier-row.just-done {
+      animation: rowDone 0.55s ease;
+      border-color: rgba(48,209,88,0.55);
+      background: rgba(48,209,88,0.12);
+    }
+    @keyframes rowDone {
+      0% { transform: scale(0.98); }
+      50% { transform: scale(1.015); }
+      100% { transform: scale(1); }
+    }
+    .route-badge {
+      display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 6px; margin-top: 4px; background: rgba(255,149,0,0.15); color: #ff9500;
+    }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v5.4</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v5.6</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -258,7 +359,17 @@
         </div>
         <div class="form-group">
           <label>Адрес доставки</label>
-          <input type="text" id="addressInput" placeholder="Улица, дом, квартира" autocomplete="off">
+          <input type="text" id="addressInput" placeholder="Улица, дом, квартира или город" autocomplete="off" onblur="onAddressBlur()">
+          <div class="field-hint">Если не Минск / дальше 20 км — спросим Европочту или Белпочту</div>
+        </div>
+        <div class="form-group" id="deliveryMethodGroup" style="display:none;">
+          <label>Как доставляем (за Минском)</label>
+          <div class="seg-row">
+            <button type="button" class="seg-btn" id="delivEuro" onclick="setDeliveryMethod('euro')">Европочта</button>
+            <button type="button" class="seg-btn" id="delivBel" onclick="setDeliveryMethod('bel')">Белпочта</button>
+            <button type="button" class="seg-btn" id="delivCourier" onclick="setDeliveryMethod('courier')">Курьер</button>
+          </div>
+          <div class="field-hint" id="deliveryMethodHint">Для почты в маршрут попадёт ближайшее отделение к точке выезда</div>
         </div>
         <div class="form-group">
           <label>Примечание курьеру</label>
@@ -343,8 +454,12 @@
         </div>
         <div class="form-group">
           <label>Точка выезда в Минске</label>
-          <input type="text" id="depotAddress" placeholder="улица и дом, напр. Куйбышева 15" autocomplete="street-address" onchange="saveDepotAddress()" onblur="saveDepotAddress()">
-          <div class="field-hint">Пишите просто улицу и дом — «Минск» подставится сам</div>
+          <div class="depot-presets">
+            <button type="button" class="seg-btn" id="depotPreset0" onclick="applyDepotPreset('Шаранговича 36')">Шаранговича 36</button>
+            <button type="button" class="seg-btn" id="depotPreset1" onclick="applyDepotPreset('Белецкого 10к2')">Белецкого 10к2</button>
+          </div>
+          <input type="text" id="depotAddress" placeholder="или свой адрес: улица и дом" autocomplete="street-address" onchange="saveDepotAddress()" onblur="saveDepotAddress()">
+          <div class="field-hint">Базовые адреса сверху или свой — «Минск» подставится сам</div>
         </div>
         <div class="form-group">
           <label>Курьеров сегодня</label>
@@ -384,6 +499,42 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
+    const APP_VERSION = "v5.6";
+    const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
+    const MINSK_RADIUS_KM = 20;
+    const DEPOT_PRESETS = ["Шаранговича 36", "Белецкого 10к2"];
+    const POST_OFFICES = {
+      euro: [
+        { address: "Минск, ул. Монтажников, 2", lat: 53.8695, lon: 27.4855 },
+        { address: "Минск, ул. Неманская, 67", lat: 53.9538, lon: 27.4335 },
+        { address: "Минск, ул. 50 лет Победы, 5а", lat: 53.9385, lon: 27.4860 },
+        { address: "Минск, ул. Мележа, 5", lat: 53.9380, lon: 27.5905 },
+        { address: "Минск, ул. Притыцкого, 29", lat: 53.9085, lon: 27.4540 },
+        { address: "Минск, ул. Казимировская, 6", lat: 53.8470, lon: 27.4765 },
+        { address: "Минск, ул. Плеханова, 38", lat: 53.8665, lon: 27.6200 },
+        { address: "Минск, пр. Дзержинского, 104", lat: 53.8465, lon: 27.4820 },
+        { address: "Минск, пр. Рокоссовского, 99", lat: 53.8705, lon: 27.6010 },
+        { address: "Минск, ул. Уманская, 54", lat: 53.8910, lon: 27.4470 },
+        { address: "Минск, ул. Есенина, 76", lat: 53.8415, lon: 27.5155 },
+        { address: "Минск, ул. Казинца, 52а", lat: 53.8560, lon: 27.5120 },
+        { address: "Минск, ул. Маяковского, 154", lat: 53.8690, lon: 27.6205 },
+        { address: "Минск, ул. Гошкевича, 3", lat: 53.8440, lon: 27.4700 },
+        { address: "Минск, ул. Алибегова, 13", lat: 53.8890, lon: 27.5305 }
+      ],
+      bel: [
+        { address: "Минск, пр. Независимости, 10", lat: 53.9005, lon: 27.5620 },
+        { address: "Минск, ул. Притыцкого, 91", lat: 53.9095, lon: 27.4300 },
+        { address: "Минск, ул. Якуба Коласа, 51", lat: 53.9280, lon: 27.5850 },
+        { address: "Минск, пр. Партизанский, 6", lat: 53.8840, lon: 27.5805 },
+        { address: "Минск, ул. Тимирязева, 65", lat: 53.9275, lon: 27.5080 },
+        { address: "Минск, ул. Сурганова, 43", lat: 53.9285, lon: 27.5955 },
+        { address: "Минск, пр. Дзержинского, 23", lat: 53.8800, lon: 27.5100 },
+        { address: "Минск, ул. Рафиева, 60", lat: 53.8455, lon: 27.4505 },
+        { address: "Минск, ул. Каховская, 27", lat: 53.8700, lon: 27.6500 },
+        { address: "Минск, ул. Ложинская, 22", lat: 53.9530, lon: 27.6050 }
+      ]
+    };
+    let selectedDeliveryMethod = null;
 
     // Пока всем 4 вкладки. Позже: "manager" | "cutter" | "courier" | "all"
     const APP_ROLE = "all";
@@ -463,6 +614,46 @@
       showToast._t = setTimeout(function () { el.classList.remove("show"); }, 2200);
     }
 
+    function celebrateSuccess(kind) {
+      try { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success"); } catch (e) {}
+
+      // Полный экран с тянкой — только когда клиент записан
+      if (kind === "save") {
+        const old = document.getElementById("fxTyanOverlay");
+        if (old) old.remove();
+        const wrap = document.createElement("div");
+        wrap.id = "fxTyanOverlay";
+        wrap.className = "fx-tyan";
+        wrap.innerHTML =
+          '<div class="fx-tyan-banner">Клиент записан!</div>' +
+          '<img src="assets/celebrate-tyan.png" alt="" draggable="false">';
+        for (let i = 0; i < 18; i++) {
+          const sx = (Math.random() * 280 - 140) + "px";
+          const sy = (-80 - Math.random() * 220) + "px";
+          const left = (8 + Math.random() * 84) + "%";
+          const top = (55 + Math.random() * 35) + "%";
+          const delay = (Math.random() * 0.45) + "s";
+          const sp = document.createElement("div");
+          sp.className = "fx-tyan-spark";
+          sp.style.left = left;
+          sp.style.top = top;
+          sp.style.setProperty("--sx", sx);
+          sp.style.setProperty("--sy", sy);
+          sp.style.animationDelay = delay;
+          wrap.appendChild(sp);
+        }
+        document.body.appendChild(wrap);
+        setTimeout(function () { wrap.remove(); }, 2700);
+        return;
+      }
+
+      const wrap = document.createElement("div");
+      wrap.className = "fx-burst";
+      wrap.innerHTML = '<div class="fx-burst-ring"></div><div class="fx-burst-check">✓</div>';
+      document.body.appendChild(wrap);
+      setTimeout(function () { wrap.remove(); }, 800);
+    }
+
     function closeModal(result) {
       const overlay = document.getElementById("modalOverlay");
       overlay.classList.remove("open");
@@ -520,6 +711,32 @@
       const res = await p;
       recoverUiFocus();
       return !!res;
+    }
+
+    async function uiChoiceAsync(title, message, choices) {
+      const buttons = (choices || []).map(function (c, i) {
+        return '<button class="btn-action ' + (c.cls || "btn-blue") + '" type="button" data-choice="' + i + '">' +
+          escapeHtml(c.label) + "</button>";
+      }).join("");
+      const p = openModal(
+        '<div class="modal-title">' + escapeHtml(title || "Выбор") + "</div>" +
+        '<div class="modal-text">' + escapeHtml(String(message || "")) + "</div>" +
+        '<div class="modal-actions">' + buttons +
+          '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Отмена</button>' +
+        "</div>"
+      );
+      setTimeout(function () {
+        document.querySelectorAll("[data-choice]").forEach(function (btn) {
+          btn.onclick = function () {
+            closeModal(choices[Number(btn.getAttribute("data-choice"))].value);
+          };
+        });
+        const cancel = document.getElementById("modalCancel");
+        if (cancel) cancel.onclick = function () { closeModal(null); };
+      }, 0);
+      const res = await p;
+      recoverUiFocus();
+      return res;
     }
 
     async function uiPickMoveDay(clientName) {
@@ -627,7 +844,7 @@
       document.querySelectorAll(".tab-link").forEach(el => el.classList.toggle("active", el.dataset.screen === screenId));
       document.getElementById(screenId).classList.add("active");
       if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
-        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.4";
+        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
         document.getElementById("btnMainSave").innerText = "Сохранить заказ";
       }
     }
@@ -754,12 +971,36 @@
 
     async function sendEntireOrder() {
       const clientName = document.getElementById("client").value.trim();
-      const clientAddress = document.getElementById("addressInput").value.trim();
-      const clientNote = document.getElementById("noteInput").value.trim();
+      let clientAddress = document.getElementById("addressInput").value.trim();
+      let clientNote = document.getElementById("noteInput").value.trim();
       const day = document.getElementById("day").value;
       const isEdit = document.getElementById("isEditMode").value === "true";
       if (!clientName) { await uiAlertAsync("Введите имя клиента"); return; }
       if (!basket.length) { await uiAlertAsync("Корзина пуста"); return; }
+
+      const outside = await isOutsideMinskDelivery(clientAddress);
+      if (outside) {
+        document.getElementById("deliveryMethodGroup").style.display = "block";
+        if (!selectedDeliveryMethod) {
+          const picked = await uiChoiceAsync(
+            "Доставка за Минском",
+            "Адрес вне Минска или дальше 20 км. Как доставляем? Курьером физически не возим — обычно Европочта или Белпочта.",
+            [
+              { label: "Европочта", value: "euro", cls: "btn-green" },
+              { label: "Белпочта", value: "bel", cls: "btn-blue" },
+              { label: "Всё же курьер", value: "courier", cls: "" }
+            ]
+          );
+          if (!picked) return;
+          setDeliveryMethod(picked);
+        }
+        clientNote = applyDeliveryTag(clientNote, selectedDeliveryMethod);
+      } else {
+        clientNote = stripDeliveryTags(clientNote);
+        selectedDeliveryMethod = null;
+        document.getElementById("deliveryMethodGroup").style.display = "none";
+      }
+
       const okConfirm = await uiConfirmAsync(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"));
       if (!okConfirm) return;
 
@@ -793,15 +1034,24 @@
           await uiAlertAsync("Имя/адрес могли записаться, но позиции не нашлись в таблице. Проверьте Deploy Code.gs.");
           return;
         }
+        celebrateSuccess("save");
+        const card = document.querySelector("#orderScreen .card");
+        if (card) {
+          card.classList.remove("fx-success");
+          void card.offsetWidth;
+          card.classList.add("fx-success");
+        }
         showToast(isEdit ? ("Заказ обновлён (" + found.basket.length + " поз.)") : ("Заказ сохранён (" + found.basket.length + " поз.)"));
         document.getElementById("isEditMode").value = "false";
         document.getElementById("client").readOnly = false;
         document.getElementById("client").value = "";
         document.getElementById("addressInput").value = "";
         document.getElementById("noteInput").value = "";
+        selectedDeliveryMethod = null;
+        document.getElementById("deliveryMethodGroup").style.display = "none";
         basket = [];
         renderBasket();
-        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.4";
+        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
       } catch (err) {
         await uiAlertAsync("Ошибка: " + (err.message || err));
       } finally {
@@ -876,7 +1126,15 @@
       document.getElementById("client").value = client.name;
       document.getElementById("client").readOnly = true;
       document.getElementById("addressInput").value = client.address || "";
-      document.getElementById("noteInput").value = client.note || "";
+      document.getElementById("noteInput").value = stripDeliveryTags(client.note || "");
+      const dm = parseDeliveryMethod(client.note || "");
+      selectedDeliveryMethod = dm;
+      if (dm) {
+        document.getElementById("deliveryMethodGroup").style.display = "block";
+        setDeliveryMethod(dm);
+      } else {
+        document.getElementById("deliveryMethodGroup").style.display = "none";
+      }
       basket = (client.basket || []).map(g => ({
         id: Date.now() + Math.random(),
         cat: g.cat || "other",
@@ -1053,6 +1311,15 @@
       if (!client) return;
       client.delivered = delivered;
       refreshCourierSummary();
+      if (delivered) {
+        celebrateSuccess("deliver");
+        const rows = document.querySelectorAll("#courierContainer .courier-row");
+        if (rows[index]) {
+          rows[index].classList.remove("just-done");
+          void rows[index].offsetWidth;
+          rows[index].classList.add("just-done");
+        }
+      }
       try {
         await apiPost({ action: "setDelivered", day: day, client: client.name, delivered: delivered });
       } catch (e) {
@@ -1062,18 +1329,118 @@
       }
     }
 
+    function stripDeliveryTags(note) {
+      return String(note || "")
+        .replace(/\[ЕВРОПОЧТА\]/gi, "")
+        .replace(/\[БЕЛПОЧТА\]/gi, "")
+        .replace(/\[КУРЬЕР\]/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    }
+
+    function applyDeliveryTag(note, method) {
+      const clean = stripDeliveryTags(note);
+      const tag = method === "euro" ? "[ЕВРОПОЧТА]" : method === "bel" ? "[БЕЛПОЧТА]" : method === "courier" ? "[КУРЬЕР]" : "";
+      return (tag + (clean ? " " + clean : "")).trim();
+    }
+
+    function parseDeliveryMethod(note) {
+      const n = String(note || "");
+      if (/\[ЕВРОПОЧТА\]/i.test(n)) return "euro";
+      if (/\[БЕЛПОЧТА\]/i.test(n)) return "bel";
+      if (/\[КУРЬЕР\]/i.test(n)) return "courier";
+      return null;
+    }
+
+    function setDeliveryMethod(method) {
+      selectedDeliveryMethod = method;
+      const map = { euro: "delivEuro", bel: "delivBel", courier: "delivCourier" };
+      Object.keys(map).forEach(function (k) {
+        const el = document.getElementById(map[k]);
+        if (el) el.classList.toggle("active", k === method);
+      });
+      const hint = document.getElementById("deliveryMethodHint");
+      if (hint) {
+        hint.textContent = method === "euro"
+          ? "В маршрут встанет ближайшая Европочта к точке выезда"
+          : method === "bel"
+            ? "В маршрут встанет ближайшая Белпочта к точке выезда"
+            : "Повезём по адресу клиента (редко за Минском)";
+      }
+    }
+
+    function looksLikeOtherCity(addr) {
+      return /(брест|гродн|гомел|витебск|могил[её]в|борисов|жодино|молодечн|баранович|пинск|орша|полоцк|лида|слоним|бобруйск|солигорск|слуцк|дзержинск|фанипол|смолевич|светлогорск|жлобин|речиц|новополоцк|мозыр)/i.test(addr);
+    }
+
+    function geocodeQuery(addr) {
+      const a = String(addr || "").trim();
+      if (!a) return "";
+      if (looksLikeOtherCity(a) || /минск/i.test(a)) {
+        return /беларусь/i.test(a) ? a : ("Беларусь, " + a);
+      }
+      return "Беларусь, " + DEFAULT_CITY + ", " + a;
+    }
+
+    async function isOutsideMinskDelivery(addr) {
+      const a = String(addr || "").trim();
+      if (!a) return false;
+      if (looksLikeOtherCity(a)) return true;
+      const geo = await geocodeAddress(a, true);
+      if (!geo) return false;
+      return haversineKm(MINSK_CENTER, geo) > MINSK_RADIUS_KM;
+    }
+
+    async function onAddressBlur() {
+      const addr = document.getElementById("addressInput").value.trim();
+      if (!addr) {
+        document.getElementById("deliveryMethodGroup").style.display = "none";
+        return;
+      }
+      const outside = await isOutsideMinskDelivery(addr);
+      const group = document.getElementById("deliveryMethodGroup");
+      if (!outside) {
+        group.style.display = "none";
+        selectedDeliveryMethod = null;
+        return;
+      }
+      group.style.display = "block";
+      if (!selectedDeliveryMethod) {
+        const picked = await uiChoiceAsync(
+          "Доставка за Минском",
+          "Этот адрес вне Минска или дальше 20 км. Как доставляем?",
+          [
+            { label: "Европочта", value: "euro", cls: "btn-green" },
+            { label: "Белпочта", value: "bel", cls: "btn-blue" },
+            { label: "Курьер", value: "courier", cls: "" }
+          ]
+        );
+        if (picked) setDeliveryMethod(picked);
+      }
+    }
+
+    function applyDepotPreset(addr) {
+      const el = document.getElementById("depotAddress");
+      if (el) el.value = addr;
+      saveDepotAddress();
+      DEPOT_PRESETS.forEach(function (p, i) {
+        const btn = document.getElementById("depotPreset" + i);
+        if (btn) btn.classList.toggle("active", p === addr);
+      });
+      showToast("Выезд: " + addr);
+    }
+
     function normalizeAddressForMaps(addr) {
       const a = String(addr || "").trim();
       if (!a) return "";
-      if (/минск/i.test(a)) return a;
+      if (/минск/i.test(a) || looksLikeOtherCity(a)) return a;
       return DEFAULT_CITY + ", " + a;
     }
 
     function getDepotAddress() {
       const el = document.getElementById("depotAddress");
       let v = el ? String(el.value || "").trim() : "";
-      if (!v) return DEFAULT_CITY;
-      // Пользователь пишет улицу и дом — город добавляем сами
+      if (!v) v = DEPOT_PRESETS[0];
       if (!/минск/i.test(v)) v = DEFAULT_CITY + ", " + v;
       return v;
     }
@@ -1083,6 +1450,10 @@
         const el = document.getElementById("depotAddress");
         const raw = el ? String(el.value || "").trim() : "";
         localStorage.setItem(DEPOT_LS_KEY, raw);
+        DEPOT_PRESETS.forEach(function (p, i) {
+          const btn = document.getElementById("depotPreset" + i);
+          if (btn) btn.classList.toggle("active", raw === p || raw === ("Минск, " + p));
+        });
       } catch (e) {}
     }
 
@@ -1092,10 +1463,14 @@
       try {
         const saved = localStorage.getItem(DEPOT_LS_KEY);
         if (saved != null && saved !== "") {
-          // Если раньше сохранили с «Минск, …» — покажем только улицу
           el.value = String(saved).replace(/^минск\s*,\s*/i, "");
+        } else {
+          el.value = DEPOT_PRESETS[0];
         }
-      } catch (e) {}
+      } catch (e) {
+        el.value = DEPOT_PRESETS[0];
+      }
+      saveDepotAddress();
     }
 
     function pad2(n) {
@@ -1232,8 +1607,9 @@
       return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
     }
 
-    async function geocodeAddress(addr) {
-      const key = String(addr || "").trim().toLowerCase();
+    async function geocodeAddress(addr, rawQuery) {
+      const query = rawQuery ? geocodeQuery(addr) : geocodeQuery(normalizeAddressForMaps(addr));
+      const key = String(query || "").trim().toLowerCase();
       if (!key) return null;
       if (routePlanState.geoCache[key]) return routePlanState.geoCache[key];
       try {
@@ -1247,23 +1623,43 @@
         }
       } catch (e) {}
 
-      const q = encodeURIComponent(addr);
-      const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=by&q=" + q;
-      try {
-        const res = await fetch(url, {
-          headers: { "Accept": "application/json" }
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data || !data[0]) return null;
-        const point = { lat: Number(data[0].lat), lon: Number(data[0].lon) };
-        routePlanState.geoCache[key] = point;
-        try { localStorage.setItem("geo:" + key, JSON.stringify(point)); } catch (e2) {}
-        await new Promise(function (r) { setTimeout(r, 1100); });
-        return point;
-      } catch (e3) {
-        return null;
+      const variants = [query];
+      const plain = String(addr || "").trim();
+      if (plain && plain.toLowerCase() !== query.toLowerCase()) variants.push(geocodeQuery(plain));
+      // без квартиры / корпуса
+      const stripped = plain.replace(/,?\s*(кв\.?|квартира)\s*\d+[а-яa-z]?/ig, "").replace(/корп\.?\s*\d+/ig, "").trim();
+      if (stripped && stripped !== plain) variants.push(geocodeQuery(stripped));
+
+      for (let v = 0; v < variants.length; v++) {
+        const q = encodeURIComponent(variants[v]);
+        const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=by&q=" + q;
+        try {
+          const res = await fetch(url, { headers: { "Accept": "application/json" } });
+          if (!res.ok) continue;
+          const data = await res.json();
+          await new Promise(function (r) { setTimeout(r, 1100); });
+          if (!data || !data[0]) continue;
+          const point = { lat: Number(data[0].lat), lon: Number(data[0].lon) };
+          routePlanState.geoCache[key] = point;
+          try { localStorage.setItem("geo:" + key, JSON.stringify(point)); } catch (e2) {}
+          return point;
+        } catch (e3) {}
       }
+      return null;
+    }
+
+    async function nearestPostOffice(kind, depot) {
+      const list = POST_OFFICES[kind] || POST_OFFICES.euro;
+      let best = null;
+      for (let i = 0; i < list.length; i++) {
+        const office = list[i];
+        const geo = { lat: office.lat, lon: office.lon };
+        const d = haversineKm(depot, geo);
+        if (!best || d < best.dist) {
+          best = { address: office.address, lat: office.lat, lon: office.lon, dist: d };
+        }
+      }
+      return best || { address: list[0].address, lat: list[0].lat, lon: list[0].lon, dist: 0 };
     }
 
     function nearestNeighborOrder(depot, stops) {
@@ -1379,31 +1775,55 @@
         return;
       }
 
-      box.innerHTML = '<div class="card"><p class="muted">Считаю точки и время езды…</p></div>';
+      box.innerHTML = '<div class="card"><p class="muted">Считаю точки и отделения…</p></div>';
       const depotAddr = normalizeAddressForMaps(getDepotAddress());
       saveDepotAddress();
 
-      const depotGeo = await geocodeAddress(depotAddr);
-      routePlanState.depot = depotGeo || { lat: 53.9023, lon: 27.5619 };
+      const depotGeo = await geocodeAddress(depotAddr, true);
+      routePlanState.depot = depotGeo || { lat: MINSK_CENTER.lat, lon: MINSK_CENTER.lon };
 
       const stops = [];
       for (let i = 0; i < withAddr.length; i++) {
         const c = withAddr[i];
-        const addr = normalizeAddressForMaps(c.address);
-        box.innerHTML = '<div class="card"><p class="muted">Геокод ' + (i + 1) + "/" + withAddr.length + "…</p></div>";
-        const geo = await geocodeAddress(addr);
-        stops.push({
-          name: c.name,
-          address: addr,
-          note: c.note || "",
-          clientIndex: courierClientsCache.indexOf(c),
-          lat: geo ? geo.lat : null,
-          lon: geo ? geo.lon : null
-        });
+        box.innerHTML = '<div class="card"><p class="muted">Точка ' + (i + 1) + "/" + withAddr.length + "…</p></div>";
+        let method = parseDeliveryMethod(c.note || "");
+        const clientAddr = String(c.address || "").trim();
+        const outside = await isOutsideMinskDelivery(clientAddr);
+        if (!method && outside) method = "euro"; // старые заказы без метки — по умолчанию Европочта
+
+        if (method === "euro" || method === "bel") {
+          const office = await nearestPostOffice(method, routePlanState.depot);
+          stops.push({
+            name: c.name,
+            address: office.address,
+            clientAddress: clientAddr,
+            note: c.note || "",
+            delivery: method,
+            deliveryLabel: method === "euro" ? "Европочта" : "Белпочта",
+            clientIndex: courierClientsCache.indexOf(c),
+            lat: office.lat,
+            lon: office.lon
+          });
+        } else {
+          const addr = normalizeAddressForMaps(clientAddr);
+          const geo = await geocodeAddress(addr, true);
+          stops.push({
+            name: c.name,
+            address: addr,
+            clientAddress: clientAddr,
+            note: c.note || "",
+            delivery: "courier",
+            deliveryLabel: null,
+            clientIndex: courierClientsCache.indexOf(c),
+            lat: geo ? geo.lat : null,
+            lon: geo ? geo.lon : null
+          });
+        }
       }
 
       autoSplitStops(stops);
       renderRoutePlan();
+      celebrateSuccess("route");
       const total = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[0]) +
         estimateRouteMinutes(routePlanState.depot, routePlanState.routes[1]);
       showToast("Готово · суммарно " + formatMinutes(total));
@@ -1425,18 +1845,64 @@
         showToast("В этом маршруте нет адресов");
         return;
       }
-      // Уже оптимизирован (открытый маршрут): старт = выезд, конец не закреплён на «домой»
-      const depotGeo = routePlanState.depot;
       const depotAddr = normalizeAddressForMaps(getDepotAddress());
-      const points = [];
-      if (depotGeo && depotGeo.lat != null) points.push(depotGeo.lat + "," + depotGeo.lon);
-      else points.push(depotAddr);
-      stops.forEach(function (s) {
-        if (s.lat != null && s.lon != null) points.push(s.lat + "," + s.lon);
-        else if (s.address) points.push(s.address);
-      });
+      // Яндекс стабильнее на текстовых адресах пачкой, чем на смеси lat,lon + текст
+      const points = [depotAddr].concat(stops.map(function (s) { return s.address; }).filter(Boolean));
       openExternalLink(buildYandexRouteUrl(points));
-      showToast("Открываю Яндекс.Карты…");
+      showToast("Открываю Яндекс · курьер " + (routeIndex + 1));
+    }
+
+    function buildCourierShareText(routeIndex) {
+      const stops = routePlanState.routes[routeIndex] || [];
+      const depot = routePlanState.depot;
+      const depart = parseDepartTime();
+      const mins = estimateRouteMinutes(depot, stops);
+      let t = "Курьер " + (routeIndex + 1) + " · " + formatMinutes(mins) + "\n";
+      t += "Выезд: " + normalizeAddressForMaps(getDepotAddress()) + "\n";
+      t += "Время выезда: " + pad2(departHour) + ":" + pad2(departMinute) + "\n\n";
+      stops.forEach(function (s, i) {
+        const eta = etaShortForMsg(depot, stops, i, depart);
+        t += (i + 1) + ". " + s.name;
+        if (s.deliveryLabel) t += " (" + s.deliveryLabel + ")";
+        t += "\n" + s.address;
+        if (s.clientAddress && s.deliveryLabel) t += "\nклиент: " + s.clientAddress;
+        t += "\nоколо " + eta + "\n\n";
+      });
+      t += "Яндекс: " + buildYandexRouteUrl([normalizeAddressForMaps(getDepotAddress())].concat(stops.map(function (s) { return s.address; })));
+      return t.trim();
+    }
+
+    async function shareCourierRoute(routeIndex) {
+      const text = buildCourierShareText(routeIndex);
+      if (!text || !(routePlanState.routes[routeIndex] || []).length) {
+        showToast("Сначала соберите маршруты");
+        return;
+      }
+      try {
+        if (tg && typeof tg.openTelegramLink === "function") {
+          tg.openTelegramLink("https://t.me/share/url?text=" + encodeURIComponent(text));
+          return;
+        }
+      } catch (e) {}
+      try {
+        if (navigator.share) {
+          await navigator.share({ text: text });
+          return;
+        }
+      } catch (e2) {}
+      showToast((await copyText(text)) ? "Маршрут скопирован — отправьте 2-му курьеру" : "Не скопировалось");
+    }
+
+    async function inviteSecondCourierPick() {
+      const link = "https://konchaarsenia-a11y.github.io/superboyna/app.html";
+      const text = "Открой мини-апп Бойня → вкладка Курьер → выбери день и собери свой маршрут.\n" + link;
+      try {
+        if (tg && typeof tg.openTelegramLink === "function") {
+          tg.openTelegramLink("https://t.me/share/url?url=" + encodeURIComponent(link) + "&text=" + encodeURIComponent("Открой Курьер в Бойне и собери маршрут"));
+          return;
+        }
+      } catch (e) {}
+      showToast((await copyText(text)) ? "Ссылка скопирована" : "Не скопировалось");
     }
 
     function personNameForMsg(name) {
@@ -1521,9 +1987,12 @@
             html += '<div class="route-stop">';
             html += '<div class="route-stop-top">';
             html += '<div><div class="route-stop-name">' + (i + 1) + ". " + escapeHtml(s.name) + "</div>";
-            html += '<div class="route-stop-addr">' + escapeHtml(s.address) +
-              (s.lat == null ? " · <span style=\"color:#ff9500\">без точных координат</span>" : "") +
-              "</div></div>";
+            html += '<div class="route-stop-addr">' + escapeHtml(s.address) + "</div>";
+            if (s.deliveryLabel) {
+              html += '<div class="route-badge">' + escapeHtml(s.deliveryLabel) +
+                (s.clientAddress ? (" → " + escapeHtml(s.clientAddress)) : "") + "</div>";
+            }
+            html += "</div>";
             if (canMove) {
               html += '<button type="button" class="route-mini" onclick="moveStopBetweenRoutes(' + r + "," + i + "," + other + ')">→ ' + (other + 1) + "</button>";
             }
@@ -1532,14 +2001,16 @@
         }
 
         html += '<div class="route-actions">';
-        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Яндекс.Карты · курьер ' + (r + 1) + "</button>";
-        html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Тексты Instagram · курьер ' + (r + 1) + "</button>";
+        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Яндекс · курьер ' + (r + 1) + "</button>";
+        html += '<button class="btn-action btn-blue" type="button" onclick="shareCourierRoute(' + r + ')">Отправить курьеру ' + (r + 1) + "</button>";
+        html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Тексты Instagram · ' + (r + 1) + "</button>";
         html += "</div></div>";
       }
 
       if (count === 2) {
         html = '<div class="total-summary-badge">Суммарно по двоим ' + formatMinutes(totalMin) +
-          " · можно жать «→ 2» / «→ 1» чтобы перекинуть точку</div>" + html;
+          " · «→» перекинуть точку · «Отправить» — маршрут второму</div>" + html;
+        html += '<button class="btn-action" type="button" style="background:#3a3a3c;margin-bottom:10px;" onclick="inviteSecondCourierPick()">Пригласить 2-го собрать адреса в мини-аппе</button>';
       } else {
         html = '<div class="total-summary-badge">Общее время маршрута ' + formatMinutes(totalMin) + "</div>" + html;
       }
@@ -1641,7 +2112,7 @@
       }).join("");
 
       const p = openModal(
-        '<div class="modal-title">Маршрут · v5.4</div>' +
+        '<div class="modal-title">Маршрут · v5.6</div>' +
         '<div class="modal-text">Пачка в Яндекс — в оптимальном порядке (без возврата на склад). Если пусто — Google ниже.</div>' +
         '<div class="modal-actions" style="margin-bottom:12px;">' +
           '<button class="btn-action btn-green" type="button" id="mapsYandex">Открыть маршрут (Яндекс)</button>' +

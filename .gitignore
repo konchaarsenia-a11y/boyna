@@ -1,0 +1,6 @@
+.git
+secrets.local.md
+.env
+*.local.md
+.DS_Store
+Thumbs.db
