@@ -435,7 +435,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.7</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.8</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -615,7 +615,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.7";
+    const APP_VERSION = "v6.8";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -665,7 +665,11 @@
       timerId: null,
       day: "",
       pollId: null,
-      fingerprint: ""
+      fingerprint: "",
+      pendingWrites: 0,
+      quietUntil: 0,
+      celebrateCutTimer: null,
+      celebrateCutQueued: 0
     };
     let routePlanState = {
       courierCount: 1,
@@ -1473,6 +1477,11 @@
         }
         const fp = cuttingFingerprint(res.items, res.session);
         applyRemoteCuttingSession(res.session || { active: false, day: day, startedAt: 0 });
+        // пока идут локальные сохранения — не перетираем галочки ответом сервера
+        if (fromPoll && (cuttingSession.pendingWrites > 0 || Date.now() < cuttingSession.quietUntil)) {
+          tickCuttingTimer();
+          return;
+        }
         if (fromPoll && fp === cuttingSession.fingerprint) {
           tickCuttingTimer();
           return;
@@ -1534,7 +1543,7 @@
         const screen = document.getElementById("cuttingScreen");
         if (!screen || !screen.classList.contains("active")) return;
         loadCutting(true);
-      }, 3500);
+      }, 15000);
     }
 
     function stopCuttingPoll() {
@@ -1542,6 +1551,31 @@
         clearInterval(cuttingSession.pollId);
         cuttingSession.pollId = null;
       }
+    }
+
+    function markCuttingWriteStart() {
+      cuttingSession.pendingWrites++;
+      cuttingSession.quietUntil = Date.now() + 18000;
+    }
+
+    function markCuttingWriteEnd() {
+      cuttingSession.pendingWrites = Math.max(0, cuttingSession.pendingWrites - 1);
+      cuttingSession.quietUntil = Date.now() + 12000;
+      cuttingSession.fingerprint = cuttingFingerprint(cuttingItemsCache, {
+        active: cuttingSession.active, day: cuttingSession.day, startedAt: cuttingSession.startedAt
+      });
+    }
+
+    /** Одна анимация на пачку галочек «Нарезано», а не на каждую */
+    function queueCelebrateCut() {
+      cuttingSession.celebrateCutQueued++;
+      if (cuttingSession.celebrateCutTimer) clearTimeout(cuttingSession.celebrateCutTimer);
+      cuttingSession.celebrateCutTimer = setTimeout(function () {
+        cuttingSession.celebrateCutTimer = null;
+        const n = cuttingSession.celebrateCutQueued;
+        cuttingSession.celebrateCutQueued = 0;
+        if (n > 0) celebrateSuccess("cut");
+      }, 1100);
     }
 
     function cutSortRank(item) {
@@ -1714,25 +1748,29 @@
 
     async function toggleCutLaid(row, laid) {
       const day = document.getElementById("cuttingDaySelect").value;
-      await apiPost({ action: "updateCutting", day: day, row: row, laid: laid });
       const cached = cuttingItemsCache.find(function (x) { return Number(x.row) === Number(row); });
       if (cached) cached.laid = !!laid;
       reorderCuttingDom();
-      cuttingSession.fingerprint = cuttingFingerprint(cuttingItemsCache, {
-        active: cuttingSession.active, day: cuttingSession.day, startedAt: cuttingSession.startedAt
-      });
+      markCuttingWriteStart();
+      try {
+        await apiPost({ action: "updateCutting", day: day, row: row, laid: laid });
+      } finally {
+        markCuttingWriteEnd();
+      }
     }
 
     async function toggleCutDone(row, done) {
       const day = document.getElementById("cuttingDaySelect").value;
-      await apiPost({ action: "updateCutting", day: day, row: row, done: done });
       const cached = cuttingItemsCache.find(function (x) { return Number(x.row) === Number(row); });
       if (cached) cached.done = !!done;
       reorderCuttingDom();
-      cuttingSession.fingerprint = cuttingFingerprint(cuttingItemsCache, {
-        active: cuttingSession.active, day: cuttingSession.day, startedAt: cuttingSession.startedAt
-      });
-      if (done) celebrateSuccess("cut");
+      if (done) queueCelebrateCut();
+      markCuttingWriteStart();
+      try {
+        await apiPost({ action: "updateCutting", day: day, row: row, done: done });
+      } finally {
+        markCuttingWriteEnd();
+      }
     }
 
     async function toggleCutOutNext(row) {
@@ -1744,7 +1782,6 @@
         : await uiConfirmAsync("Снять пометку дефицита на следующую нарезку?");
       if (!ok) return;
       const day = document.getElementById("cuttingDaySelect").value;
-      await apiPost({ action: "updateCutting", day: day, row: row, outNext: next });
       cached.outNext = next;
       const el = document.getElementById("cut_" + row);
       if (el) {
@@ -1752,13 +1789,26 @@
         const bang = el.querySelector(".cut-bang");
         if (bang) bang.classList.toggle("active", next);
       }
+      markCuttingWriteStart();
+      try {
+        await apiPost({ action: "updateCutting", day: day, row: row, outNext: next });
+      } finally {
+        markCuttingWriteEnd();
+      }
       showToast(next ? "Помечено: нет на следующую" : "Пометка снята");
     }
 
     async function saveCutSurplus(row) {
       const day = document.getElementById("cuttingDaySelect").value;
       const surplus = Number(document.getElementById("surplus_" + row).value) || 0;
-      await apiPost({ action: "updateCutting", day: day, row: row, surplus: surplus });
+      const cached = cuttingItemsCache.find(function (x) { return Number(x.row) === Number(row); });
+      if (cached) cached.surplus = surplus;
+      markCuttingWriteStart();
+      try {
+        await apiPost({ action: "updateCutting", day: day, row: row, surplus: surplus });
+      } finally {
+        markCuttingWriteEnd();
+      }
       showToast("Излишек сохранён");
       recoverUiFocus();
     }
