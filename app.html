@@ -25,8 +25,13 @@
     .app {
       padding: 16px;
       padding-top: calc(16px + var(--safe-top));
-      padding-bottom: calc(48px + var(--safe-bottom));
+      padding-bottom: calc(72px + var(--safe-bottom));
       max-width: 640px; margin: 0 auto;
+    }
+    .bottom-spacer {
+      height: calc(28px + var(--safe-bottom));
+      width: 100%;
+      pointer-events: none;
     }
     .modal-overlay {
       display: none; position: fixed; inset: 0; z-index: 9999;
@@ -271,6 +276,8 @@
       <div id="courierSummary"></div>
       <div id="courierContainer"><p class="muted">Выберите день...</p></div>
     </div>
+
+    <div class="bottom-spacer" aria-hidden="true"></div>
   </div>
 
   <div class="modal-overlay" id="modalOverlay" onclick="onModalOverlayClick(event)">
@@ -302,8 +309,41 @@
           if (tg.setHeaderColor) tg.setHeaderColor("#121212");
           if (tg.setBackgroundColor) tg.setBackgroundColor("#121212");
         } catch (e) {}
+        // Если открыли из списка чатов на весь экран — выходим из fullscreen,
+        // чтобы системные кнопки не наезжали (Bot API 8+). Иначе увеличим отступы.
+        try {
+          if (tg.isFullscreen && typeof tg.exitFullscreen === "function") {
+            tg.exitFullscreen();
+          }
+        } catch (e) {}
       }
     } catch (e) {}
+
+    function applyTelegramSafeArea() {
+      var top = 12;
+      var bottom = 20;
+      try {
+        if (tg) {
+          var sa = tg.safeAreaInset || {};
+          var csa = tg.contentSafeAreaInset || {};
+          top = Math.max(top, Number(sa.top) || 0, Number(csa.top) || 0);
+          bottom = Math.max(bottom, Number(sa.bottom) || 0, Number(csa.bottom) || 0);
+          if (tg.isFullscreen) bottom = Math.max(bottom, 34);
+          // На многих Android в Telegram env() = 0 — запас под жестовую/3-кнопочную панель
+          bottom = Math.max(bottom, 28);
+        }
+      } catch (e) {}
+      document.documentElement.style.setProperty("--safe-top", top + "px");
+      document.documentElement.style.setProperty("--safe-bottom", bottom + "px");
+    }
+
+    applyTelegramSafeArea();
+    if (tg && typeof tg.onEvent === "function") {
+      ["safeAreaChanged", "contentSafeAreaChanged", "fullscreenChanged", "viewportChanged"].forEach(function (ev) {
+        try { tg.onEvent(ev, applyTelegramSafeArea); } catch (e) {}
+      });
+    }
+    window.addEventListener("resize", applyTelegramSafeArea);
 
     let modalResolver = null;
 
@@ -897,8 +937,24 @@
       return DEFAULT_CITY + ", " + a;
     }
 
+    function getAppBaseUrl() {
+      try {
+        const path = location.pathname.replace(/[^/]*$/, "");
+        return location.origin + path;
+      } catch (e) {
+        return "https://konchaarsenia-a11y.github.io/superboyna/";
+      }
+    }
+
+    function buildYandexRouteUrl(addrs) {
+      const u = new URL("https://yandex.ru/maps/");
+      u.searchParams.set("mode", "routes");
+      u.searchParams.set("rtt", "auto");
+      u.searchParams.set("rtext", addrs.join("~"));
+      return u.toString();
+    }
+
     function openExternalLink(url) {
-      // В Telegram Mini App на телефоне window.open часто блокируется
       try {
         if (tg && typeof tg.openLink === "function") {
           tg.openLink(url, { try_instant_view: false });
@@ -930,16 +986,22 @@
         await uiAlertAsync("Нет адресов для маршрута. Сначала загрузите день и заполните адреса у клиентов.");
         return;
       }
-      // HTTPS-ссылка Яндекс.Карт (открывается через Telegram.openLink на телефоне)
-      const rtext = addrs.map(a => encodeURIComponent(a)).join("~");
-      const url = "https://yandex.ru/maps/?rtext=~" + rtext + "&rtt=auto";
-      const ok = openExternalLink(url);
-      if (!ok) await uiAlertAsync("Не удалось открыть карты. Скопируйте адреса вручную.");
+
+      // На телефоне Яндекс.Приложение часто открывается «пустым» по deep link.
+      // Открываем промежуточную страницу maps.html — там кнопка строит маршрут с адресами.
+      const bridge = getAppBaseUrl() + "maps.html#" + encodeURIComponent(addrs.join("|"));
+      const ok = openExternalLink(bridge);
+      if (!ok) {
+        // запасной путь — прямая ссылка Яндекса
+        openExternalLink(buildYandexRouteUrl(addrs));
+      }
+      showToast("Откройте кнопку «Построить маршрут» на странице");
       recoverUiFocus();
     }
 
     renderBasket();
     applyRoleTabs();
+    applyTelegramSafeArea();
     recoverUiFocus();
   </script>
 </body>
