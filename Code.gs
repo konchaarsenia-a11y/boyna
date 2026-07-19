@@ -477,8 +477,12 @@ function doGet(e) {
   if (action === "sendCourierRoute") {
     return handleSendCourierRoute({
       telegramId: e.parameter.telegramId || e.parameter.chatId || e.parameter.id || "",
-      text: e.parameter.text ? decodeURIComponent(e.parameter.text) : ""
+      text: e.parameter.text ? decodeURIComponent(e.parameter.text) : "",
+      ticket: e.parameter.ticket || ""
     }, callback, false);
+  }
+  if (action === "telegramStatus") {
+    return handleTelegramStatus(callback, false);
   }
 
   // delete / move доступны и через GET (JSONP из mini-app)
@@ -519,8 +523,14 @@ function handleApiAction(json, callback, fromPost) {
   if (action === "sendCourierRoute") {
     return handleSendCourierRoute(json, callback, fromPost);
   }
+  if (action === "prepareCourierRoute") {
+    return handlePrepareCourierRoute(json, callback, fromPost);
+  }
   if (action === "suggestAddress") {
     return handleSuggestAddress(json, callback, fromPost);
+  }
+  if (action === "telegramStatus") {
+    return handleTelegramStatus(callback, fromPost);
   }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
@@ -819,13 +829,13 @@ function handleSaveOrder(ss, json, callback) {
     }
   });
 
-  checkLiveDeficitAndNotify();
+  // Telegram-проверку склада не зовём на каждый save — сильно тормозит запись
   return jsonpText(callback, { status: "success" });
 }
 
 /** Сопоставление позиции мини-аппа со строкой листа (с фракцией). */
 function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
-  var nameU = rawName.toUpperCase().replace(/\s*ШТ\.?/g, "").trim();
+  var nameU = normalizeProductAlias_(String(rawName || "").toUpperCase().replace(/\s*ШТ\.?/g, "").trim());
   if (nameU.indexOf(" / ") > -1) {
     var parts = nameU.split(" / ");
     nameU = parts[0].trim();
@@ -863,12 +873,15 @@ function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
         .replace(/\s*КРУПНОЕ/g, "")
         .trim();
     }
+    sheetBase = normalizeProductAlias_(sheetBase);
 
     var nameMatch =
       sheetBase === nameU ||
       sheetBase.indexOf(nameU) === 0 ||
       nameU.indexOf(sheetBase) === 0 ||
-      sheetFull.indexOf(nameU) === 0;
+      sheetFull.indexOf(nameU) === 0 ||
+      (nameU.length >= 4 && sheetBase.indexOf(nameU) > -1) ||
+      (sheetBase.length >= 4 && nameU.indexOf(sheetBase) > -1);
     if (!nameMatch) continue;
 
     var score = 1;
@@ -887,6 +900,23 @@ function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
     }
   }
   return bestScore > 0 ? bestIdx : -1;
+}
+
+/** Опечатки / варианты написания в таблице */
+function normalizeProductAlias_(nameU) {
+  var n = String(nameU || "").trim();
+  var aliases = {
+    "ГРУШЫ": "ГРУШИ",
+    "ГРУША": "ГРУШИ",
+    "ГРУШ": "ГРУШИ",
+    "ЯБЛОКО": "ЯБЛОКИ",
+    "ЯБЛОК": "ЯБЛОКИ",
+    "БАНАН": "БАНАНЫ",
+    "МОРКОВКА": "МОРКОВЬ",
+    "МОРКОВИ": "МОРКОВЬ"
+  };
+  if (aliases[n]) return aliases[n];
+  return n;
 }
 
 function normalizeFraction(s) {
@@ -1157,13 +1187,15 @@ function getTelegramToken_() {
 
 function telegramSendText_(chatId, text) {
   var token = getTelegramToken_();
-  if (!token || !chatId) return { ok: false, error: "no_token_or_chat" };
+  var id = chatId != null ? String(chatId).trim() : "";
+  if (!token) return { ok: false, error: "no_token_or_chat", message: "no_token", description: "Нет TELEGRAM_BOT_TOKEN в Script Properties" };
+  if (!id) return { ok: false, error: "no_token_or_chat", message: "no_chat", description: "Пустой chat id курьера" };
   var res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
     method: "post",
     contentType: "application/json",
     payload: JSON.stringify({
-      chat_id: String(chatId),
-      text: String(text || "").slice(0, 4000),
+      chat_id: id,
+      text: String(text || "").slice(0, 3500),
       disable_web_page_preview: false
     }),
     muteHttpExceptions: true
@@ -1252,14 +1284,50 @@ function handleGetCouriers(callback, fromPost) {
 function handleSendCourierRoute(json, callback, fromPost) {
   var chatId = json.telegramId || json.chatId || json.id;
   var text = json.text || "";
+  // Короткий текст можно передать; длинный — через ticket в CacheService
+  if (json.ticket) {
+    try {
+      var cached = CacheService.getScriptCache().get("route_" + String(json.ticket));
+      if (cached) text = cached;
+    } catch (e) {}
+  }
   if (!chatId || !text) {
-    var bad = { status: "error", message: "need_id_and_text" };
+    var bad = { status: "error", message: !chatId ? "no_chat" : "need_id_and_text" };
     return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
   }
   var result = telegramSendText_(chatId, text);
   var body = result && result.ok
     ? { status: "success" }
-    : { status: "error", message: (result && (result.description || result.error)) || "send_failed", raw: result };
+    : {
+        status: "error",
+        message: (result && (result.description || result.message || result.error)) || "send_failed",
+        raw: result
+      };
+  return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+}
+
+function handlePrepareCourierRoute(json, callback, fromPost) {
+  var text = String(json.text || "");
+  if (!text) {
+    var bad = { status: "error", message: "empty_text" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var ticket = String(Date.now()) + "_" + String(Math.floor(Math.random() * 1e6));
+  try {
+    CacheService.getScriptCache().put("route_" + ticket, text.slice(0, 90000), 300);
+  } catch (e) {
+    var err = { status: "error", message: "cache_failed" };
+    return fromPost ? jsonpText(callback, err) : jsonp(callback, err);
+  }
+  var ok = { status: "success", ticket: ticket };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleTelegramStatus(callback, fromPost) {
+  var body = {
+    status: "success",
+    hasToken: !!getTelegramToken_()
+  };
   return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
 }
 

@@ -375,7 +375,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.2</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.3</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -545,7 +545,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.2";
+    const APP_VERSION = "v6.3";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -668,24 +668,19 @@
       try { document.activeElement.blur(); } catch (e) {}
     }
 
-    // Свайп / скролл — убираем клавиатуру (iOS Telegram часто её держит)
+// Клавиатура: убираем только при явном свайпе вниз по странице, не при наборе
     let _kbTouchY = null;
     document.addEventListener("touchstart", function (e) {
       _kbTouchY = e.touches && e.touches[0] ? e.touches[0].clientY : null;
     }, { passive: true });
     document.addEventListener("touchmove", function (e) {
       if (!isEditableFocus() || _kbTouchY == null) return;
-      const y = e.touches && e.touches[0] ? e.touches[0].clientY : _kbTouchY;
-      if (Math.abs(y - _kbTouchY) > 12) dismissKeyboard();
+      var t = e.target;
+      if (t && t.closest && t.closest("#addressSuggest, .addr-suggest, .modal-overlay, input, textarea, select")) return;
+      var y = e.touches && e.touches[0] ? e.touches[0].clientY : _kbTouchY;
+      // только заметный свайп вниз
+      if ((y - _kbTouchY) > 40) dismissKeyboard();
     }, { passive: true });
-    document.addEventListener("scroll", function () { dismissKeyboard(); }, true);
-    document.addEventListener("touchend", function (e) {
-      if (!isEditableFocus()) return;
-      const t = e.target;
-      if (t && (t.closest("input, textarea, select, button, .seg-btn, .modal-overlay, label"))) return;
-      dismissKeyboard();
-    }, { passive: true });
-
     function showToast(msg) {
       const el = document.getElementById("appToast");
       el.textContent = msg;
@@ -920,7 +915,6 @@
     }
 
     function switchTab(screenId) {
-      dismissKeyboard();
       document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
       document.querySelectorAll(".tab-link").forEach(el => el.classList.toggle("active", el.dataset.screen === screenId));
       document.getElementById(screenId).classList.add("active");
@@ -1109,7 +1103,7 @@
 
       try {
         await apiPost(payload);
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 700));
         const check = await apiGet({ action: "getClients", day: day });
         const found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
         const okPositions = found && found.basket && found.basket.length > 0;
@@ -1581,7 +1575,7 @@
         clearAddressSuggest();
         return;
       }
-      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 350);
+      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 280);
     }
 
     function onAddressBlurDelayed() {
@@ -1595,37 +1589,102 @@
       var seq = ++addressSuggestSeq;
       var box = document.getElementById("addressSuggest");
       if (!box) return;
+      var cacheKey = "asuggest:" + q.toLowerCase();
       try {
-        var res = await apiGet({ action: "suggestAddress", text: q });
-        if (seq !== addressSuggestSeq) return;
-        var list = (res && res.results) || [];
-        if (!list.length) {
-          box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — уточните улицу и дом</div>';
-          box.classList.add("open");
-          return;
+        var cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          var parsed = JSON.parse(cached);
+          if (parsed && parsed.length && seq === addressSuggestSeq) {
+            renderAddressSuggestList(box, parsed);
+            return;
+          }
         }
-        box.innerHTML = list.map(function (item, i) {
-          return '<button type="button" class="addr-suggest-item" data-idx="' + i + '">' +
-            escapeHtml(item.title || item.address || "") +
-            (item.subtitle ? '<span class="addr-suggest-sub">' + escapeHtml(item.subtitle) + "</span>" : "") +
-            "</button>";
-        }).join("");
-        box._items = list;
-        box.classList.add("open");
-        box.querySelectorAll(".addr-suggest-item").forEach(function (btn) {
-          btn.onmousedown = function (e) { e.preventDefault(); };
-          btn.onclick = function () {
-            var it = list[Number(btn.getAttribute("data-idx"))];
-            if (!it) return;
-            pickAddressSuggest(it);
-          };
-        });
-      } catch (e) {
-        if (seq !== addressSuggestSeq) return;
-        clearAddressSuggest();
+      } catch (e0) {}
+      box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу адрес…</div>';
+      box.classList.add("open");
+      var list = [];
+      try {
+        list = await photonSuggestClient(q);
+      } catch (e1) {}
+      if ((!list || !list.length) && seq === addressSuggestSeq) {
+        try {
+          var res = await apiGet({ action: "suggestAddress", text: q });
+          list = (res && res.results) || [];
+        } catch (e2) {}
       }
+      if (seq !== addressSuggestSeq) return;
+      if (!list.length) {
+        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — попробуйте «улица дом» или «Минск, …»</div>';
+        box.classList.add("open");
+        return;
+      }
+      try { localStorage.setItem(cacheKey, JSON.stringify(list.slice(0, 8))); } catch (e3) {}
+      renderAddressSuggestList(box, list);
     }
 
+    function renderAddressSuggestList(box, list) {
+      box._items = list;
+      box.innerHTML = list.map(function (item, i) {
+        return '<button type="button" class="addr-suggest-item" data-idx="' + i + '">' +
+          escapeHtml(item.title || item.address || "") +
+          (item.subtitle ? '<span class="addr-suggest-sub">' + escapeHtml(item.subtitle) + "</span>" : "") +
+          "</button>";
+      }).join("");
+      box.classList.add("open");
+      box.querySelectorAll(".addr-suggest-item").forEach(function (btn) {
+        btn.onmousedown = function (e) { e.preventDefault(); };
+        btn.onclick = function () {
+          var it = list[Number(btn.getAttribute("data-idx"))];
+          if (it) pickAddressSuggest(it);
+        };
+      });
+    }
+
+    async function photonSuggestClient(text) {
+      var q = String(text || "").trim();
+      if (!q) return [];
+      if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(q)) q = q + ", Минск";
+      var url = "https://photon.komoot.io/api/?limit=7&lang=ru&lat=53.9&lon=27.56&q=" + encodeURIComponent(q);
+      var res = await fetch(url);
+      if (!res.ok) return [];
+      var data = await res.json();
+      var features = (data && data.features) || [];
+      var out = [];
+      var seen = {};
+      features.forEach(function (f) {
+        var coords = (f.geometry && f.geometry.coordinates) || [];
+        if (coords.length < 2) return;
+        var lon = Number(coords[0]);
+        var lat = Number(coords[1]);
+        if (!isFinite(lat) || !isFinite(lon)) return;
+        if (Math.abs(lat - 53.9) > 1.2 || Math.abs(lon - 27.56) > 1.5) {
+          if (!/брест|гродн|гомел|витебск|могил|борисов|жодино/i.test(text)) return;
+        }
+        var p = f.properties || {};
+        var parts = [];
+        if (p.name) parts.push(String(p.name));
+        if (p.street && p.street !== p.name) parts.push(String(p.street));
+        if (p.housenumber) parts.push(String(p.housenumber));
+        var title = parts.length ? parts.join(", ") : String(p.name || p.street || "Адрес");
+        var subParts = [];
+        if (p.district) subParts.push(String(p.district));
+        if (p.city || p.town || p.village) subParts.push(String(p.city || p.town || p.village));
+        var subtitle = subParts.join(", ") || "Минск";
+        var address = title + (subtitle ? (", " + subtitle) : "");
+        var keyDup = lat.toFixed(5) + "," + lon.toFixed(5);
+        if (seen[keyDup]) return;
+        seen[keyDup] = true;
+        out.push({
+          title: title,
+          subtitle: subtitle,
+          address: address,
+          lat: lat,
+          lon: lon,
+          yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
+        });
+      });
+      return out;
+    }
     function pickAddressSuggest(item) {
       document.getElementById("addressInput").value = item.address || item.title || "";
       selectedAddressGeo = {
@@ -2222,22 +2281,42 @@
             const c = couriers[Number(btn.getAttribute("data-idx"))];
             if (!c) return;
             btn.disabled = true;
+            var id = String(c.id || "").trim();
+            if (!id) { showToast("Пустой id курьера"); btn.disabled = false; return; }
+            var st = null;
+            try { st = await apiGet({ action: "telegramStatus" }); } catch (e) {}
+            if (st && st.hasToken === false) {
+              await uiAlertAsync("Бот не настроен: в Apps Script → Project Settings → Script properties добавьте TELEGRAM_BOT_TOKEN (токен от BotFather).");
+              btn.disabled = false;
+              return;
+            }
+            // Короткий текст для надёжного GET; полный — POST
+            var shortText = text;
+            if (shortText.length > 900) {
+              shortText = text.split("\n\n").slice(0, 8).join("\n\n").slice(0, 900) + "\n…";
+            }
+            var sendRes = null;
             try {
-              const sendRes = await apiGet({
-                action: "sendCourierRoute",
-                telegramId: String(c.id),
-                text: text
-              });
-              if (!sendRes || sendRes.status !== "success") {
-                showToast("Не дошло: " + ((sendRes && sendRes.message) || "ошибка бота"));
-                btn.disabled = false;
-                return;
-              }
+              sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, text: shortText });
+            } catch (e2) {}
+            if (!sendRes || sendRes.status !== "success") {
+              try { await apiPost({ action: "sendCourierRoute", telegramId: id, text: text }); } catch (e3) {}
               await new Promise(function (r) { setTimeout(r, 700); });
-              showToast("Отправлено: " + (c.name || c.username || c.id));
+              // повторная короткая проверка
+              try {
+                sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, text: "Маршрут Бойня отправлен. Открой предыдущее сообщение или мини-апп." });
+              } catch (e4) {}
+            }
+            if (sendRes && sendRes.status === "success") {
+              showToast("Отправлено: " + (c.name || c.username || id));
               closeModal(true);
-            } catch (err) {
-              showToast("Не отправилось — обновите Code.gs в Apps Script");
+            } else {
+              var msg = (sendRes && (sendRes.message || sendRes.description)) || "no_token_or_chat";
+              if (/token/i.test(String(msg))) {
+                await uiAlertAsync("Нет TELEGRAM_BOT_TOKEN в Script Properties. Добавьте токен бота и задеплойте Code.gs.");
+              } else {
+                showToast("Не дошло: " + msg);
+              }
               btn.disabled = false;
             }
           };
@@ -2369,7 +2448,6 @@
       } else {
         html = '<div class="total-summary-badge">Общее время маршрута ' + formatMinutes(totalMin) + "</div>" + html;
       }
-      html += '<button class="btn-action btn-blue" type="button" onclick="copyAllIgMessages()">Скопировать все тексты клиентам</button>';
       box.innerHTML = html;
     }
 
