@@ -353,11 +353,29 @@
     }
     .ig-bubble-actions { margin-top: 6px; }
     .ig-bubble-actions .route-mini { height: 28px; font-size: 11px; }
+    .addr-suggest-wrap { position: relative; }
+    .addr-suggest {
+      display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 40;
+      margin-top: 4px; max-height: 220px; overflow: auto;
+      background: #2c2c2e; border: 1px solid var(--border-color); border-radius: 10px;
+    }
+    .addr-suggest.open { display: block; }
+    .addr-suggest-item {
+      width: 100%; text-align: left; border: none; border-bottom: 1px solid #3a3a3c;
+      background: transparent; color: #fff; padding: 10px 12px; font-size: 14px; cursor: pointer;
+    }
+    .addr-suggest-item:last-child { border-bottom: none; }
+    .addr-suggest-item:active, .addr-suggest-item:hover { background: #3a3a3c; }
+    .addr-suggest-sub { display: block; font-size: 12px; color: #8e8e93; margin-top: 2px; }
+    .addr-picked {
+      margin-top: 6px; font-size: 12px; color: var(--success-color); display: none;
+    }
+    .addr-picked.show { display: block; }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.0</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.1</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -381,12 +399,16 @@
           <label>Ник / Имя клиента</label>
           <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
         </div>
-        <div class="form-group">
+                <div class="form-group">
           <label>Адрес доставки</label>
-          <input type="text" id="addressInput" placeholder="Улица, дом, квартира или город" autocomplete="off" onblur="onAddressBlur()">
-          <div class="field-hint">Если не Минск / дальше 20 км — спросим Европочту или Белпочту</div>
+          <div class="addr-suggest-wrap">
+            <input type="text" id="addressInput" placeholder="Начните вводить — выберите из списка как в Яндексе" autocomplete="off" oninput="onAddressInput()" onblur="onAddressBlurDelayed()">
+            <div class="addr-suggest" id="addressSuggest"></div>
+          </div>
+          <div class="addr-picked" id="addressPickedHint">Адрес выбран из Яндекса — координаты сохранены</div>
+          <div class="field-hint">Выберите вариант из подсказок — тогда маршрут в Яндекс откроется точно. Если не Минск / дальше 20 км — спросим почту.</div>
         </div>
-        <div class="form-group" id="deliveryMethodGroup" style="display:none;">
+<div class="form-group" id="deliveryMethodGroup" style="display:none;">
           <label>Как доставляем (за Минском)</label>
           <div class="seg-row">
             <button type="button" class="seg-btn" id="delivEuro" onclick="setDeliveryMethod('euro')">Европочта</button>
@@ -523,7 +545,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.0";
+    const APP_VERSION = "v6.1";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -560,6 +582,9 @@
       ]
     };
     let selectedDeliveryMethod = null;
+    let selectedAddressGeo = null; // {lat, lon, address, yandexUrl}
+    let addressSuggestTimer = null;
+    let addressSuggestSeq = 0;
 
     // Пока всем 4 вкладки. Позже: "manager" | "cutter" | "courier" | "all"
     const APP_ROLE = "all";
@@ -1057,6 +1082,8 @@
         document.getElementById("deliveryMethodGroup").style.display = "none";
       }
 
+      clientNote = applyGeoTags(clientNote, selectedAddressGeo);
+
       const okConfirm = await uiConfirmAsync(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"));
       if (!okConfirm) return;
 
@@ -1103,6 +1130,8 @@
         document.getElementById("client").value = "";
         document.getElementById("addressInput").value = "";
         document.getElementById("noteInput").value = "";
+        selectedAddressGeo = null;
+        setAddressPickedHint(false);
         selectedDeliveryMethod = null;
         document.getElementById("deliveryMethodGroup").style.display = "none";
         basket = [];
@@ -1182,7 +1211,16 @@
       document.getElementById("client").value = client.name;
       document.getElementById("client").readOnly = true;
       document.getElementById("addressInput").value = client.address || "";
-      document.getElementById("noteInput").value = stripDeliveryTags(client.note || "");
+      const rawNote = client.note || "";
+      const geo = parseGeoFromNote(rawNote);
+      selectedAddressGeo = geo ? {
+        lat: geo.lat,
+        lon: geo.lon,
+        address: client.address || "",
+        yandexUrl: parseYandexUrlFromNote(rawNote) || ("https://yandex.ru/maps/?pt=" + geo.lon + "," + geo.lat + "&z=17&l=map")
+      } : null;
+      setAddressPickedHint(!!selectedAddressGeo);
+      document.getElementById("noteInput").value = stripDeliveryTags(rawNote);
       const dm = parseDeliveryMethod(client.note || "");
       selectedDeliveryMethod = dm;
       if (dm) {
@@ -1395,6 +1433,8 @@
         .replace(/\[ЕВРОПОЧТА\]/gi, "")
         .replace(/\[БЕЛПОЧТА\]/gi, "")
         .replace(/\[КУРЬЕР\]/gi, "")
+        .replace(/\[GEO:[^\]]+\]/gi, "")
+        .replace(/\[YMAPS:[^\]]+\]/gi, "")
         .replace(/\s{2,}/g, " ")
         .trim();
     }
@@ -1489,6 +1529,115 @@
         if (btn) btn.classList.toggle("active", p === addr);
       });
       showToast("Выезд: " + addr);
+    }
+
+
+    function parseGeoFromNote(note) {
+      const m = String(note || "").match(/\[GEO:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\]/i);
+      if (!m) return null;
+      return { lat: Number(m[1]), lon: Number(m[2]) };
+    }
+
+    function parseYandexUrlFromNote(note) {
+      const m = String(note || "").match(/\[YMAPS:(https:\/\/[^\]]+)\]/i);
+      return m ? m[1] : "";
+    }
+
+    function stripGeoTags(note) {
+      return String(note || "")
+        .replace(/\[GEO:[^\]]+\]/gi, "")
+        .replace(/\[YMAPS:[^\]]+\]/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    }
+
+    function applyGeoTags(note, geo) {
+      var clean = stripGeoTags(note);
+      if (!geo || geo.lat == null || geo.lon == null) return clean;
+      var tags = "[GEO:" + geo.lat + "," + geo.lon + "]";
+      if (geo.yandexUrl) tags += " [YMAPS:" + geo.yandexUrl + "]";
+      return (clean + " " + tags).trim();
+    }
+
+    function setAddressPickedHint(on) {
+      var el = document.getElementById("addressPickedHint");
+      if (el) el.classList.toggle("show", !!on);
+    }
+
+    function clearAddressSuggest() {
+      var box = document.getElementById("addressSuggest");
+      if (box) {
+        box.classList.remove("open");
+        box.innerHTML = "";
+      }
+    }
+
+    function onAddressInput() {
+      selectedAddressGeo = null;
+      setAddressPickedHint(false);
+      var q = document.getElementById("addressInput").value.trim();
+      clearTimeout(addressSuggestTimer);
+      if (q.length < 2) {
+        clearAddressSuggest();
+        return;
+      }
+      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 350);
+    }
+
+    function onAddressBlurDelayed() {
+      setTimeout(function () {
+        clearAddressSuggest();
+        onAddressBlur();
+      }, 250);
+    }
+
+    async function fetchAddressSuggest(q) {
+      var seq = ++addressSuggestSeq;
+      var box = document.getElementById("addressSuggest");
+      if (!box) return;
+      try {
+        var res = await apiGet({ action: "suggestAddress", text: q });
+        if (seq !== addressSuggestSeq) return;
+        var list = (res && res.results) || [];
+        if (!list.length) {
+          box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — уточните улицу и дом</div>';
+          box.classList.add("open");
+          return;
+        }
+        box.innerHTML = list.map(function (item, i) {
+          return '<button type="button" class="addr-suggest-item" data-idx="' + i + '">' +
+            escapeHtml(item.title || item.address || "") +
+            (item.subtitle ? '<span class="addr-suggest-sub">' + escapeHtml(item.subtitle) + "</span>" : "") +
+            "</button>";
+        }).join("");
+        box._items = list;
+        box.classList.add("open");
+        box.querySelectorAll(".addr-suggest-item").forEach(function (btn) {
+          btn.onmousedown = function (e) { e.preventDefault(); };
+          btn.onclick = function () {
+            var it = list[Number(btn.getAttribute("data-idx"))];
+            if (!it) return;
+            pickAddressSuggest(it);
+          };
+        });
+      } catch (e) {
+        if (seq !== addressSuggestSeq) return;
+        clearAddressSuggest();
+      }
+    }
+
+    function pickAddressSuggest(item) {
+      document.getElementById("addressInput").value = item.address || item.title || "";
+      selectedAddressGeo = {
+        lat: item.lat,
+        lon: item.lon,
+        address: item.address || item.title || "",
+        yandexUrl: item.yandexUrl || ("https://yandex.ru/maps/?pt=" + item.lon + "," + item.lat + "&z=17&l=map")
+      };
+      setAddressPickedHint(true);
+      clearAddressSuggest();
+      dismissKeyboard();
+      onAddressBlur();
     }
 
     function normalizeAddressForMaps(addr) {
@@ -1867,7 +2016,13 @@
           });
         } else {
           const addr = normalizeAddressForMaps(clientAddr);
-          const geo = await geocodeAddress(addr, true);
+          const savedGeo = parseGeoFromNote(c.note || "");
+          let lat = savedGeo ? savedGeo.lat : null;
+          let lon = savedGeo ? savedGeo.lon : null;
+          if (lat == null) {
+            const geo = await geocodeAddress(addr, true);
+            if (geo) { lat = geo.lat; lon = geo.lon; }
+          }
           stops.push({
             name: c.name,
             address: addr,
@@ -1876,8 +2031,9 @@
             delivery: "courier",
             deliveryLabel: null,
             clientIndex: courierClientsCache.indexOf(c),
-            lat: geo ? geo.lat : null,
-            lon: geo ? geo.lon : null
+            lat: lat,
+            lon: lon,
+            yandexUrl: parseYandexUrlFromNote(c.note || "")
           });
         }
       }
@@ -2067,7 +2223,16 @@
             if (!c) return;
             btn.disabled = true;
             try {
-              await apiPost({ action: "sendCourierRoute", telegramId: c.id, text: text });
+              const sendRes = await apiGet({
+                action: "sendCourierRoute",
+                telegramId: String(c.id),
+                text: text
+              });
+              if (!sendRes || sendRes.status !== "success") {
+                showToast("Не дошло: " + ((sendRes && sendRes.message) || "ошибка бота"));
+                btn.disabled = false;
+                return;
+              }
               await new Promise(function (r) { setTimeout(r, 700); });
               showToast("Отправлено: " + (c.name || c.username || c.id));
               closeModal(true);

@@ -467,6 +467,18 @@ function doGet(e) {
   if (action === "getCouriers") {
     return handleGetCouriers(callback, false);
   }
+  if (action === "suggestAddress") {
+    return handleSuggestAddress({
+      text: e.parameter.text ? decodeURIComponent(e.parameter.text) : "",
+      q: e.parameter.q ? decodeURIComponent(e.parameter.q) : ""
+    }, callback, false);
+  }
+  if (action === "sendCourierRoute") {
+    return handleSendCourierRoute({
+      telegramId: e.parameter.telegramId || e.parameter.chatId || e.parameter.id || "",
+      text: e.parameter.text ? decodeURIComponent(e.parameter.text) : ""
+    }, callback, false);
+  }
 
   // delete / move доступны и через GET (JSONP из mini-app)
   if (action === "deleteClient" || action === "moveClient") {
@@ -505,6 +517,9 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "sendCourierRoute") {
     return handleSendCourierRoute(json, callback, fromPost);
+  }
+  if (action === "suggestAddress") {
+    return handleSuggestAddress(json, callback, fromPost);
   }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
@@ -1243,6 +1258,106 @@ function handleSendCourierRoute(json, callback, fromPost) {
   var result = telegramSendText_(chatId, text);
   var body = result && result.ok
     ? { status: "success" }
-    : { status: "error", message: (result && (result.description || result.error)) || "send_failed" };
+    : { status: "error", message: (result && (result.description || result.error)) || "send_failed", raw: result };
   return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+}
+
+/**
+ * Подсказки адресов как в Яндексе.
+ * Ключ: Script Properties → YANDEX_MAPS_API_KEY (Геокодер / Геосаджест)
+ * Без ключа — запасной поиск через Nominatim (хуже по Минску).
+ */
+function handleSuggestAddress(json, callback, fromPost) {
+  var text = String(json.text || json.q || "").trim();
+  var body;
+  if (text.length < 2) {
+    body = { status: "success", results: [], source: "empty" };
+    return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+  }
+  var key = PropertiesService.getScriptProperties().getProperty("YANDEX_MAPS_API_KEY") || "";
+  var results = [];
+  var source = "none";
+  try {
+    if (key) {
+      results = yandexGeocodeSuggest_(text, key);
+      source = "yandex";
+    }
+  } catch (e1) {
+    Logger.log("yandex suggest err: " + e1);
+  }
+  if (!results.length) {
+    try {
+      results = nominatimSuggest_(text);
+      source = "nominatim";
+    } catch (e2) {
+      Logger.log("nominatim suggest err: " + e2);
+    }
+  }
+  body = { status: "success", results: results, source: source, hasYandexKey: !!key };
+  return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+}
+
+function yandexGeocodeSuggest_(text, key) {
+  var q = text;
+  if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(text)) {
+    q = "Минск, " + text;
+  }
+  var url = "https://geocode-maps.yandex.ru/1.x/?apikey=" + encodeURIComponent(key) +
+    "&format=json&lang=ru_RU&results=7&geocode=" + encodeURIComponent(q);
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+  if (res.getResponseCode() >= 400) return [];
+  var data = JSON.parse(res.getContentText());
+  var members = ((((data || {}).response || {}).GeoObjectCollection || {}).featureMember) || [];
+  var out = [];
+  for (var i = 0; i < members.length; i++) {
+    var geo = (members[i] || {}).GeoObject || {};
+    var meta = ((geo.metaDataProperty || {}).GeocoderMetaData) || {};
+    var pos = String((geo.Point || {}).pos || "").trim().split(/\s+/);
+    if (pos.length < 2) continue;
+    var lon = Number(pos[0]);
+    var lat = Number(pos[1]);
+    if (!isFinite(lat) || !isFinite(lon)) continue;
+    var title = String(geo.name || meta.text || "").trim();
+    var subtitle = String(geo.description || "").trim();
+    var label = subtitle ? (title + ", " + subtitle) : (meta.text || title);
+    out.push({
+      title: title,
+      subtitle: subtitle,
+      address: label,
+      lat: lat,
+      lon: lon,
+      yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
+    });
+  }
+  return out;
+}
+
+function nominatimSuggest_(text) {
+  var q = text;
+  if (!/минск|беларусь|брест|гродн/i.test(text)) q = "Минск, " + text;
+  var url = "https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=by&q=" +
+    encodeURIComponent(q);
+  var res = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    headers: { "User-Agent": "superboyna-courier/1.0" }
+  });
+  if (res.getResponseCode() >= 400) return [];
+  var data = JSON.parse(res.getContentText());
+  var out = [];
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var lat = Number(row.lat);
+    var lon = Number(row.lon);
+    if (!isFinite(lat) || !isFinite(lon)) continue;
+    var address = String(row.display_name || "").trim();
+    out.push({
+      title: address.split(",")[0] || address,
+      subtitle: address,
+      address: address,
+      lat: lat,
+      lon: lon,
+      yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
+    });
+  }
+  return out;
 }
