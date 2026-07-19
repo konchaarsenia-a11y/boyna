@@ -532,6 +532,12 @@ function handleApiAction(json, callback, fromPost) {
   if (action === "telegramStatus") {
     return handleTelegramStatus(callback, fromPost);
   }
+  if (action === "finishCutting") {
+    return handleFinishCutting(ss, json, callback, fromPost);
+  }
+  if (action === "registerCuttingDeficit") {
+    return handleRegisterCuttingDeficit(ss, json, callback, fromPost);
+  }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
 
@@ -651,6 +657,7 @@ function handleGetCourier(dayName, callback) {
       name: client.name,
       address: client.address,
       note: client.note,
+      geo: client.geo || null,
       basket: client.basket,
       delivered: delivered,
       col: client.col,
@@ -812,7 +819,16 @@ function handleSaveOrder(ss, json, callback) {
   // очистка товаров + адрес + примечание
   targetSheet.getRange(block.start, clientCol, block.note - block.start + 1, 1).clearContent();
   if (json.address) targetSheet.getRange(block.addr, clientCol).setValue(json.address);
-  if (json.note) targetSheet.getRange(block.note, clientCol).setValue(json.note);
+  // GEO не пишем в примечание — только служебные теги доставки + текст курьеру
+  var cleanNote = stripGeoTagsFromNote_(json.note || "");
+  if (cleanNote) targetSheet.getRange(block.note, clientCol).setValue(cleanNote);
+
+  var geo = json.geo || null;
+  if (geo && geo.lat != null && geo.lon != null) {
+    upsertClientGeo_(ss, json.day, json.client, geo.lat, geo.lon, geo.yandexUrl || "");
+  } else {
+    clearClientGeo_(ss, json.day, json.client);
+  }
 
   var itemsInSheet = targetSheet.getRange(block.start, 1, block.end - block.start + 1, 1).getValues();
   var basket = json.basket || [];
@@ -1024,11 +1040,24 @@ function getClientsData_(ss, dayName) {
 
         var rawAddr = addressesMatrix && addressesMatrix[0] ? addressesMatrix[0][colIdx] : "";
         var rawNote = notesMatrix && notesMatrix[0] ? notesMatrix[0][colIdx] : "";
+        var noteStr = rawNote != null ? String(rawNote).trim() : "";
+        // Миграция: GEO из старых примечаний → лист Гео_Клиентов, из ячейки убираем
+        var legacyGeo = parseGeoTagsFromNote_(noteStr);
+        if (legacyGeo) {
+          upsertClientGeo_(ss, dayName, nameClean, legacyGeo.lat, legacyGeo.lon, legacyGeo.yandexUrl || "");
+          noteStr = stripGeoTagsFromNote_(noteStr);
+          try {
+            targetSheet.getRange(noteRow, colIdx + 3).setValue(noteStr);
+          } catch (eMig) {}
+        }
+        var geoObj = getClientGeo_(ss, dayName, nameClean);
+        if (!geoObj && legacyGeo) geoObj = legacyGeo;
         clientsDataList.push({
           name: nameClean,
           orderCount: totalItemsInOrder,
           address: rawAddr != null ? String(rawAddr).trim() : "",
-          note: rawNote != null ? String(rawNote).trim() : "",
+          note: noteStr,
+          geo: geoObj || null,
           basket: clientBasket,
           col: colIdx
         });
@@ -1238,6 +1267,10 @@ function upsertCourier_(chatId, name, username) {
 }
 
 function handleTelegramUpdate_(update) {
+  if (update && update.callback_query) {
+    handleDeficitCallback_(update.callback_query);
+    return;
+  }
   var msg = update.message || update.edited_message;
   if (!msg || !msg.chat) return;
   var chat = msg.chat;
@@ -1499,3 +1532,277 @@ function nominatimSuggest_(text) {
   }
   return out;
 }
+
+/* ========== GEO вне примечания ========== */
+
+function stripGeoTagsFromNote_(note) {
+  return String(note || "")
+    .replace(/\[GEO:[^\]]+\]/gi, "")
+    .replace(/\[YMAPS:[^\]]+\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function parseGeoTagsFromNote_(note) {
+  var m = String(note || "").match(/\[GEO:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\]/i);
+  if (!m) return null;
+  var y = String(note || "").match(/\[YMAPS:(https:\/\/[^\]]+)\]/i);
+  return {
+    lat: Number(m[1]),
+    lon: Number(m[2]),
+    yandexUrl: y ? y[1] : ("https://yandex.ru/maps/?pt=" + m[2] + "," + m[1] + "&z=17&l=map")
+  };
+}
+
+function getGeoSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Гео_Клиентов");
+  if (!sh) {
+    sh = ss.insertSheet("Гео_Клиентов");
+    sh.getRange(1, 1, 1, 5).setValues([["day", "client", "lat", "lon", "yandexUrl"]]);
+  }
+  return sh;
+}
+
+function upsertClientGeo_(ss, dayName, clientName, lat, lon, yandexUrl) {
+  var sh = getGeoSheet_();
+  var day = String(dayName || "").trim().toUpperCase();
+  var client = String(clientName || "").trim().toUpperCase();
+  if (!day || !client) return;
+  var data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0] || "").trim().toUpperCase() === day &&
+        String(data[i][1] || "").trim().toUpperCase() === client) {
+      sh.getRange(i + 1, 3, 1, 3).setValues([[Number(lat), Number(lon), yandexUrl || ""]]);
+      return;
+    }
+  }
+  sh.appendRow([dayName, clientName, Number(lat), Number(lon), yandexUrl || ""]);
+}
+
+function clearClientGeo_(ss, dayName, clientName) {
+  var sh = ss.getSheetByName("Гео_Клиентов");
+  if (!sh) return;
+  var day = String(dayName || "").trim().toUpperCase();
+  var client = String(clientName || "").trim().toUpperCase();
+  var data = sh.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0] || "").trim().toUpperCase() === day &&
+        String(data[i][1] || "").trim().toUpperCase() === client) {
+      sh.deleteRow(i + 1);
+    }
+  }
+}
+
+function getClientGeo_(ss, dayName, clientName) {
+  var sh = ss.getSheetByName("Гео_Клиентов");
+  if (!sh) return null;
+  var day = String(dayName || "").trim().toUpperCase();
+  var client = String(clientName || "").trim().toUpperCase();
+  var data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0] || "").trim().toUpperCase() === day &&
+        String(data[i][1] || "").trim().toUpperCase() === client) {
+      var lat = Number(data[i][2]);
+      var lon = Number(data[i][3]);
+      if (!isFinite(lat) || !isFinite(lon)) return null;
+      return {
+        lat: lat,
+        lon: lon,
+        yandexUrl: data[i][4] ? String(data[i][4]) : ("https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map")
+      };
+    }
+  }
+  return null;
+}
+
+/* ========== Дефицит нарезки + пуши ========== */
+
+function getDeficitSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Дефицит_Нарезки");
+  if (!sh) {
+    sh = ss.insertSheet("Дефицит_Нарезки");
+    sh.getRange(1, 1, 1, 8).setValues([[
+      "id", "day", "item", "row", "status", "created", "notifyFrom", "lastNotify"
+    ]]);
+  }
+  return sh;
+}
+
+function ensureDeficitTrigger_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "tickCuttingDeficit_") return;
+  }
+  ScriptApp.newTrigger("tickCuttingDeficit_").timeBased().everyMinutes(30).create();
+}
+
+function nextMorningDate_(tz) {
+  var now = new Date();
+  var today = Utilities.formatDate(now, tz || "Europe/Minsk", "yyyy-MM-dd");
+  var parts = today.split("-");
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]) + 1, 8, 0, 0);
+}
+
+function handleRegisterCuttingDeficit(ss, json, callback, fromPost) {
+  var day = String(json.day || "").trim();
+  var items = json.items || [];
+  if (!day || !items.length) {
+    var bad = { status: "error", message: "need_day_and_items" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var sh = getDeficitSheet_();
+  var tz = ss.getSpreadsheetTimeZone() || "Europe/Minsk";
+  var notifyFrom = nextMorningDate_(tz);
+  var now = new Date();
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i] || {};
+    var id = String(Date.now()) + "_" + String(Math.floor(Math.random() * 1e5)) + "_" + i;
+    sh.appendRow([
+      id,
+      day,
+      String(it.name || ""),
+      Number(it.row) || 0,
+      "open",
+      now,
+      notifyFrom,
+      ""
+    ]);
+  }
+  ensureDeficitTrigger_();
+  var ok = { status: "success", count: items.length };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleFinishCutting(ss, json, callback, fromPost) {
+  var day = String(json.day || "").trim();
+  var ready = json.ready || [];
+  var missing = json.missing || [];
+  if (!day) {
+    var bad = { status: "error", message: "need_day" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  for (var i = 0; i < ready.length; i++) {
+    handleUpdateCutting(ss, { day: day, row: ready[i].row, done: true }, "cb", true);
+  }
+  if (missing.length) {
+    handleRegisterCuttingDeficit(ss, { day: day, items: missing }, "cb", true);
+  }
+  var ok = { status: "success", ready: ready.length, missing: missing.length };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function listBotParticipants_() {
+  var ids = {};
+  try {
+    var sh = getCouriersSheet_();
+    var data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var id = data[i][0];
+      if (id !== "" && id != null) ids[String(id)] = true;
+    }
+  } catch (e0) {}
+  try {
+    var chat = PropertiesService.getScriptProperties().getProperty("TELEGRAM_CHAT_ID");
+    if (chat) ids[String(chat)] = true;
+  } catch (e1) {}
+  return Object.keys(ids);
+}
+
+function telegramSendMarkup_(chatId, text, replyMarkup) {
+  var token = getTelegramToken_();
+  if (!token || !chatId) return { ok: false, error: "no_token_or_chat" };
+  var payload = {
+    chat_id: String(chatId),
+    text: String(text || "").slice(0, 3500),
+    disable_web_page_preview: true
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  var res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  try { return JSON.parse(res.getContentText()); } catch (e) { return { ok: false, error: String(e) }; }
+}
+
+function telegramAnswerCallback_(callbackId, text) {
+  var token = getTelegramToken_();
+  if (!token || !callbackId) return;
+  UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/answerCallbackQuery", {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({
+      callback_query_id: callbackId,
+      text: text || "Ок",
+      show_alert: false
+    }),
+    muteHttpExceptions: true
+  });
+}
+
+function sendDeficitPushForRow_(rowValues) {
+  var id = String(rowValues[0] || "");
+  var day = String(rowValues[1] || "");
+  var item = String(rowValues[2] || "");
+  var text = "⚠️ Дефицит нарезки\nДень: " + day + "\nПозиция: " + item +
+    "\n\nНужно купить и заготовить. Когда готово — нажми кнопку ниже.";
+  var markup = {
+    inline_keyboard: [[{ text: "✅ Куплено и заготовлено", callback_data: "defdone:" + id }]]
+  };
+  var participants = listBotParticipants_();
+  for (var i = 0; i < participants.length; i++) {
+    telegramSendMarkup_(participants[i], text, markup);
+  }
+}
+
+function tickCuttingDeficit_() {
+  var sh = getDeficitSheet_();
+  var data = sh.getDataRange().getValues();
+  var now = new Date();
+  for (var i = 1; i < data.length; i++) {
+    var status = String(data[i][4] || "");
+    if (status !== "open") continue;
+    var notifyFrom = data[i][6] ? new Date(data[i][6]) : null;
+    if (notifyFrom && now < notifyFrom) continue;
+    var last = data[i][7] ? new Date(data[i][7]) : null;
+    if (last && (now.getTime() - last.getTime()) < 29 * 60 * 1000) continue;
+    sendDeficitPushForRow_(data[i]);
+    sh.getRange(i + 1, 8).setValue(now);
+  }
+}
+
+function handleDeficitCallback_(cq) {
+  var data = String((cq && cq.data) || "");
+  var m = data.match(/^defdone:(.+)$/);
+  if (!m) return;
+  var id = m[1];
+  var sh = getDeficitSheet_();
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === id) {
+      sh.getRange(i + 1, 5).setValue("closed");
+      var item = String(rows[i][2] || "");
+      var day = String(rows[i][1] || "");
+      var rowNum = Number(rows[i][3]) || 0;
+      if (rowNum >= 3) {
+        try {
+          handleUpdateCutting(SpreadsheetApp.getActiveSpreadsheet(), {
+            day: day, row: rowNum, done: true
+          }, "cb", true);
+        } catch (e) {}
+      }
+      telegramAnswerCallback_(cq.id, "Отмечено: " + item);
+      try {
+        if (cq.from) {
+          upsertCourier_(cq.from.id, [cq.from.first_name, cq.from.last_name].filter(Boolean).join(" "), cq.from.username || "");
+        }
+      } catch (e2) {}
+      return;
+    }
+  }
+  telegramAnswerCallback_(cq.id, "Уже закрыто или не найдено");
+}
+
