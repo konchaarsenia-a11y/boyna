@@ -5,6 +5,7 @@
  *
  * Секреты: PropertiesService
  *   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+ *   YANDEX_MAPS_API_KEY — НЕ обязателен (платный). Подсказки адресов работают бесплатно (Photon/OSM).
  * Один раз: выполнить setupSecrets() из редактора (заполнить значения внутри и запустить),
  * либо Project Settings → Script properties.
  */
@@ -1263,9 +1264,8 @@ function handleSendCourierRoute(json, callback, fromPost) {
 }
 
 /**
- * Подсказки адресов как в Яндексе.
- * Ключ: Script Properties → YANDEX_MAPS_API_KEY (Геокодер / Геосаджест)
- * Без ключа — запасной поиск через Nominatim (хуже по Минску).
+ * Подсказки адресов — бесплатно (Photon + Nominatim).
+ * Платный ключ Яндекса не нужен. YANDEX_MAPS_API_KEY можно не задавать.
  */
 function handleSuggestAddress(json, callback, fromPost) {
   var text = String(json.text || json.q || "").trim();
@@ -1274,27 +1274,92 @@ function handleSuggestAddress(json, callback, fromPost) {
     body = { status: "success", results: [], source: "empty" };
     return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
   }
-  var key = PropertiesService.getScriptProperties().getProperty("YANDEX_MAPS_API_KEY") || "";
   var results = [];
   var source = "none";
   try {
-    if (key) {
-      results = yandexGeocodeSuggest_(text, key);
-      source = "yandex";
-    }
-  } catch (e1) {
-    Logger.log("yandex suggest err: " + e1);
+    results = photonSuggest_(text);
+    if (results.length) source = "photon";
+  } catch (e0) {
+    Logger.log("photon suggest err: " + e0);
   }
   if (!results.length) {
     try {
       results = nominatimSuggest_(text);
-      source = "nominatim";
+      if (results.length) source = "nominatim";
     } catch (e2) {
       Logger.log("nominatim suggest err: " + e2);
     }
   }
-  body = { status: "success", results: results, source: source, hasYandexKey: !!key };
+  // Опционально: если вдруг ключ Яндекса уже есть — дополним/заменим пустой ответ
+  if (!results.length) {
+    var key = PropertiesService.getScriptProperties().getProperty("YANDEX_MAPS_API_KEY") || "";
+    if (key) {
+      try {
+        results = yandexGeocodeSuggest_(text, key);
+        if (results.length) source = "yandex";
+      } catch (e1) {
+        Logger.log("yandex suggest err: " + e1);
+      }
+    }
+  }
+  body = { status: "success", results: results, source: source };
   return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+}
+
+/** Бесплатный геокодер Photon (OSM), хорошо понимает улицы Минска */
+function photonSuggest_(text) {
+  var q = String(text || "").trim();
+  if (!q) return [];
+  if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(q)) {
+    q = q + ", Минск";
+  }
+  var url = "https://photon.komoot.io/api/?limit=7&lang=ru&lat=53.9&lon=27.56&q=" + encodeURIComponent(q);
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+  if (res.getResponseCode() >= 400) return [];
+  var data = JSON.parse(res.getContentText());
+  var features = (data && data.features) || [];
+  var out = [];
+  var seen = {};
+  for (var i = 0; i < features.length; i++) {
+    var f = features[i] || {};
+    var geom = f.geometry || {};
+    var coords = geom.coordinates || [];
+    if (coords.length < 2) continue;
+    var lon = Number(coords[0]);
+    var lat = Number(coords[1]);
+    if (!isFinite(lat) || !isFinite(lon)) continue;
+    // ограничиваем примерно Минском + область (~80 км), чтобы не тащить чужие города без нужды
+    if (Math.abs(lat - 53.9) > 1.2 || Math.abs(lon - 27.56) > 1.5) {
+      if (!/брест|гродн|гомел|витебск|могил|борисов|жодино|молодечн/i.test(q)) continue;
+    }
+    var p = f.properties || {};
+    var parts = [];
+    if (p.name) parts.push(String(p.name));
+    if (p.street && p.street !== p.name) parts.push(String(p.street));
+    if (p.housenumber) parts.push(String(p.housenumber));
+    var title = parts.length ? parts.join(", ") : String(p.name || p.street || "Адрес");
+    var subParts = [];
+    if (p.district) subParts.push(String(p.district));
+    if (p.city || p.town || p.village) subParts.push(String(p.city || p.town || p.village));
+    if (p.state && !/минск/i.test(String(p.city || ""))) subParts.push(String(p.state));
+    var subtitle = subParts.join(", ");
+    var address = title + (subtitle ? (", " + subtitle) : "");
+    if (!/минск/i.test(address) && (p.city === "Minsk" || /Minsk/i.test(String(p.city || p.state || "")))) {
+      address = address + ", Минск";
+    }
+    var keyDup = lat.toFixed(5) + "," + lon.toFixed(5);
+    if (seen[keyDup]) continue;
+    seen[keyDup] = true;
+    out.push({
+      title: title,
+      subtitle: subtitle || "Минск",
+      address: address,
+      lat: lat,
+      lon: lon,
+      yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
+    });
+  }
+  return out;
 }
 
 function yandexGeocodeSuggest_(text, key) {

@@ -375,7 +375,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.2</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -402,11 +402,11 @@
                 <div class="form-group">
           <label>Адрес доставки</label>
           <div class="addr-suggest-wrap">
-            <input type="text" id="addressInput" placeholder="Начните вводить — выберите из списка как в Яндексе" autocomplete="off" oninput="onAddressInput()" onblur="onAddressBlurDelayed()">
+            <input type="text" id="addressInput" placeholder="Начните вводить улицу и дом — выберите из списка" autocomplete="off" oninput="onAddressInput()" onblur="onAddressBlurDelayed()">
             <div class="addr-suggest" id="addressSuggest"></div>
           </div>
-          <div class="addr-picked" id="addressPickedHint">Адрес выбран из Яндекса — координаты сохранены</div>
-          <div class="field-hint">Выберите вариант из подсказок — тогда маршрут в Яндекс откроется точно. Если не Минск / дальше 20 км — спросим почту.</div>
+          <div class="addr-picked" id="addressPickedHint">Адрес выбран — координаты сохранены</div>
+          <div class="field-hint">Выберите вариант из подсказок (бесплатно) — тогда Яндекс откроет точку точно. Если не Минск / дальше 20 км — спросим почту.</div>
         </div>
 <div class="form-group" id="deliveryMethodGroup" style="display:none;">
           <label>Как доставляем (за Минском)</label>
@@ -545,7 +545,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.1";
+    const APP_VERSION = "v6.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
