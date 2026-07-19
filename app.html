@@ -10,14 +10,50 @@
       --bg-color: #121212; --card-bg: #1c1c1e; --text-color: #f5f5f7;
       --text-muted: #8e8e93; --accent-color: #248bf2; --accent-active: #1472df;
       --danger-color: #ff453a; --success-color: #30d158; --border-color: #2c2c2e;
+      --safe-top: max(12px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
+      --safe-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
     }
     * { box-sizing: border-box; }
     html, body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
       background: var(--bg-color); color: var(--text-color);
       margin: 0; padding: 0; width: 100%; min-height: 100%;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
     }
-    .app { padding: 16px; padding-bottom: 48px; max-width: 640px; margin: 0 auto; }
+    .app {
+      padding: 16px;
+      padding-top: calc(16px + var(--safe-top));
+      padding-bottom: calc(48px + var(--safe-bottom));
+      max-width: 640px; margin: 0 auto;
+    }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.65); align-items: flex-end; justify-content: center;
+      padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-sheet {
+      width: 100%; max-width: 420px; background: #1c1c1e; border: 1px solid var(--border-color);
+      border-radius: 16px; padding: 18px; color: #fff;
+    }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+    .modal-text { font-size: 14px; color: #d1d1d6; line-height: 1.4; margin-bottom: 16px; white-space: pre-wrap; }
+    .modal-actions { display: grid; gap: 8px; }
+    .modal-actions.row { grid-template-columns: 1fr 1fr; }
+    .modal-day-btn {
+      height: 44px; border-radius: 10px; border: 1px solid var(--border-color);
+      background: #2c2c2e; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .modal-day-btn:active { background: #3a3a3c; }
+    .toast {
+      display: none; position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: calc(24px + var(--safe-bottom)); z-index: 10000;
+      background: #2c2c2e; border: 1px solid var(--border-color); color: #fff;
+      padding: 12px 16px; border-radius: 12px; font-size: 14px; max-width: 90%;
+    }
+    .toast.show { display: block; }
     .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
     .nav-tabs {
       display: flex; gap: 6px; margin-bottom: 16px; background: #1c1c1e;
@@ -237,6 +273,11 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modalOverlay" onclick="onModalOverlayClick(event)">
+    <div class="modal-sheet" id="modalSheet"></div>
+  </div>
+  <div class="toast" id="appToast"></div>
+
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
@@ -256,8 +297,125 @@
         tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand();
+        try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
+        try {
+          if (tg.setHeaderColor) tg.setHeaderColor("#121212");
+          if (tg.setBackgroundColor) tg.setBackgroundColor("#121212");
+        } catch (e) {}
       }
     } catch (e) {}
+
+    let modalResolver = null;
+
+    function recoverUiFocus() {
+      try {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      } catch (e) {}
+      document.body.style.pointerEvents = "auto";
+      document.documentElement.style.pointerEvents = "auto";
+      // Telegram WebView иногда «залипает» после системных диалогов
+      setTimeout(function () {
+        window.scrollTo(0, window.scrollY || 0);
+      }, 50);
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById("appToast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(function () { el.classList.remove("show"); }, 2200);
+    }
+
+    function closeModal(result) {
+      const overlay = document.getElementById("modalOverlay");
+      overlay.classList.remove("open");
+      document.getElementById("modalSheet").innerHTML = "";
+      const resolver = modalResolver;
+      modalResolver = null;
+      recoverUiFocus();
+      if (resolver) resolver(result);
+    }
+
+    function onModalOverlayClick(event) {
+      if (event.target && event.target.id === "modalOverlay") closeModal(null);
+    }
+
+    function openModal(html) {
+      return new Promise(function (resolve) {
+        if (modalResolver) closeModal(null);
+        modalResolver = resolve;
+        document.getElementById("modalSheet").innerHTML = html;
+        document.getElementById("modalOverlay").classList.add("open");
+      });
+    }
+
+    function uiAlert() { return uiAlertAsync.apply(null, arguments); }
+
+    async function uiAlertAsync(message) {
+      const p = openModal(
+        '<div class="modal-title">Сообщение</div>' +
+        '<div class="modal-text">' + escapeHtml(String(message)) + '</div>' +
+        '<div class="modal-actions"><button class="btn-action btn-blue" type="button" id="modalOk">ОК</button></div>'
+      );
+      setTimeout(function () {
+        const btn = document.getElementById("modalOk");
+        if (btn) btn.onclick = function () { closeModal(true); };
+      }, 0);
+      await p;
+      recoverUiFocus();
+    }
+
+    async function uiConfirmAsync(message) {
+      const p = openModal(
+        '<div class="modal-title">Подтверждение</div>' +
+        '<div class="modal-text">' + escapeHtml(String(message)) + '</div>' +
+        '<div class="modal-actions row">' +
+          '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Отмена</button>' +
+          '<button class="btn-action btn-blue" type="button" id="modalOk">Да</button>' +
+        '</div>'
+      );
+      setTimeout(function () {
+        const ok = document.getElementById("modalOk");
+        const cancel = document.getElementById("modalCancel");
+        if (ok) ok.onclick = function () { closeModal(true); };
+        if (cancel) cancel.onclick = function () { closeModal(false); };
+      }, 0);
+      const res = await p;
+      recoverUiFocus();
+      return !!res;
+    }
+
+    async function uiPickMoveDay(clientName) {
+      const days = [
+        ["Понедельник", "Пн"], ["Вторник", "Вт"], ["Среда", "Ср"],
+        ["Четверг", "Чт"], ["Пятница", "Пт"], ["Будущая неделя", "Будущая"]
+      ];
+      const buttons = days.map(function (d) {
+        return '<button class="modal-day-btn" type="button" data-day="' + d[0] + '">' + d[1] + " — " + d[0] + "</button>";
+      }).join("");
+      const p = openModal(
+        '<div class="modal-title">Перенос: ' + escapeHtml(clientName) + '</div>' +
+        '<div class="modal-text">Выберите день</div>' +
+        '<div class="modal-actions">' + buttons +
+          '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;margin-top:6px;">Отмена</button>' +
+        '</div>'
+      );
+      setTimeout(function () {
+        document.querySelectorAll(".modal-day-btn").forEach(function (btn) {
+          btn.onclick = function () { closeModal(btn.getAttribute("data-day")); };
+        });
+        const cancel = document.getElementById("modalCancel");
+        if (cancel) cancel.onclick = function () { closeModal(null); };
+      }, 0);
+      const res = await p;
+      recoverUiFocus();
+      return res;
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
 
     const catalog = {
       dressura: {
@@ -358,12 +516,12 @@
       }
     }
 
-    function addItemToBasket() {
+    async function addItemToBasket() {
       const mainVal = document.getElementById("mainSelect").value;
       const fracVal = document.getElementById("fractionSelect").value || "";
       const inputVal = Number(document.getElementById("volumeInput").value) || 0;
-      if (!mainVal) return alert("Выберите наименование");
-      if (inputVal <= 0) return alert("Укажите количество больше нуля");
+      if (!mainVal) { await uiAlertAsync("Выберите наименование"); return; }
+      if (inputVal <= 0) { await uiAlertAsync("Укажите количество больше нуля"); return; }
       basket.push({
         id: Date.now() + Math.random(),
         cat: currentCategory,
@@ -450,9 +608,10 @@
       const clientNote = document.getElementById("noteInput").value.trim();
       const day = document.getElementById("day").value;
       const isEdit = document.getElementById("isEditMode").value === "true";
-      if (!clientName) return alert("Введите имя клиента");
-      if (!basket.length) return alert("Корзина пуста");
-      if (!confirm(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"))) return;
+      if (!clientName) { await uiAlertAsync("Введите имя клиента"); return; }
+      if (!basket.length) { await uiAlertAsync("Корзина пуста"); return; }
+      const okConfirm = await uiConfirmAsync(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"));
+      if (!okConfirm) return;
 
       const btn = document.getElementById("btnMainSave");
       btn.disabled = true;
@@ -481,10 +640,10 @@
         const found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
         const okPositions = found && found.basket && found.basket.length > 0;
         if (!okPositions) {
-          alert("Имя/адрес могли записаться, но позиции не нашлись в таблице. Убедитесь, что вставили новый Code.gs и сделали Deploy.");
+          await uiAlertAsync("Имя/адрес могли записаться, но позиции не нашлись в таблице. Проверьте Deploy Code.gs.");
           return;
         }
-        alert(isEdit ? "Заказ обновлён (" + found.basket.length + " поз.)" : "Заказ сохранён (" + found.basket.length + " поз.)");
+        showToast(isEdit ? ("Заказ обновлён (" + found.basket.length + " поз.)") : ("Заказ сохранён (" + found.basket.length + " поз.)"));
         document.getElementById("isEditMode").value = "false";
         document.getElementById("client").readOnly = false;
         document.getElementById("client").value = "";
@@ -494,10 +653,11 @@
         renderBasket();
         document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.0";
       } catch (err) {
-        alert("Ошибка: " + (err.message || err));
+        await uiAlertAsync("Ошибка: " + (err.message || err));
       } finally {
         btn.disabled = false;
         btn.innerText = "Сохранить заказ";
+        recoverUiFocus();
       }
     }
 
@@ -548,10 +708,6 @@
       }
     }
 
-    function escapeHtml(s) {
-      return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    }
-
     function toggleOrderDetail(index, event) {
       if (event.target.closest(".crm-mini-btn")) return;
       const el = document.getElementById("details_" + index);
@@ -582,25 +738,29 @@
       }));
       renderBasket();
       switchTab("orderScreen");
+      recoverUiFocus();
     }
 
     async function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const oldDay = document.getElementById("viewDaySelect").value;
-      const choice = prompt("Перенос " + client.name + ":\n1 Пн  2 Вт  3 Ср  4 Чт  5 Пт  6 Будущая неделя", "1");
-      if (!choice) return;
-      const dayMap = { "1": "Понедельник", "2": "Вторник", "3": "Среда", "4": "Четверг", "5": "Пятница", "6": "Будущая неделя" };
-      const newDay = dayMap[choice.trim()];
-      if (!newDay) return alert("Укажите цифру 1–6");
-      if (!confirm("Перенести " + client.name + " → " + newDay + "?")) return;
+      const newDay = await uiPickMoveDay(client.name);
+      if (!newDay) return;
+      const ok = await uiConfirmAsync("Перенести " + client.name + " → " + newDay + "?");
+      if (!ok) return;
       try {
         const res = await apiGet({ action: "moveClient", client: client.name, oldDay: oldDay, newDay: newDay });
-        if (res.status !== "success") return alert("Не удалось: " + (res.status || "ошибка"));
-        alert("Перенесено");
-        loadClientsForDay();
+        if (res.status !== "success") {
+          await uiAlertAsync("Не удалось: " + (res.status || "ошибка"));
+          return;
+        }
+        showToast("Перенесено");
+        await loadClientsForDay();
       } catch (err) {
-        alert(err.message || err);
+        await uiAlertAsync(err.message || String(err));
+      } finally {
+        recoverUiFocus();
       }
     }
 
@@ -608,14 +768,20 @@
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const day = document.getElementById("viewDaySelect").value;
-      if (!confirm("Удалить клиента " + client.name + "?")) return;
+      const ok = await uiConfirmAsync("Удалить клиента " + client.name + "?");
+      if (!ok) return;
       try {
         const res = await apiGet({ action: "deleteClient", client: client.name, day: day });
-        if (res.status !== "success") return alert("Не удалось: " + (res.status || "ошибка"));
-        alert("Удалено");
-        loadClientsForDay();
+        if (res.status !== "success") {
+          await uiAlertAsync("Не удалось: " + (res.status || "ошибка"));
+          return;
+        }
+        showToast("Удалено");
+        await loadClientsForDay();
       } catch (err) {
-        alert(err.message || err);
+        await uiAlertAsync(err.message || String(err));
+      } finally {
+        recoverUiFocus();
       }
     }
 
@@ -668,7 +834,8 @@
       const day = document.getElementById("cuttingDaySelect").value;
       const surplus = Number(document.getElementById("surplus_" + row).value) || 0;
       await apiPost({ action: "updateCutting", day: day, row: row, surplus: surplus });
-      alert("Излишек сохранён");
+      showToast("Излишек сохранён");
+      recoverUiFocus();
     }
 
     async function loadCourier() {
@@ -730,17 +897,50 @@
       return DEFAULT_CITY + ", " + a;
     }
 
-    function openYandexMaps() {
+    function openExternalLink(url) {
+      // В Telegram Mini App на телефоне window.open часто блокируется
+      try {
+        if (tg && typeof tg.openLink === "function") {
+          tg.openLink(url, { try_instant_view: false });
+          return true;
+        }
+      } catch (e) {}
+      try {
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { a.remove(); }, 300);
+        return true;
+      } catch (e2) {}
+      try {
+        window.location.href = url;
+        return true;
+      } catch (e3) {
+        return false;
+      }
+    }
+
+    async function openYandexMaps() {
       const addrs = courierClientsCache.map(c => normalizeAddressForMaps(c.address)).filter(Boolean);
-      if (!addrs.length) return alert("Нет адресов для маршрута. Сначала загрузите день.");
+      if (!addrs.length) {
+        await uiAlertAsync("Нет адресов для маршрута. Сначала загрузите день и заполните адреса у клиентов.");
+        return;
+      }
+      // HTTPS-ссылка Яндекс.Карт (открывается через Telegram.openLink на телефоне)
       const rtext = addrs.map(a => encodeURIComponent(a)).join("~");
-      const url = "https://yandex.ru/maps/?rtext=" + rtext + "&rtt=auto";
-      if (tg && tg.openLink) tg.openLink(url);
-      else window.open(url, "_blank");
+      const url = "https://yandex.ru/maps/?rtext=~" + rtext + "&rtt=auto";
+      const ok = openExternalLink(url);
+      if (!ok) await uiAlertAsync("Не удалось открыть карты. Скопируйте адреса вручную.");
+      recoverUiFocus();
     }
 
     renderBasket();
     applyRoleTabs();
+    recoverUiFocus();
   </script>
 </body>
 </html>
