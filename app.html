@@ -1,170 +1,267 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Конвейер Бойня</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
       --bg-color: #121212; --card-bg: #1c1c1e; --text-color: #f5f5f7;
       --text-muted: #8e8e93; --accent-color: #248bf2; --accent-active: #1472df;
       --danger-color: #ff453a; --success-color: #30d158; --border-color: #2c2c2e;
     }
+    * { box-sizing: border-box; }
     html, body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-      background-color: var(--bg-color); color: var(--text-color);
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      overflow-x: hidden; overflow-y: auto; box-sizing: border-box;
+      background: var(--bg-color); color: var(--text-color);
+      margin: 0; padding: 0; width: 100%; min-height: 100%;
     }
-    .app { padding: 16px; padding-bottom: 40px; max-width: 600px; margin: 0 auto; box-sizing: border-box; }
-    .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 16px; }
-    .nav-tabs { display: flex; gap: 8px; margin-bottom: 20px; background: #1c1c1e; padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); }
-    .tab-link { flex: 1; text-align: center; background: none; border: none; color: var(--text-muted); padding: 12px 0; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 8px; transition: all 0.15s ease; }
-    .tab-link.active { background-color: var(--accent-color); color: #fff; }
-    .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin: 24px 0 8px 4px; }
-    .card { background-color: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); border: 1px solid var(--border-color); margin-bottom: 16px; box-sizing: border-box; width: 100%; }
-    .form-group { margin-bottom: 16px; }
+    .app { padding: 16px; padding-bottom: 48px; max-width: 640px; margin: 0 auto; }
+    .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
+    .nav-tabs {
+      display: flex; gap: 6px; margin-bottom: 16px; background: #1c1c1e;
+      padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); overflow-x: auto;
+    }
+    .tab-link {
+      flex: 1 0 auto; min-width: 72px; text-align: center; background: none; border: none;
+      color: var(--text-muted); padding: 10px 8px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border-radius: 8px;
+    }
+    .tab-link.active { background: var(--accent-color); color: #fff; }
+    .section-title {
+      font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--text-muted); margin: 20px 0 8px 4px;
+    }
+    .card {
+      background: var(--card-bg); border-radius: 12px; padding: 14px;
+      border: 1px solid var(--border-color); margin-bottom: 12px; width: 100%;
+    }
+    .form-group { margin-bottom: 14px; }
     label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: #e5e5ea; }
-    select, input { width: 100%; height: 48px; background-color: #2c2c2e; border: 1px solid var(--border-color); border-radius: 10px; color: #fff; font-size: 16px; padding: 0 14px; box-sizing: border-box; outline: none; }
+    select, input[type="text"], input[type="number"] {
+      width: 100%; height: 46px; background: #2c2c2e; border: 1px solid var(--border-color);
+      border-radius: 10px; color: #fff; font-size: 16px; padding: 0 12px; outline: none;
+    }
     select:focus, input:focus { border-color: var(--accent-color); }
-    .grid-buttons { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 20px; }
-    .btn-action { height: 46px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; width: 100%; }
-    .btn-blue { background-color: var(--accent-color); } .btn-blue:active { background-color: var(--accent-active); }
-    .btn-green { background-color: var(--success-color); } .btn-green:active { background-color: #24b34b; }
-    .btn-orange { background-color: #ff9500; } .btn-orange:active { background-color: #e08500; }
-    .btn-purple { background-color: #af52de; } .btn-purple:active { background-color: #963ec8; }
-    .btn-brown { background-color: #ac8e68; } .btn-brown:active { background-color: #8d7454; }
-    .btn-save { height: 54px; background-color: var(--success-color); font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(48, 209, 88, 0.2); width: 100%; box-sizing: border-box; border: none; cursor: pointer; border-radius: 10px; color: #fff; }
-    .btn-save:active { background-color: #24b34b; }
-    .basket-card { background-color: #2c2c2e; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; border-left: 4px solid var(--accent-color); position: relative; box-sizing: border-box; width: 100%; }
-    .basket-card.chew { border-left-color: #ff9500; } .basket-card.other { border-left-color: #af52de; } .basket-card.powder { border-left-color: #ac8e68; } .basket-card.veg { border-left-color: var(--success-color); }
-    .basket-info { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .grid-buttons { display: grid; gap: 8px; margin-bottom: 16px; }
+    .btn-action {
+      height: 44px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600;
+      color: #fff; cursor: pointer; width: 100%;
+    }
+    .btn-blue { background: var(--accent-color); }
+    .btn-green { background: var(--success-color); color: #052e12; }
+    .btn-orange { background: #ff9500; }
+    .btn-purple { background: #af52de; }
+    .btn-brown { background: #ac8e68; }
+    .btn-save {
+      height: 52px; background: var(--success-color); font-size: 15px; font-weight: 700;
+      text-transform: uppercase; width: 100%; border: none; border-radius: 10px; color: #052e12; cursor: pointer;
+    }
+    .btn-save:disabled { opacity: 0.55; cursor: wait; }
+    .basket-card {
+      background: #2c2c2e; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+      border-left: 4px solid var(--accent-color); position: relative;
+    }
+    .basket-card.chew { border-left-color: #ff9500; }
+    .basket-card.other { border-left-color: #af52de; }
+    .basket-card.powder { border-left-color: #ac8e68; }
+    .basket-card.veg { border-left-color: var(--success-color); }
+    .basket-info { font-size: 15px; font-weight: 600; margin-bottom: 4px; padding-right: 70px; }
     .basket-sub { font-size: 13px; color: var(--text-muted); }
-    .btn-inline-del { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--danger-color); font-size: 14px; font-weight: 600; cursor: pointer; }
-    .client-item-card { background-color: #1c1c1e; border-radius: 12px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border-color); box-sizing: border-box; }
-    .client-main-row { display: flex; justify-content: space-between; align-items: center; }
-    .client-title { font-size: 16px; font-weight: 700; color: #fff; }
-    .client-right-block { display: flex; align-items: center; gap: 8px; }
-    .crm-mini-btn { width: 34px; height: 34px; border-radius: 8px; border: none; display: flex; align-items: center; justify-content: center; font-size: 15px; cursor: pointer; }
-    .crm-edit { background-color: rgba(255, 149, 0, 0.15); color: #ff9500; }
-    .crm-move { background-color: rgba(175, 82, 222, 0.15); color: #af52de; }
-    .crm-delete { background-color: rgba(255, 69, 58, 0.15); color: #ff453a; }
-    .delivery-info-box { margin-top: 8px; font-size: 13px; font-weight: 500; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #2c2c2e; padding-top: 8px; }
-    .delivery-line { display: flex; align-items: center; gap: 6px; }
-    .delivery-line.time-alert { color: #ff9500; font-weight: 600; background-color: rgba(255, 149, 0, 0.1); padding: 4px 8px; border-radius: 6px; width: fit-content; border: 1px solid rgba(255, 149, 0, 0.2); }
-    .delivery-line.addr-line { color: var(--text-muted); padding-left: 4px; }
-    .client-order-details { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-color); }
-    .order-detail-line { font-size: 14px; color: #e5e5ea; padding: 5px 0; display: flex; justify-content: space-between; border-bottom: 1px solid #3a3a3c; }
-    .order-detail-line:last-child { border-bottom: none; }
-    .order-detail-volume { font-weight: 700; color: var(--success-color); }
-    .total-summary-badge { background: linear-gradient(135deg, #1d1d1f, #2c2c2e); padding: 14px; border-radius: 12px; border: 1px dashed var(--success-color); font-size: 15px; font-weight: 700; text-align: center; color: #fff; margin-bottom: 16px; }
+    .btn-inline-del {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--danger-color); font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .client-item-card {
+      background: #1c1c1e; border-radius: 12px; padding: 12px; margin-bottom: 10px;
+      border: 1px solid var(--border-color);
+    }
+    .client-main-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .client-title { font-size: 15px; font-weight: 700; }
+    .client-right-block { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .crm-mini-btn {
+      width: 34px; height: 34px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px;
+    }
+    .crm-edit { background: rgba(255,149,0,0.15); color: #ff9500; }
+    .crm-move { background: rgba(175,82,222,0.15); color: #af52de; }
+    .crm-delete { background: rgba(255,69,58,0.15); color: #ff453a; }
+    .client-badge { font-size: 12px; color: var(--text-muted); }
+    .delivery-info-box { margin-top: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #2c2c2e; padding-top: 8px; }
+    .delivery-line.time-alert {
+      color: #ff9500; font-weight: 600; background: rgba(255,149,0,0.1);
+      padding: 4px 8px; border-radius: 6px; width: fit-content;
+    }
+    .delivery-line.addr-line { color: var(--text-muted); }
+    .client-order-details { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color); }
+    .order-detail-line {
+      font-size: 14px; color: #e5e5ea; padding: 5px 0; display: flex; justify-content: space-between;
+      border-bottom: 1px solid #3a3a3c; gap: 8px;
+    }
+    .order-detail-volume { font-weight: 700; color: var(--success-color); white-space: nowrap; }
+    .total-summary-badge {
+      background: linear-gradient(135deg, #1d1d1f, #2c2c2e); padding: 12px; border-radius: 12px;
+      border: 1px dashed var(--success-color); font-size: 14px; font-weight: 700; text-align: center; margin-bottom: 12px;
+    }
+    .cut-row, .courier-row {
+      display: grid; gap: 8px; padding: 12px; margin-bottom: 10px;
+      background: #1c1c1e; border: 1px solid var(--border-color); border-radius: 12px;
+    }
+    .cut-row.done { border-color: rgba(48,209,88,0.45); background: rgba(48,209,88,0.08); }
+    .cut-title { font-weight: 700; font-size: 15px; }
+    .cut-meta { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
+    .cut-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .cut-actions input[type="number"] { width: 110px; height: 40px; }
+    .check-line { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .check-line input { width: 20px; height: 20px; }
+    .muted { color: var(--text-muted); font-style: italic; }
+    .screen { display: none; }
+    .screen.active { display: block; }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">🏭 Бойня-Конвейер v4.0</div>
-    
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v5.0</div>
+
     <div class="nav-tabs">
-      <button class="tab-link active" id="tabNewOrder" onclick="switchTab('orderScreen')">➕ Новый заказ</button>
-      <button class="tab-link" id="tabViewClients" onclick="switchTab('clientsScreen')">📅 Записи на неделю</button>
+      <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
+      <button class="tab-link" data-screen="clientsScreen" onclick="switchTab('clientsScreen')">Неделя</button>
+      <button class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
+      <button class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
     </div>
 
-    <!-- ЭКРАН №1: ОФОРМЛЕНИЕ И РЕДАКТИРОВАНИЕ ЗАКАЗА -->
-    <div id="orderScreen">
+    <!-- МЕНЕДЖЕР: ПРИЁМ -->
+    <div id="orderScreen" class="screen active">
       <div class="card">
         <input type="hidden" id="isEditMode" value="false">
-        
         <div class="form-group">
           <label>День отгрузки</label>
           <select id="day">
-            <option value="Понедельник">Понедельник</option>
-            <option value="Вторник">Вторник</option>
-            <option value="Среда">Среда</option>
-            <option value="Четверг">Четверг</option>
-            <option value="Пятница">Пятница</option>
-            <option value="Будущая неделя">Будущая неделя</option>
+            <option>Понедельник</option><option>Вторник</option><option>Среда</option>
+            <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Ник / Имя клиента в Telegram</label>
+          <label>Ник / Имя клиента</label>
           <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
         </div>
         <div class="form-group">
-          <label>🗺️ Адрес доставки</label>
+          <label>Адрес доставки</label>
           <input type="text" id="addressInput" placeholder="Улица, дом, квартира" autocomplete="off">
         </div>
         <div class="form-group">
-          <label>⏱️ Примечание / Напоминалка курьеру</label>
-          <input type="text" id="noteInput" placeholder="Например: Марине до 17:00" autocomplete="off">
+          <label>Примечание курьеру</label>
+          <input type="text" id="noteInput" placeholder="Например: до 17:00" autocomplete="off">
         </div>
-      </div>
-      <div class="section-title">🛒 Корзина заказа</div>
-      <div class="card" id="basketContainer"></div>
-      
-      <div class="section-title">➕ Добавить товар в чек</div>
-      <div class="grid-buttons">
-        <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">🍖 Добавить Дрессуру</button>
-        <button class="btn-action btn-orange" onclick="openProductSelector('chew')">🦴 Добавить Жевалки</button>
-        <button class="btn-action btn-purple" onclick="openProductSelector('other')">📦 Добавить Другое</button>
-        <button class="btn-action btn-brown" onclick="openProductSelector('powder')">✨ Добавить Присыпки</button>
-        <button class="btn-action btn-green" onclick="openProductSelector('veg')">🍏 Добавить Овощи/Фрукты</button>
       </div>
 
-      <div class="card" id="selectorCard" style="display: none;">
-        <h3 id="selectorTitle" style="margin-top:0; font-size:16px; color:var(--accent-color);">Выбор позиции</h3>
+      <div class="section-title">Корзина</div>
+      <div class="card" id="basketContainer"></div>
+
+      <div class="section-title">Добавить товар</div>
+      <div class="grid-buttons">
+        <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">Дрессура</button>
+        <button class="btn-action btn-orange" onclick="openProductSelector('chew')">Жевалки</button>
+        <button class="btn-action btn-purple" onclick="openProductSelector('other')">Другое</button>
+        <button class="btn-action btn-brown" onclick="openProductSelector('powder')">Присыпки</button>
+        <button class="btn-action btn-green" onclick="openProductSelector('veg')">Овощи/Фрукты</button>
+      </div>
+
+      <div class="card" id="selectorCard" style="display:none;">
         <div class="form-group">
-          <label>Наименование</label>
+          <label id="selectorTitle">Позиция</label>
           <select id="mainSelect" onchange="onProductChange()"></select>
         </div>
-        <div class="form-group" id="fractionGroup" style="display: none;">
-          <label>Фракция нарезки</label>
+        <div class="form-group" id="fractionGroup" style="display:none;">
+          <label>Фракция / тип</label>
           <select id="fractionSelect"></select>
         </div>
         <div class="form-group">
-          <label id="valueLabel">Объем</label>
+          <label id="valueLabel">Объём</label>
           <input type="number" id="volumeInput" placeholder="0" inputmode="numeric">
         </div>
-        <button class="btn-action btn-blue" style="height:42px;" onclick="addItemToBasket()">✅ Подтвердить позицию</button>
+        <button class="btn-action btn-blue" onclick="addItemToBasket()">В корзину</button>
       </div>
-      
-      <div style="margin-top: 30px;">
-        <button class="btn-action btn-save" onclick="sendEntireOrder()" id="btnMainSave">💾 Сохранить весь заказ</button>
-      </div>
+
+      <button class="btn-save" id="btnMainSave" onclick="sendEntireOrder()">Сохранить заказ</button>
     </div>
-    <!-- ЭКРАН №2: СПИСОК ЗАПИСЕЙ НА НЕДЕЛЮ -->
-    <div id="clientsScreen" style="display: none;">
+
+    <!-- МЕНЕДЖЕР: НЕДЕЛЯ -->
+    <div id="clientsScreen" class="screen">
       <div class="card">
         <div class="form-group">
-          <label>Выберите день для просмотра записей</label>
+          <label>День для просмотра</label>
           <select id="viewDaySelect" onchange="loadClientsForDay()">
             <option value="">-- Выбрать день --</option>
-            <option value="Понедельник">Понедельник</option>
-            <option value="Вторник">Вторник</option>
-            <option value="Среда">Среда</option>
-            <option value="Четверг">Четверг</option>
-            <option value="Пятница">Пятница</option>
-            <option value="Будущая неделя">Будущая неделя</option>
+            <option>Понедельник</option><option>Вторник</option><option>Среда</option>
+            <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
         </div>
       </div>
       <div id="totalDaySummaryContainer"></div>
-      <div class="section-title">👥 Записанные клиенты</div>
-      <div class="card" id="clientsContainer">
-        <p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день...</p>
+      <div class="section-title">Клиенты</div>
+      <div class="card" id="clientsContainer"><p class="muted">Выберите день...</p></div>
+    </div>
+
+    <!-- НАРЕЗЧИК -->
+    <div id="cuttingScreen" class="screen">
+      <div class="card">
+        <div class="form-group">
+          <label>День нарезки</label>
+          <select id="cuttingDaySelect" onchange="loadCutting()">
+            <option value="">-- Выбрать день --</option>
+            <option>Понедельник</option><option>Вторник</option><option>Среда</option>
+            <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
+          </select>
+        </div>
       </div>
+      <div id="cuttingSummary"></div>
+      <div id="cuttingContainer"><p class="muted">Выберите день...</p></div>
+    </div>
+
+    <!-- КУРЬЕР -->
+    <div id="courierScreen" class="screen">
+      <div class="card">
+        <div class="form-group">
+          <label>День доставки</label>
+          <select id="courierDaySelect" onchange="loadCourier()">
+            <option value="">-- Выбрать день --</option>
+            <option>Понедельник</option><option>Вторник</option><option>Среда</option>
+            <option>Четверг</option><option>Пятница</option>
+          </select>
+        </div>
+        <button class="btn-action btn-blue" onclick="openYandexMaps()">Открыть адреса в Яндекс.Картах</button>
+      </div>
+      <div id="courierSummary"></div>
+      <div id="courierContainer"><p class="muted">Выберите день...</p></div>
     </div>
   </div>
 
-  <script src="https://telegram.org"></script>
   <script>
-    // 🌟 ГЛАВНЫЙ ИНТЕРНЕТ-ШЛЮЗ СЕТИ (ОБЪЯВЛЕН ДО ЛЮБЫХ ФУНКЦИЙ)
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
+    const DEFAULT_CITY = "Минск";
+
+    // Пока всем 4 вкладки. Позже: "manager" | "cutter" | "courier" | "all"
+    const APP_ROLE = "all";
+    const ROLE_TABS = {
+      all: ["orderScreen", "clientsScreen", "cuttingScreen", "courierScreen"],
+      manager: ["orderScreen", "clientsScreen"],
+      cutter: ["cuttingScreen"],
+      courier: ["courierScreen"]
+    };
 
     let tg = null;
-    try { if (window.Telegram && window.Telegram.WebApp) { tg = window.Telegram.WebApp; tg.expand(); tg.ready(); } } catch(e) { console.log("Браузер"); }
+    try {
+      if (window.Telegram && window.Telegram.WebApp) {
+        tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+      }
+    } catch (e) {}
+
     const catalog = {
       dressura: {
-        title: "🍖 Новая Дрессура",
+        title: "Дрессура",
         items: ["ЛЁГКОЕ", "ПОЧКИ", "СЕРДЦЕ", "РУБЕЦ Т", "БАРАНЬЕ ЛЁГКОЕ"],
         fractions: {
           "ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"],
@@ -175,7 +272,7 @@
         }
       },
       chew: {
-        title: "🦴 Новая Жевалка",
+        title: "Жевалки",
         items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
         fractions: {
           "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
@@ -186,17 +283,17 @@
         }
       },
       other: {
-        title: "📦 Новая Позиция (Другое)",
+        title: "Другое",
         items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО"],
         fractions: {}
       },
       powder: {
-        title: "✨ Новая Присыпка",
+        title: "Присыпки",
         items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК"],
         fractions: {}
       },
       veg: {
-        title: "🍏 Новый Овощ / Фрукт",
+        title: "Овощи/Фрукты",
         items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"],
         fractions: {}
       }
@@ -205,261 +302,445 @@
     let basket = [];
     let currentCategory = "";
     let loadedClientsRawData = [];
+    let courierClientsCache = [];
+
+    function applyRoleTabs() {
+      const allowed = ROLE_TABS[APP_ROLE] || ROLE_TABS.all;
+      document.querySelectorAll(".tab-link").forEach(btn => {
+        const ok = allowed.indexOf(btn.dataset.screen) >= 0;
+        btn.style.display = ok ? "" : "none";
+      });
+      const first = allowed[0];
+      if (first) switchTab(first);
+    }
 
     function switchTab(screenId) {
-      document.getElementById('orderScreen').style.display = (screenId === 'orderScreen') ? 'block' : 'none';
-      document.getElementById('clientsScreen').style.display = (screenId === 'clientsScreen') ? 'block' : 'none';
-      document.getElementById('tabNewOrder').classList.toggle('active', screenId === 'orderScreen');
-      document.getElementById('tabViewClients').classList.toggle('active', screenId === 'clientsScreen');
-      if (screenId === 'orderScreen' && document.getElementById('isEditMode').value === 'false') {
-        document.getElementById('appHeaderTitle').innerText = "🏭 Бойня-Конвейер v4.0";
-        document.getElementById('btnMainSave').innerText = "💾 Сохранить весь заказ";
+      document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".tab-link").forEach(el => el.classList.toggle("active", el.dataset.screen === screenId));
+      document.getElementById(screenId).classList.add("active");
+      if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
+        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.0";
+        document.getElementById("btnMainSave").innerText = "Сохранить заказ";
       }
     }
+
+    function unitForItem(cat, main) {
+      if (cat === "chew") return "шт";
+      if (/шт/i.test(main || "")) return "шт";
+      return "гр";
+    }
+
     function openProductSelector(catKey) {
       currentCategory = catKey;
       const cat = catalog[catKey];
-      document.getElementById('selectorTitle').innerText = cat.title;
-      document.getElementById('selectorCard').style.display = "block";
-      let itemHtml = '<option value="">-- Выбрать из списка --</option>';
-      cat.items.forEach(name => { itemHtml += `<option value="${name}">${name}</option>`; });
-      const mainSelect = document.getElementById('mainSelect');
-      mainSelect.innerHTML = itemHtml;
-      document.getElementById('fractionGroup').style.display = "none";
-      document.getElementById('volumeInput').value = "";
-      document.getElementById('valueLabel').innerText = (catKey === 'chew') ? "Количество (в шт.)" : "Вес (в граммах)";
+      document.getElementById("selectorTitle").innerText = cat.title;
+      document.getElementById("selectorCard").style.display = "block";
+      let html = '<option value="">-- Выбрать --</option>';
+      cat.items.forEach(n => { html += `<option value="${n}">${n}</option>`; });
+      document.getElementById("mainSelect").innerHTML = html;
+      document.getElementById("fractionGroup").style.display = "none";
+      document.getElementById("volumeInput").value = "";
+      document.getElementById("valueLabel").innerText = catKey === "chew" ? "Количество (шт)" : "Вес (гр)";
     }
 
     function onProductChange() {
-      const mainVal = document.getElementById('mainSelect').value;
-      const fracGroup = document.getElementById('fractionGroup');
-      const fracSelect = document.getElementById('fractionSelect');
-      const valLabel = document.getElementById('valueLabel');
+      const mainVal = document.getElementById("mainSelect").value;
       const cat = catalog[currentCategory];
-      if (mainVal === "ПЕРЕПЁЛКИ шт." || currentCategory === 'chew') { 
-        valLabel.innerText = "Количество (в шт.)"; 
-      } else { 
-        valLabel.innerText = "Вес (в граммах)"; 
-      }
+      document.getElementById("valueLabel").innerText =
+        unitForItem(currentCategory, mainVal) === "шт" ? "Количество (шт)" : "Вес (гр)";
       if (cat.fractions && cat.fractions[mainVal]) {
-        fracGroup.style.display = "block";
-        let fracHtml = "";
-        cat.fractions[mainVal].forEach(f => { fracHtml += `<option value="${f}">${f}</option>`; });
-        fracSelect.innerHTML = fracHtml;
-      } else { 
-        fracGroup.style.display = "none"; 
-        fracSelect.innerHTML = ""; 
+        document.getElementById("fractionGroup").style.display = "block";
+        document.getElementById("fractionSelect").innerHTML =
+          cat.fractions[mainVal].map(f => `<option value="${f}">${f}</option>`).join("");
+      } else {
+        document.getElementById("fractionGroup").style.display = "none";
+        document.getElementById("fractionSelect").innerHTML = "";
       }
     }
 
     function addItemToBasket() {
-      const mainVal = document.getElementById('mainSelect').value;
-      const fracVal = document.getElementById('fractionSelect').value;
-      const inputVal = Number(document.getElementById('volumeInput').value) || 0;
-      if (!mainVal) { alert("❌ Выберите наименование!"); return; }
-      if (inputVal <= 0) { alert("❌ Укажите количество/вес больше нуля!"); return; }
-      const uniqueId = Date.now();
-      basket.push({ id: uniqueId, cat: currentCategory, main: mainVal, sub: fracVal, value: inputVal });
+      const mainVal = document.getElementById("mainSelect").value;
+      const fracVal = document.getElementById("fractionSelect").value || "";
+      const inputVal = Number(document.getElementById("volumeInput").value) || 0;
+      if (!mainVal) return alert("Выберите наименование");
+      if (inputVal <= 0) return alert("Укажите количество больше нуля");
+      basket.push({
+        id: Date.now() + Math.random(),
+        cat: currentCategory,
+        main: mainVal,
+        name: mainVal,
+        sub: fracVal,
+        value: inputVal,
+        val: inputVal
+      });
       renderBasket();
-      document.getElementById('selectorCard').style.display = "none";
+      document.getElementById("selectorCard").style.display = "none";
     }
 
     function renderBasket() {
-      const container = document.getElementById('basketContainer'); 
-      container.innerHTML = "";
-      if (basket.length === 0) { 
-        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:4px 0 0 4px;">Корзина пуста. Добавьте позиции ниже...</p>`; 
-        return; 
+      const box = document.getElementById("basketContainer");
+      if (!basket.length) {
+        box.innerHTML = '<p class="muted">Корзина пуста</p>';
+        return;
       }
-      basket.forEach(item => {
-        let itemTitle = item.main; let subText = ""; let unit = (item.cat === 'chew' || item.main === "ПЕРЕПЁЛКИ шт.") ? " шт." : " гр";
-        if (item.cat === "dressura") { subText = "Фракция: " + item.sub; } 
-        else if (item.cat === "chew" && catalog.chew.fractions[item.main]) { subText = "Тип нарезки: " + item.sub; } 
-        else { subText = "Категория: " + item.cat.toUpperCase(); }
-        container.innerHTML += `
-          <div class="basket-card ${item.cat}">
-            <button class="btn-inline-del" onclick="deleteBasketItem(${item.id})">Удалить</button>
-            <div class="basket-info">${itemTitle} → ${item.value}${unit}</div>
-            <div class="basket-sub">${subText}</div>
-          </div>`;
+      box.innerHTML = basket.map(item => {
+        const unit = unitForItem(item.cat, item.main);
+        const sub = item.sub ? ("Фракция: " + item.sub) : ("Категория: " + item.cat);
+        return `<div class="basket-card ${item.cat}">
+          <button class="btn-inline-del" onclick="deleteBasketItem(${item.id})">Удалить</button>
+          <div class="basket-info">${item.main} → ${item.value} ${unit}</div>
+          <div class="basket-sub">${sub}</div>
+        </div>`;
+      }).join("");
+    }
+
+    function deleteBasketItem(id) {
+      basket = basket.filter(x => x.id !== id);
+      renderBasket();
+    }
+
+    /** JSONP GET */
+    function apiGet(params) {
+      return new Promise((resolve, reject) => {
+        const cb = "cb_" + Math.round(Math.random() * 1e9);
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("Таймаут ответа сервера"));
+        }, 45000);
+        function cleanup() {
+          clearTimeout(timer);
+          delete window[cb];
+          const s = document.getElementById(cb);
+          if (s) s.remove();
+        }
+        window[cb] = function (res) {
+          cleanup();
+          resolve(res);
+        };
+        const q = Object.keys(params).map(k => k + "=" + encodeURIComponent(params[k])).join("&");
+        const script = document.createElement("script");
+        script.id = cb;
+        script.src = GOOGLE_WEBHOOK_URL + "?" + q + "&callback=" + cb;
+        script.onerror = function () {
+          cleanup();
+          reject(new Error("Ошибка сети"));
+        };
+        document.body.appendChild(script);
       });
     }
 
-    function deleteBasketItem(id) { 
-      basket = basket.filter(item => item.id !== id); 
-      renderBasket(); 
+    /** POST text/plain — Apps Script читает JSON из тела; после — проверка через GET */
+    function apiPost(payload) {
+      return fetch(GOOGLE_WEBHOOK_URL, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      }).then(function () {
+        return { status: "sent" };
+      }).catch(function () {
+        // CORS opaque часто даёт ошибку даже если скрипт отработал — вызывающий код проверяет через GET
+        return { status: "sent_opaque" };
+      });
     }
 
-    function sendEntireOrder() {
-      const clientName = document.getElementById('client').value.trim();
-      const clientAddress = document.getElementById('addressInput').value.trim();
-      const clientNote = document.getElementById('noteInput').value.trim();
-      const isEdit = document.getElementById('isEditMode').value === 'true';
-      if (!clientName) { alert("❌ Введите имя/ник клиента!"); return; }
-      if (basket.length === 0) { alert("❌ Корзина пуста! Добавьте товары."); return; }
-      const popupMsg = isEdit ? "Перезаписать изменения для клиента " + clientName + " в базу?" : "Записать весь заказ (" + basket.length + " поз.) для клиента " + clientName + " в базу?";
-      if (confirm(popupMsg)) {
-        fetch(GOOGLE_WEBHOOK_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "saveOrder", day: document.getElementById('day').value, client: clientName, address: clientAddress, note: clientNote, basket: basket })
-        });
-        alert(isEdit ? "🎉 Заказ успешно отредактирован!" : "🎉 Весь заказ отправлен в таблицу!");
-        document.getElementById('isEditMode').value = "false";
-        document.getElementById('appHeaderTitle').innerText = "🏭 Бойня-Конвейер v4.0";
-        document.getElementById('btnMainSave').innerText = "💾 Сохранить весь заказ";
-        document.getElementById('client').readOnly = false;
-        basket = []; renderBasket();
-        document.getElementById('client').value = ""; document.getElementById('addressInput').value = ""; document.getElementById('noteInput').value = "";
-        switchTab('orderScreen');
+    async function sendEntireOrder() {
+      const clientName = document.getElementById("client").value.trim();
+      const clientAddress = document.getElementById("addressInput").value.trim();
+      const clientNote = document.getElementById("noteInput").value.trim();
+      const day = document.getElementById("day").value;
+      const isEdit = document.getElementById("isEditMode").value === "true";
+      if (!clientName) return alert("Введите имя клиента");
+      if (!basket.length) return alert("Корзина пуста");
+      if (!confirm(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"))) return;
+
+      const btn = document.getElementById("btnMainSave");
+      btn.disabled = true;
+      btn.innerText = "Сохраняю...";
+
+      const payload = {
+        action: "saveOrder",
+        day: day,
+        client: clientName,
+        address: clientAddress,
+        note: clientNote,
+        basket: basket.map(x => ({
+          cat: x.cat,
+          main: x.main,
+          name: x.main,
+          sub: x.sub || "",
+          value: x.value,
+          val: x.value
+        }))
+      };
+
+      try {
+        await apiPost(payload);
+        await new Promise(r => setTimeout(r, 1500));
+        const check = await apiGet({ action: "getClients", day: day });
+        const found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
+        const okPositions = found && found.basket && found.basket.length > 0;
+        if (!okPositions) {
+          alert("Имя/адрес могли записаться, но позиции не нашлись в таблице. Убедитесь, что вставили новый Code.gs и сделали Deploy.");
+          return;
+        }
+        alert(isEdit ? "Заказ обновлён (" + found.basket.length + " поз.)" : "Заказ сохранён (" + found.basket.length + " поз.)");
+        document.getElementById("isEditMode").value = "false";
+        document.getElementById("client").readOnly = false;
+        document.getElementById("client").value = "";
+        document.getElementById("addressInput").value = "";
+        document.getElementById("noteInput").value = "";
+        basket = [];
+        renderBasket();
+        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.0";
+      } catch (err) {
+        alert("Ошибка: " + (err.message || err));
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Сохранить заказ";
       }
     }
-    function loadClientsForDay() {
-      const selectedDay = document.getElementById('viewDaySelect').value;
-      const container = document.getElementById('clientsContainer');
-      const summaryContainer = document.getElementById('totalDaySummaryContainer');
-      if (!selectedDay) { 
-        container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">Выберите день...</p>`; 
-        summaryContainer.innerHTML = ""; return; 
+
+    async function loadClientsForDay() {
+      const day = document.getElementById("viewDaySelect").value;
+      const box = document.getElementById("clientsContainer");
+      const summary = document.getElementById("totalDaySummaryContainer");
+      if (!day) {
+        box.innerHTML = '<p class="muted">Выберите день...</p>';
+        summary.innerHTML = "";
+        return;
       }
-      container.innerHTML = `<p style="color:var(--accent-color); font-weight:600; margin:0;">⏳ Выгружаю людей из таблицы...</p>`;
-      summaryContainer.innerHTML = "";
-      
-      const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-      
-      window[callbackName] = function(res) {
-        if (res.status === "success" && res.clients && res.clients.length > 0) {
-          container.innerHTML = ""; loadedClientsRawData = res.clients;
-          let totalClientsCount = res.clients.length;
-          res.clients.forEach((client, index) => {
-            let basketHtml = "";
-            if (client.basket && client.basket.length > 0) {
-              client.basket.forEach(goods => {
-                let unitText = goods.unit || "гр";
-                let fracText = goods.sub ? " (" + goods.sub + ")" : "";
-                basketHtml += `<div class="order-detail-line"><span>• ${goods.name}${fracText}</span><span class="order-detail-volume">${goods.val} ${unitText}</span></div>`;
-              });
-            } else { basketHtml = `<p style="color:var(--text-muted); font-style:italic; margin:0; font-size:13px;">В чеке нет позиций.</p>`; }
-            let deliveryBoxHtml = "";
-            if (client.address || client.note) {
-              let addrLine = client.address ? `<div class="delivery-line addr-line">📍 Адрес: ${client.address}</div>` : "";
-              let noteLine = client.note ? `<div class="delivery-line time-alert">⏱️ Напоминалка: ${client.note}</div>` : "";
-              deliveryBoxHtml = `<div class="delivery-info-box">${noteLine}${addrLine}</div>`;
-            }
-            container.innerHTML += `
-              <div class="client-item-card">
-                <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
-                  <span class="client-title">${index + 1}. ${client.name}</span>
-                  <div class="client-right-block">
-                    <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
-                    <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
-                    <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
-                    <span class="client-badge">${client.orderCount} поз.</span>
-                  </div>
-                </div>
-                ${deliveryBoxHtml}
-                <div class="client-order-details" id="details_${index}">${basketHtml}</div>
-              </div>`;
-          });
-          summaryContainer.innerHTML = `<div class="total-summary-badge">📊 Всего клиентов на ${selectedDay}: <span style="color:var(--success-color); font-size:17px; font-weight:800;">${totalClientsCount} чел.</span></div>`;
-        } else {
-          container.innerHTML = `<p style="color:var(--text-muted); font-style:italic; margin:0;">🚫 На этот день пока никто не записан.</p>`;
-          summaryContainer.innerHTML = "";
+      box.innerHTML = '<p class="muted">Загружаю...</p>';
+      try {
+        const res = await apiGet({ action: "getClients", day: day });
+        if (res.status !== "success" || !res.clients || !res.clients.length) {
+          box.innerHTML = '<p class="muted">На этот день никто не записан</p>';
+          summary.innerHTML = "";
+          loadedClientsRawData = [];
+          return;
         }
-        
-        const activeScriptTag = document.getElementById(callbackName);
-        if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
-        delete window[callbackName];
-      };
-      
-      const script = document.createElement('script');
-      script.id = callbackName;
-      script.src = GOOGLE_WEBHOOK_URL + '?action=getClients&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
-      document.body.appendChild(script);
+        loadedClientsRawData = res.clients;
+        summary.innerHTML = `<div class="total-summary-badge">Клиентов: ${res.clients.length}</div>`;
+        box.innerHTML = res.clients.map((client, index) => {
+          const lines = (client.basket || []).map(g => {
+            const unit = g.unit || unitForItem(g.cat, g.name);
+            const frac = g.sub ? " (" + g.sub + ")" : "";
+            return `<div class="order-detail-line"><span>• ${g.name}${frac}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
+          }).join("") || '<p class="muted">Нет позиций</p>';
+          const addr = client.address ? `<div class="delivery-line addr-line">Адрес: ${escapeHtml(client.address)}</div>` : "";
+          const note = client.note ? `<div class="delivery-line time-alert">Примечание: ${escapeHtml(client.note)}</div>` : "";
+          return `<div class="client-item-card">
+            <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
+              <span class="client-title">${index + 1}. ${escapeHtml(client.name)}</span>
+              <div class="client-right-block">
+                <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
+                <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
+                <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
+                <span class="client-badge">${client.orderCount} поз.</span>
+              </div>
+            </div>
+            ${(addr || note) ? `<div class="delivery-info-box">${note}${addr}</div>` : ""}
+            <div class="client-order-details" id="details_${index}">${lines}</div>
+          </div>`;
+        }).join("");
+      } catch (err) {
+        box.innerHTML = '<p class="muted">Ошибка загрузки: ' + escapeHtml(err.message || String(err)) + "</p>";
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
     function toggleOrderDetail(index, event) {
-      if (event.target.closest('.crm-mini-btn')) return;
-      const detailsBlock = document.getElementById(`details_${index}`);
-      if (detailsBlock) {
-        const isHidden = detailsBlock.style.display === 'none' || detailsBlock.style.display === '';
-        detailsBlock.style.display = isHidden ? 'block' : 'none';
-      }
+      if (event.target.closest(".crm-mini-btn")) return;
+      const el = document.getElementById("details_" + index);
+      if (!el) return;
+      el.style.display = (el.style.display === "block") ? "none" : "block";
     }
 
     function crmEditClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
-      const selectedDay = document.getElementById('viewDaySelect').value;
-      
-      document.getElementById('isEditMode').value = "true";
-      document.getElementById('appHeaderTitle').innerText = "✏️ Изменение: " + client.name;
-      document.getElementById('btnMainSave').innerText = "🆙 Обновить запись в базе";
-      
-      document.getElementById('day').value = selectedDay;
-      document.getElementById('client').value = client.name;
-      document.getElementById('client').readOnly = true;
-      document.getElementById('addressInput').value = client.address;
-      document.getElementById('noteInput').value = client.note;
-      
-      basket = [];
-      if(client.basket && client.basket.length > 0) {
-        client.basket.forEach(goods => {
-          basket.push({ id: Date.now() + Math.random(), cat: goods.cat, main: goods.name, sub: goods.sub, value: goods.val });
-        });
-      }
-      renderBasket(); switchTab('orderScreen');
+      const day = document.getElementById("viewDaySelect").value;
+      document.getElementById("isEditMode").value = "true";
+      document.getElementById("appHeaderTitle").innerText = "Изменение: " + client.name;
+      document.getElementById("btnMainSave").innerText = "Обновить заказ";
+      document.getElementById("day").value = day;
+      document.getElementById("client").value = client.name;
+      document.getElementById("client").readOnly = true;
+      document.getElementById("addressInput").value = client.address || "";
+      document.getElementById("noteInput").value = client.note || "";
+      basket = (client.basket || []).map(g => ({
+        id: Date.now() + Math.random(),
+        cat: g.cat || "other",
+        main: g.name,
+        name: g.name,
+        sub: g.sub || "",
+        value: g.val,
+        val: g.val
+      }));
+      renderBasket();
+      switchTab("orderScreen");
     }
 
-    function crmMoveClient(index, event) {
+    async function crmMoveClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
-      const oldDay = document.getElementById('viewDaySelect').value;
-      
-      let menuText = "🔄 Выберите день для переноса заказа клиента " + client.name + ":\n\n" +
-                     "1 - Понедельник\n2 - Вторник\n3 - Среда\n4 - Четверг\n5 - Пятница\n6 - Будущая неделя";
-      
-      let choice = prompt(menuText, "1");
+      const oldDay = document.getElementById("viewDaySelect").value;
+      const choice = prompt("Перенос " + client.name + ":\n1 Пн  2 Вт  3 Ср  4 Чт  5 Пт  6 Будущая неделя", "1");
       if (!choice) return;
-      
-      let dayMap = { "1": "Понедельник", "2": "Вторник", "3": "Среда", "4": "Четверг", "5": "Пятница", "6": "Будущая неделя" };
-      let newDay = dayMap[choice.trim()];
-      if (!newDay) { alert("❌ Неверный выбор! Укажите цифру от 1 до 6."); return; }
-      
-      if (confirm("Перенести " + client.name + " с дня " + oldDay + " на " + newDay + "?")) {
-        const callbackName = 'jsonp_move_' + Math.round(100000 * Math.random());
-        window[callbackName] = function(res) {
-          alert("🚀 Заказ успешно перенесен!"); loadClientsForDay();
-          const activeScriptTag = document.getElementById(callbackName);
-          if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
-          delete window[callbackName];
-        };
-        const script = document.createElement('script'); script.id = callbackName;
-        script.src = GOOGLE_WEBHOOK_URL + '?action=moveClient&client=' + encodeURIComponent(client.name) + '&oldDay=' + encodeURIComponent(oldDay) + '&newDay=' + encodeURIComponent(newDay) + '&callback=' + callbackName;
-        document.body.appendChild(script);
+      const dayMap = { "1": "Понедельник", "2": "Вторник", "3": "Среда", "4": "Четверг", "5": "Пятница", "6": "Будущая неделя" };
+      const newDay = dayMap[choice.trim()];
+      if (!newDay) return alert("Укажите цифру 1–6");
+      if (!confirm("Перенести " + client.name + " → " + newDay + "?")) return;
+      try {
+        const res = await apiGet({ action: "moveClient", client: client.name, oldDay: oldDay, newDay: newDay });
+        if (res.status !== "success") return alert("Не удалось: " + (res.status || "ошибка"));
+        alert("Перенесено");
+        loadClientsForDay();
+      } catch (err) {
+        alert(err.message || err);
       }
     }
 
-    function crmDeleteClient(index, event) {
+    async function crmDeleteClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
-      const selectedDay = document.getElementById('viewDaySelect').value;
-      
-      if (confirm("🗑️ Полностью удалить клиента " + client.name + " и очистить его столбец?")) {
-        const callbackName = 'jsonp_del_' + Math.round(100000 * Math.random());
-        window[callbackName] = function(res) {
-          alert("🗑️ Клиент успешно удален из таблицы!"); loadClientsForDay();
-          const activeScriptTag = document.getElementById(callbackName);
-          if (activeScriptTag) { document.body.removeChild(activeScriptTag); }
-          delete window[callbackName];
-        };
-        const script = document.createElement('script'); script.id = callbackName;
-        script.src = GOOGLE_WEBHOOK_URL + '?action=deleteClient&client=' + encodeURIComponent(client.name) + '&day=' + encodeURIComponent(selectedDay) + '&callback=' + callbackName;
-        document.body.appendChild(script);
+      const day = document.getElementById("viewDaySelect").value;
+      if (!confirm("Удалить клиента " + client.name + "?")) return;
+      try {
+        const res = await apiGet({ action: "deleteClient", client: client.name, day: day });
+        if (res.status !== "success") return alert("Не удалось: " + (res.status || "ошибка"));
+        alert("Удалено");
+        loadClientsForDay();
+      } catch (err) {
+        alert(err.message || err);
       }
     }
+
+    async function loadCutting() {
+      const day = document.getElementById("cuttingDaySelect").value;
+      const box = document.getElementById("cuttingContainer");
+      const summary = document.getElementById("cuttingSummary");
+      if (!day) {
+        box.innerHTML = '<p class="muted">Выберите день...</p>';
+        summary.innerHTML = "";
+        return;
+      }
+      box.innerHTML = '<p class="muted">Считаю нарезку...</p>';
+      try {
+        const res = await apiGet({ action: "getCutting", day: day });
+        if (res.status !== "success" || !res.items || !res.items.length) {
+          box.innerHTML = '<p class="muted">На этот день резать нечего</p>';
+          summary.innerHTML = "";
+          return;
+        }
+        summary.innerHTML = `<div class="total-summary-badge">${escapeHtml(res.date || "")} · позиций: ${res.items.length}</div>`;
+        box.innerHTML = res.items.map(item => {
+          const dryLabel = item.unit === "шт" ? (item.dry + " шт") : (item.dry + " гр сухого");
+          const rawLabel = item.unit === "шт"
+            ? (item.raw + " шт")
+            : (Number(item.raw).toFixed(2) + " кг сырого");
+          return `<div class="cut-row ${item.done ? "done" : ""}" id="cut_${item.row}">
+            <div class="cut-title">${escapeHtml(item.name)}</div>
+            <div class="cut-meta">Нужно: <b>${dryLabel}</b><br>Сырьё: <b>${rawLabel}</b></div>
+            <div class="cut-actions">
+              <label class="check-line"><input type="checkbox" ${item.done ? "checked" : ""} onchange="toggleCutDone(${item.row}, this.checked)"> Нарезано</label>
+              <label>Излишек <input type="number" inputmode="decimal" id="surplus_${item.row}" value="${item.surplus || 0}" step="0.1"></label>
+              <button class="btn-action btn-blue" style="width:auto;padding:0 14px;height:40px;" onclick="saveCutSurplus(${item.row})">Сохранить излишек</button>
+            </div>
+          </div>`;
+        }).join("");
+      } catch (err) {
+        box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
+      }
+    }
+
+    async function toggleCutDone(row, done) {
+      const day = document.getElementById("cuttingDaySelect").value;
+      await apiPost({ action: "updateCutting", day: day, row: row, done: done });
+      const el = document.getElementById("cut_" + row);
+      if (el) el.classList.toggle("done", done);
+    }
+
+    async function saveCutSurplus(row) {
+      const day = document.getElementById("cuttingDaySelect").value;
+      const surplus = Number(document.getElementById("surplus_" + row).value) || 0;
+      await apiPost({ action: "updateCutting", day: day, row: row, surplus: surplus });
+      alert("Излишек сохранён");
+    }
+
+    async function loadCourier() {
+      const day = document.getElementById("courierDaySelect").value;
+      const box = document.getElementById("courierContainer");
+      const summary = document.getElementById("courierSummary");
+      if (!day) {
+        box.innerHTML = '<p class="muted">Выберите день...</p>';
+        summary.innerHTML = "";
+        courierClientsCache = [];
+        return;
+      }
+      box.innerHTML = '<p class="muted">Загружаю маршрут...</p>';
+      try {
+        const res = await apiGet({ action: "getCourier", day: day });
+        if (res.status !== "success" || !res.clients || !res.clients.length) {
+          box.innerHTML = '<p class="muted">Нет клиентов на день</p>';
+          summary.innerHTML = "";
+          courierClientsCache = [];
+          return;
+        }
+        courierClientsCache = res.clients;
+        const doneCount = res.clients.filter(c => c.delivered).length;
+        summary.innerHTML = `<div class="total-summary-badge">${escapeHtml(res.date || day)} · ${res.clients.length} клиентов · доставлено ${doneCount}</div>`;
+        box.innerHTML = res.clients.map((c, idx) => {
+          const lines = (c.basket || []).map(g => {
+            const unit = g.unit || "гр";
+            const frac = g.sub ? " (" + g.sub + ")" : "";
+            return `<div class="order-detail-line"><span>• ${escapeHtml(g.name)}${escapeHtml(frac)}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
+          }).join("");
+          return `<div class="courier-row">
+            <label class="check-line">
+              <input type="checkbox" ${c.delivered ? "checked" : ""} onchange="toggleDelivered(${idx}, this.checked)">
+              <span class="cut-title">${idx + 1}. ${escapeHtml(c.name)}</span>
+            </label>
+            <div class="cut-meta">${c.address ? ("Адрес: " + escapeHtml(c.address)) : "Адрес не указан"}
+              ${c.note ? ("<br>Примечание: " + escapeHtml(c.note)) : ""}
+            </div>
+            <div>${lines || '<span class="muted">Пустой заказ</span>'}</div>
+          </div>`;
+        }).join("");
+      } catch (err) {
+        box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
+      }
+    }
+
+    async function toggleDelivered(index, delivered) {
+      const day = document.getElementById("courierDaySelect").value;
+      const client = courierClientsCache[index];
+      if (!client) return;
+      await apiPost({ action: "setDelivered", day: day, client: client.name, delivered: delivered });
+      client.delivered = delivered;
+    }
+
+    function normalizeAddressForMaps(addr) {
+      const a = String(addr || "").trim();
+      if (!a) return "";
+      if (/минск/i.test(a)) return a;
+      return DEFAULT_CITY + ", " + a;
+    }
+
+    function openYandexMaps() {
+      const addrs = courierClientsCache.map(c => normalizeAddressForMaps(c.address)).filter(Boolean);
+      if (!addrs.length) return alert("Нет адресов для маршрута. Сначала загрузите день.");
+      const rtext = addrs.map(a => encodeURIComponent(a)).join("~");
+      const url = "https://yandex.ru/maps/?rtext=" + rtext + "&rtt=auto";
+      if (tg && tg.openLink) tg.openLink(url);
+      else window.open(url, "_blank");
+    }
+
     renderBasket();
+    applyRoleTabs();
   </script>
 </body>
 </html>
