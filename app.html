@@ -158,11 +158,38 @@
     .muted { color: var(--text-muted); font-style: italic; }
     .screen { display: none; }
     .screen.active { display: block; }
+    .seg-row { display: flex; gap: 8px; }
+    .seg-btn {
+      flex: 1; height: 42px; border-radius: 10px; border: 1px solid var(--border-color);
+      background: #2c2c2e; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .seg-btn.active { background: var(--accent-color); border-color: var(--accent-color); }
+    .route-card {
+      background: #1c1c1e; border: 1px solid var(--border-color); border-radius: 12px;
+      padding: 12px; margin-bottom: 12px;
+    }
+    .route-head {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+      margin-bottom: 8px; flex-wrap: wrap;
+    }
+    .route-title { font-weight: 700; font-size: 15px; }
+    .route-time { font-size: 13px; color: var(--success-color); font-weight: 700; }
+    .route-stop {
+      border-top: 1px solid #2c2c2e; padding: 10px 0; display: grid; gap: 6px;
+    }
+    .route-stop-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .route-stop-name { font-weight: 600; font-size: 14px; }
+    .route-stop-addr { font-size: 12px; color: var(--text-muted); line-height: 1.35; }
+    .route-mini {
+      flex-shrink: 0; height: 32px; padding: 0 10px; border-radius: 8px; border: none;
+      background: #3a3a3c; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .route-actions { display: grid; gap: 8px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v5.0</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v5.2</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -271,8 +298,25 @@
             <option>Четверг</option><option>Пятница</option>
           </select>
         </div>
-        <button class="btn-action btn-blue" onclick="openYandexMaps()">Открыть адреса в Яндекс.Картах</button>
+        <div class="form-group">
+          <label>Точка выезда</label>
+          <input type="text" id="depotAddress" placeholder="Минск, ваш склад / дом" onchange="saveDepotAddress()">
+        </div>
+        <div class="form-group">
+          <label>Курьеров сегодня</label>
+          <div class="seg-row">
+            <button type="button" class="seg-btn active" id="courierCount1" onclick="setCourierCount(1)">1</button>
+            <button type="button" class="seg-btn" id="courierCount2" onclick="setCourierCount(2)">2</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Выезд примерно в</label>
+          <input type="text" id="departTime" placeholder="14:00" inputmode="numeric">
+        </div>
+        <button class="btn-action btn-green" type="button" onclick="buildRoutePlan()">Собрать маршруты</button>
+        <button class="btn-action btn-blue" type="button" onclick="openYandexMaps()" style="margin-top:8px;">Адреса (Google / Яндекс)</button>
       </div>
+      <div id="routePlanBox"></div>
       <div id="courierSummary"></div>
       <div id="courierContainer"><p class="muted">Выберите день...</p></div>
     </div>
@@ -501,6 +545,16 @@
     let currentCategory = "";
     let loadedClientsRawData = [];
     let courierClientsCache = [];
+    let routePlanState = {
+      courierCount: 1,
+      routes: [[], []],
+      geoCache: {}
+    };
+
+    const DEPOT_LS_KEY = "superboyna_depot";
+    const ROAD_FACTOR = 1.45;
+    const AVG_SPEED_KMH = 26;
+    const STOP_MINUTES = 4;
 
     function applyRoleTabs() {
       const allowed = ROLE_TABS[APP_ROLE] || ROLE_TABS.all;
@@ -517,7 +571,7 @@
       document.querySelectorAll(".tab-link").forEach(el => el.classList.toggle("active", el.dataset.screen === screenId));
       document.getElementById(screenId).classList.add("active");
       if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
-        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.0";
+        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.2";
         document.getElementById("btnMainSave").innerText = "Сохранить заказ";
       }
     }
@@ -691,7 +745,7 @@
         document.getElementById("noteInput").value = "";
         basket = [];
         renderBasket();
-        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.0";
+        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер v5.2";
       } catch (err) {
         await uiAlertAsync("Ошибка: " + (err.message || err));
       } finally {
@@ -881,11 +935,12 @@
     async function loadCourier() {
       const day = document.getElementById("courierDaySelect").value;
       const box = document.getElementById("courierContainer");
-      const summary = document.getElementById("courierSummary");
       if (!day) {
         box.innerHTML = '<p class="muted">Выберите день...</p>';
-        summary.innerHTML = "";
         courierClientsCache = [];
+        refreshCourierSummary();
+        document.getElementById("routePlanBox").innerHTML = "";
+        routePlanState.routes = [[], []];
         return;
       }
       box.innerHTML = '<p class="muted">Загружаю маршрут...</p>';
@@ -893,13 +948,15 @@
         const res = await apiGet({ action: "getCourier", day: day });
         if (res.status !== "success" || !res.clients || !res.clients.length) {
           box.innerHTML = '<p class="muted">Нет клиентов на день</p>';
-          summary.innerHTML = "";
           courierClientsCache = [];
+          refreshCourierSummary();
+          document.getElementById("routePlanBox").innerHTML = "";
+          routePlanState.routes = [[], []];
           return;
         }
         courierClientsCache = res.clients;
-        const doneCount = res.clients.filter(c => c.delivered).length;
-        summary.innerHTML = `<div class="total-summary-badge">${escapeHtml(res.date || day)} · ${res.clients.length} клиентов · доставлено ${doneCount}</div>`;
+        courierClientsCache._date = res.date || day;
+        refreshCourierSummary();
         box.innerHTML = res.clients.map((c, idx) => {
           const lines = (c.basket || []).map(g => {
             const unit = g.unit || "гр";
@@ -922,12 +979,31 @@
       }
     }
 
+    function refreshCourierSummary() {
+      const day = document.getElementById("courierDaySelect").value;
+      const summary = document.getElementById("courierSummary");
+      if (!day || !courierClientsCache.length) {
+        summary.innerHTML = "";
+        return;
+      }
+      const doneCount = courierClientsCache.filter(c => c.delivered).length;
+      const dateLabel = (courierClientsCache._date || day);
+      summary.innerHTML = `<div class="total-summary-badge">${escapeHtml(dateLabel)} · ${courierClientsCache.length} клиентов · доставлено <span style="color:var(--success-color)">${doneCount}</span></div>`;
+    }
+
     async function toggleDelivered(index, delivered) {
       const day = document.getElementById("courierDaySelect").value;
       const client = courierClientsCache[index];
       if (!client) return;
-      await apiPost({ action: "setDelivered", day: day, client: client.name, delivered: delivered });
       client.delivered = delivered;
+      refreshCourierSummary();
+      try {
+        await apiPost({ action: "setDelivered", day: day, client: client.name, delivered: delivered });
+      } catch (e) {
+        client.delivered = !delivered;
+        refreshCourierSummary();
+        showToast("Не удалось сохранить галочку");
+      }
     }
 
     function normalizeAddressForMaps(addr) {
@@ -935,6 +1011,363 @@
       if (!a) return "";
       if (/минск/i.test(a)) return a;
       return DEFAULT_CITY + ", " + a;
+    }
+
+    function getDepotAddress() {
+      const el = document.getElementById("depotAddress");
+      const v = el ? String(el.value || "").trim() : "";
+      return v || DEFAULT_CITY;
+    }
+
+    function saveDepotAddress() {
+      try { localStorage.setItem(DEPOT_LS_KEY, getDepotAddress()); } catch (e) {}
+    }
+
+    function loadDepotAddress() {
+      const el = document.getElementById("depotAddress");
+      if (!el) return;
+      try {
+        const saved = localStorage.getItem(DEPOT_LS_KEY);
+        if (saved) el.value = saved;
+        else if (!el.value) el.value = DEFAULT_CITY;
+      } catch (e) {
+        if (!el.value) el.value = DEFAULT_CITY;
+      }
+    }
+
+    function setCourierCount(n) {
+      routePlanState.courierCount = n === 2 ? 2 : 1;
+      const b1 = document.getElementById("courierCount1");
+      const b2 = document.getElementById("courierCount2");
+      if (b1) b1.classList.toggle("active", routePlanState.courierCount === 1);
+      if (b2) b2.classList.toggle("active", routePlanState.courierCount === 2);
+      if (routePlanState.routes[0].length || routePlanState.routes[1].length) {
+        autoSplitStops(routePlanState.routes[0].concat(routePlanState.routes[1]));
+        renderRoutePlan();
+      }
+    }
+
+    function haversineKm(a, b) {
+      const R = 6371;
+      const dLat = (b.lat - a.lat) * Math.PI / 180;
+      const dLon = (b.lon - a.lon) * Math.PI / 180;
+      const la1 = a.lat * Math.PI / 180;
+      const la2 = b.lat * Math.PI / 180;
+      const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 2 * R * Math.asin(Math.sqrt(h));
+    }
+
+    function driveMinutesBetween(a, b) {
+      if (!a || !b || a.lat == null || b.lat == null) return 12;
+      const km = haversineKm(a, b) * ROAD_FACTOR;
+      return (km / AVG_SPEED_KMH) * 60;
+    }
+
+    function bearingFrom(depot, p) {
+      const dLon = (p.lon - depot.lon) * Math.PI / 180;
+      const lat1 = depot.lat * Math.PI / 180;
+      const lat2 = p.lat * Math.PI / 180;
+      const y = Math.sin(dLon) * Math.cos(lat2);
+      const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    async function geocodeAddress(addr) {
+      const key = String(addr || "").trim().toLowerCase();
+      if (!key) return null;
+      if (routePlanState.geoCache[key]) return routePlanState.geoCache[key];
+      try {
+        const cached = localStorage.getItem("geo:" + key);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.lat != null) {
+            routePlanState.geoCache[key] = parsed;
+            return parsed;
+          }
+        }
+      } catch (e) {}
+
+      const q = encodeURIComponent(addr);
+      const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=by&q=" + q;
+      try {
+        const res = await fetch(url, {
+          headers: { "Accept": "application/json" }
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data || !data[0]) return null;
+        const point = { lat: Number(data[0].lat), lon: Number(data[0].lon) };
+        routePlanState.geoCache[key] = point;
+        try { localStorage.setItem("geo:" + key, JSON.stringify(point)); } catch (e2) {}
+        await new Promise(function (r) { setTimeout(r, 1100); });
+        return point;
+      } catch (e3) {
+        return null;
+      }
+    }
+
+    function nearestNeighborOrder(depot, stops) {
+      const left = stops.slice();
+      const ordered = [];
+      let cur = depot;
+      while (left.length) {
+        let bestI = 0;
+        let bestD = Infinity;
+        for (let i = 0; i < left.length; i++) {
+          const d = driveMinutesBetween(cur, left[i]);
+          if (d < bestD) { bestD = d; bestI = i; }
+        }
+        const next = left.splice(bestI, 1)[0];
+        ordered.push(next);
+        cur = next;
+      }
+      return ordered;
+    }
+
+    function estimateRouteMinutes(depot, stops) {
+      if (!stops.length) return 0;
+      let t = 0;
+      let cur = depot;
+      for (let i = 0; i < stops.length; i++) {
+        t += driveMinutesBetween(cur, stops[i]);
+        t += STOP_MINUTES;
+        cur = stops[i];
+      }
+      return Math.round(t);
+    }
+
+    function formatMinutes(m) {
+      if (m < 60) return "~" + m + " мин";
+      const h = Math.floor(m / 60);
+      const mm = m % 60;
+      return "~" + h + " ч " + (mm ? mm + " мин" : "");
+    }
+
+    function parseDepartTime() {
+      const raw = String((document.getElementById("departTime") || {}).value || "").trim();
+      const m = raw.match(/^(\d{1,2})[:.](\d{2})$/);
+      if (!m) return null;
+      const h = Number(m[1]);
+      const min = Number(m[2]);
+      if (h > 23 || min > 59) return null;
+      const d = new Date();
+      d.setHours(h, min, 0, 0);
+      return d;
+    }
+
+    function etaLabelForStop(depot, stops, index, depart) {
+      let t = 0;
+      let cur = depot;
+      for (let i = 0; i <= index; i++) {
+        t += driveMinutesBetween(cur, stops[i]);
+        if (i < index) t += STOP_MINUTES;
+        cur = stops[i];
+      }
+      const arrive = Math.round(t);
+      const leave = arrive + STOP_MINUTES;
+      if (!depart) {
+        return "через ~" + arrive + "–" + leave + " мин после выезда";
+      }
+      const a = new Date(depart.getTime() + arrive * 60000);
+      const b = new Date(depart.getTime() + leave * 60000);
+      function hhmm(d) {
+        return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      }
+      return "примерно " + hhmm(a) + "–" + hhmm(b);
+    }
+
+    function autoSplitStops(stops) {
+      const depot = routePlanState.depot || { lat: 53.9, lon: 27.56 };
+      const withGeo = stops.filter(function (s) { return s.lat != null; });
+      const noGeo = stops.filter(function (s) { return s.lat == null; });
+
+      if (routePlanState.courierCount === 1 || stops.length <= 1) {
+        const ordered = nearestNeighborOrder(depot, withGeo).concat(noGeo);
+        routePlanState.routes = [ordered, []];
+        return;
+      }
+
+      // Делим по «лучам» от точки выезда, ищем разрез с самым ровным временем езды
+      const sorted = withGeo.slice().sort(function (a, b) {
+        return bearingFrom(depot, a) - bearingFrom(depot, b);
+      });
+      let best = null;
+      const n = sorted.length;
+      if (n === 0) {
+        const half = Math.ceil(noGeo.length / 2);
+        routePlanState.routes = [noGeo.slice(0, half), noGeo.slice(half)];
+        return;
+      }
+
+      for (let rot = 0; rot < n; rot++) {
+        const rotated = sorted.slice(rot).concat(sorted.slice(0, rot));
+        for (let cut = 1; cut < n; cut++) {
+          const a = nearestNeighborOrder(depot, rotated.slice(0, cut));
+          const b = nearestNeighborOrder(depot, rotated.slice(cut));
+          const ta = estimateRouteMinutes(depot, a);
+          const tb = estimateRouteMinutes(depot, b);
+          const score = Math.max(ta, tb) * 1000 + Math.abs(ta - tb);
+          if (!best || score < best.score) best = { a: a, b: b, score: score, ta: ta, tb: tb };
+        }
+      }
+
+      // Раскидываем точки без координат в более короткий маршрут
+      let a = best.a.slice();
+      let b = best.b.slice();
+      noGeo.forEach(function (s) {
+        if (estimateRouteMinutes(depot, a) <= estimateRouteMinutes(depot, b)) a.push(s);
+        else b.push(s);
+      });
+      routePlanState.routes = [a, b];
+    }
+
+    async function buildRoutePlan() {
+      const box = document.getElementById("routePlanBox");
+      const withAddr = courierClientsCache.filter(function (c) {
+        return String(c.address || "").trim();
+      });
+      if (!withAddr.length) {
+        await uiAlertAsync("Нет адресов на этот день. Сначала выберите день и проверьте адреса.");
+        return;
+      }
+
+      box.innerHTML = '<div class="card"><p class="muted">Считаю точки и время езды…</p></div>';
+      const depotAddr = normalizeAddressForMaps(getDepotAddress());
+      saveDepotAddress();
+
+      const depotGeo = await geocodeAddress(depotAddr);
+      routePlanState.depot = depotGeo || { lat: 53.9023, lon: 27.5619 };
+
+      const stops = [];
+      for (let i = 0; i < withAddr.length; i++) {
+        const c = withAddr[i];
+        const addr = normalizeAddressForMaps(c.address);
+        box.innerHTML = '<div class="card"><p class="muted">Геокод ' + (i + 1) + "/" + withAddr.length + "…</p></div>";
+        const geo = await geocodeAddress(addr);
+        stops.push({
+          name: c.name,
+          address: addr,
+          note: c.note || "",
+          clientIndex: courierClientsCache.indexOf(c),
+          lat: geo ? geo.lat : null,
+          lon: geo ? geo.lon : null
+        });
+      }
+
+      autoSplitStops(stops);
+      renderRoutePlan();
+      const total = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[0]) +
+        estimateRouteMinutes(routePlanState.depot, routePlanState.routes[1]);
+      showToast("Готово · суммарно " + formatMinutes(total));
+    }
+
+    function moveStopBetweenRoutes(fromRoute, stopIndex, toRoute) {
+      const item = routePlanState.routes[fromRoute].splice(stopIndex, 1)[0];
+      if (!item) return;
+      routePlanState.routes[toRoute].push(item);
+      const depot = routePlanState.depot;
+      routePlanState.routes[toRoute] = nearestNeighborOrder(depot, routePlanState.routes[toRoute].filter(function (s) { return s.lat != null; }))
+        .concat(routePlanState.routes[toRoute].filter(function (s) { return s.lat == null; }));
+      renderRoutePlan();
+    }
+
+    function openRouteInGoogle(routeIndex) {
+      const stops = routePlanState.routes[routeIndex] || [];
+      const addrs = stops.map(function (s) { return s.address; }).filter(Boolean);
+      if (!addrs.length) {
+        showToast("В этом маршруте нет адресов");
+        return;
+      }
+      const depot = normalizeAddressForMaps(getDepotAddress());
+      openExternalLink(buildGoogleMapsDirUrl([depot].concat(addrs)));
+      showToast("Открываю Google Maps…");
+    }
+
+    function buildIgMessagesForRoute(routeIndex) {
+      const depot = routePlanState.depot;
+      const stops = routePlanState.routes[routeIndex] || [];
+      const depart = parseDepartTime();
+      return stops.map(function (s, i) {
+        const eta = etaLabelForStop(depot, stops, i, depart);
+        return "Привет, " + s.name + "! Сегодня доставка. Ориентир: " + eta +
+          ". Адрес: " + s.address + ". Если что — напиши 🙂";
+      }).join("\n\n---\n\n");
+    }
+
+    async function copyIgMessages(routeIndex) {
+      const text = buildIgMessagesForRoute(routeIndex);
+      if (!text) {
+        showToast("Пустой маршрут");
+        return;
+      }
+      showToast((await copyText(text)) ? "Тексты скопированы" : "Не скопировалось");
+    }
+
+    async function copyAllIgMessages() {
+      const parts = [];
+      routePlanState.routes.forEach(function (r, i) {
+        if (!r.length) return;
+        parts.push("КУРЬЕР " + (i + 1) + "\n\n" + buildIgMessagesForRoute(i));
+      });
+      const text = parts.join("\n\n==========\n\n");
+      if (!text) {
+        showToast("Сначала соберите маршруты");
+        return;
+      }
+      showToast((await copyText(text)) ? "Все тексты скопированы" : "Не скопировалось");
+    }
+
+    function renderRoutePlan() {
+      const box = document.getElementById("routePlanBox");
+      if (!box) return;
+      const depot = routePlanState.depot || { lat: 53.9, lon: 27.56 };
+      const count = routePlanState.courierCount;
+      let html = "";
+      let totalMin = 0;
+
+      for (let r = 0; r < count; r++) {
+        const stops = routePlanState.routes[r] || [];
+        const mins = estimateRouteMinutes(depot, stops);
+        totalMin += mins;
+        html += '<div class="route-card">';
+        html += '<div class="route-head"><div class="route-title">Курьер ' + (r + 1) + " · " + stops.length + " точ" +
+          (stops.length === 1 ? "ка" : (stops.length >= 2 && stops.length <= 4 ? "ки" : "ек")) +
+          '</div><div class="route-time">' + formatMinutes(mins) + "</div></div>";
+
+        if (!stops.length) {
+          html += '<p class="muted">Пока пусто — перенесите точки сюда</p>';
+        } else {
+          stops.forEach(function (s, i) {
+            const other = r === 0 ? 1 : 0;
+            const canMove = count === 2;
+            html += '<div class="route-stop">';
+            html += '<div class="route-stop-top">';
+            html += '<div><div class="route-stop-name">' + (i + 1) + ". " + escapeHtml(s.name) + "</div>";
+            html += '<div class="route-stop-addr">' + escapeHtml(s.address) +
+              (s.lat == null ? " · <span style=\"color:#ff9500\">без точных координат</span>" : "") +
+              "</div></div>";
+            if (canMove) {
+              html += '<button type="button" class="route-mini" onclick="moveStopBetweenRoutes(' + r + "," + i + "," + other + ')">→ ' + (other + 1) + "</button>";
+            }
+            html += "</div></div>";
+          });
+        }
+
+        html += '<div class="route-actions">';
+        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInGoogle(' + r + ')">Google Maps · курьер ' + (r + 1) + "</button>";
+        html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Тексты Instagram · курьер ' + (r + 1) + "</button>";
+        html += "</div></div>";
+      }
+
+      if (count === 2) {
+        html = '<div class="total-summary-badge">Суммарно по двоим ' + formatMinutes(totalMin) +
+          " · можно жать «→ 2» / «→ 1» чтобы перекинуть точку</div>" + html;
+      } else {
+        html = '<div class="total-summary-badge">Общее время маршрута ' + formatMinutes(totalMin) + "</div>" + html;
+      }
+      html += '<button class="btn-action btn-blue" type="button" onclick="copyAllIgMessages()">Скопировать все тексты клиентам</button>';
+      box.innerHTML = html;
     }
 
     function buildYandexRouteUrl(addrs) {
@@ -1012,31 +1445,31 @@
     }
 
     /**
-     * iPhone: Яндекс пачкой (rtext) часто открывает пустую страницу.
-     * Один адрес (?text=) работает. Пачку даём через Google Maps + точечно в Яндекс.
+     * На iPhone: Яндекс пачкой = пустая страница. Google пачкой = ок. Яндекс по одному = ок.
+     * Окно всегда внутри мини-аппа (без maps.html).
      */
     async function openYandexMaps() {
       const addrs = courierClientsCache.map(c => normalizeAddressForMaps(c.address)).filter(Boolean);
       if (!addrs.length) {
-        await uiAlertAsync("Нет адресов для маршрута. Сначала загрузите день и заполните адреса у клиентов.");
+        await uiAlertAsync("Нет адресов. Заполните адреса у клиентов на этот день.");
         return;
       }
 
       const listHtml = addrs.map(function (a, i) {
         return '<button type="button" class="modal-day-btn maps-one-addr" data-idx="' + i + '" style="text-align:left;height:auto;min-height:44px;padding:10px 12px;white-space:normal;">' +
-          (i + 1) + ". " + escapeHtml(a) + "<br><span style=\"color:#8e8e93;font-size:12px;\">Открыть в Яндекс</span></button>";
+          (i + 1) + ". " + escapeHtml(a) +
+          '<br><span style="color:#8e8e93;font-size:12px;">Открыть точку в Яндекс</span></button>';
       }).join("");
 
       const p = openModal(
-        '<div class="modal-title">Адреса на маршрут</div>' +
-        '<div class="modal-text" style="margin-bottom:10px;">Пачкой на iPhone лучше Google Maps. В Яндекс — по одному адресу (как у вас уже работает).</div>' +
+        '<div class="modal-title">Маршрут · v5.2</div>' +
+        '<div class="modal-text">Пачкой на iPhone используйте Google. Яндекс — только по одному адресу.</div>' +
         '<div class="modal-actions" style="margin-bottom:12px;">' +
-          '<button class="btn-action btn-green" type="button" id="mapsGoogle">Маршрут пачкой (Google Maps)</button>' +
-          '<button class="btn-action btn-blue" type="button" id="mapsYandexBatch">Маршрут пачкой (Яндекс)</button>' +
-          '<button class="btn-action" type="button" id="mapsCopy" style="background:#3a3a3c;">Скопировать адреса</button>' +
+          '<button class="btn-action btn-green" type="button" id="mapsGoogle">Открыть маршрут (Google Maps)</button>' +
+          '<button class="btn-action" type="button" id="mapsCopy" style="background:#3a3a3c;">Скопировать все адреса</button>' +
         "</div>" +
-        '<div class="modal-text" style="margin-bottom:8px;font-size:12px;color:#8e8e93;">Или откройте адрес точечно:</div>' +
-        '<div class="modal-actions" style="max-height:32vh;overflow:auto;margin-bottom:12px;">' + listHtml + "</div>" +
+        '<div class="modal-text" style="margin-bottom:8px;font-size:12px;color:#8e8e93;">Точечно в Яндекс:</div>' +
+        '<div class="modal-actions" style="max-height:36vh;overflow:auto;margin-bottom:12px;">' + listHtml + "</div>" +
         '<div class="modal-actions">' +
           '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Закрыть</button>' +
         "</div>"
@@ -1044,37 +1477,24 @@
 
       setTimeout(function () {
         const g = document.getElementById("mapsGoogle");
-        const y = document.getElementById("mapsYandexBatch");
         const copy = document.getElementById("mapsCopy");
         const cancel = document.getElementById("modalCancel");
-
         if (g) {
           g.onclick = function () {
             openExternalLink(buildGoogleMapsDirUrl(addrs));
             showToast("Открываю Google Maps…");
           };
         }
-        if (y) {
-          y.onclick = function () {
-            // На части iPhone будет пусто — оставляем как доп.попытку
-            openExternalLink(buildYandexRouteUrl(addrs));
-            showToast("Если пусто — откройте Google или адрес точечно");
-          };
-        }
         if (copy) {
           copy.onclick = async function () {
             const text = addrs.map(function (a, i) { return (i + 1) + ". " + a; }).join("\n");
-            const ok = await copyText(text);
-            showToast(ok ? "Адреса скопированы" : "Не удалось скопировать");
+            showToast((await copyText(text)) ? "Скопировано" : "Не скопировалось");
           };
         }
         document.querySelectorAll(".maps-one-addr").forEach(function (btn) {
           btn.onclick = function () {
-            const idx = Number(btn.getAttribute("data-idx"));
-            const addr = addrs[idx];
-            if (!addr) return;
-            openExternalLink(buildYandexPointUrl(addr));
-            showToast("Открываю точку в Яндекс…");
+            const addr = addrs[Number(btn.getAttribute("data-idx"))];
+            if (addr) openExternalLink(buildYandexPointUrl(addr));
           };
         });
         if (cancel) cancel.onclick = function () { closeModal(true); };
@@ -1084,6 +1504,7 @@
       recoverUiFocus();
     }
 
+    loadDepotAddress();
     renderBasket();
     applyRoleTabs();
     applyTelegramSafeArea();
