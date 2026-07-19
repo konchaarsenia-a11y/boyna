@@ -485,6 +485,15 @@ function doGet(e) {
   if (action === "getCutting") {
     return handleGetCutting(payload.day, callback);
   }
+  if (action === "startCuttingSession") {
+    return handleStartCuttingSession({
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
+      startedAt: e.parameter.startedAt || ""
+    }, callback, false);
+  }
+  if (action === "stopCuttingSession") {
+    return handleStopCuttingSession({ day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "" }, callback, false);
+  }
   if (action === "getCourier") {
     return handleGetCourier(payload.day, callback);
   }
@@ -561,6 +570,12 @@ function handleApiAction(json, callback, fromPost) {
   if (action === "registerCuttingDeficit") {
     return handleRegisterCuttingDeficit(ss, json, callback, fromPost);
   }
+  if (action === "startCuttingSession") {
+    return handleStartCuttingSession(json, callback, fromPost);
+  }
+  if (action === "stopCuttingSession") {
+    return handleStopCuttingSession(json, callback, fromPost);
+  }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
 
@@ -571,7 +586,7 @@ function handleGetCutting(dayName, callback) {
   var memory = ss.getSheetByName("Память_Нарезки");
   var dateValue = getDayDate_(ss, dayName);
   var tz = ss.getSpreadsheetTimeZone();
-  if (!cutting || !dateValue) return jsonp(callback, { status: "bad_day", items: [] });
+  if (!cutting || !dateValue) return jsonp(callback, { status: "bad_day", items: [], session: getCuttingSession_() });
 
   var dateText = formatSheetDate(dateValue, tz);
   var isActiveDate = formatSheetDate(cutting.getRange("A1").getValue(), tz) === dateText;
@@ -618,7 +633,67 @@ function handleGetCutting(dayName, callback) {
       outNext: outNext
     });
   }
-  return jsonp(callback, { status: "success", date: dateText, day: dayName, items: items });
+  return jsonp(callback, {
+    status: "success",
+    date: dateText,
+    day: dayName,
+    items: items,
+    session: getCuttingSession_()
+  });
+}
+
+function getCuttingSession_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty("CUTTING_SESSION");
+    if (!raw) return { active: false, day: "", startedAt: 0 };
+    var obj = JSON.parse(raw);
+    return {
+      active: !!obj.active,
+      day: String(obj.day || ""),
+      startedAt: Number(obj.startedAt) || 0
+    };
+  } catch (e) {
+    return { active: false, day: "", startedAt: 0 };
+  }
+}
+
+function handleStartCuttingSession(json, callback, fromPost) {
+  var day = String(json.day || "").trim();
+  if (!day) {
+    var bad = { status: "error", message: "need_day" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var startedAt = Number(json.startedAt) || Date.now();
+  var existing = getCuttingSession_();
+  // если уже идёт на этот день — не сбрасываем таймер
+  if (existing.active && String(existing.day) === day && existing.startedAt) {
+    startedAt = existing.startedAt;
+  }
+  PropertiesService.getScriptProperties().setProperty("CUTTING_SESSION", JSON.stringify({
+    active: true,
+    day: day,
+    startedAt: startedAt
+  }));
+  var ok = { status: "success", session: getCuttingSession_() };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleStopCuttingSession(json, callback, fromPost) {
+  var day = String(json.day || "").trim();
+  var existing = getCuttingSession_();
+  var elapsed = 0;
+  if (existing.active && existing.startedAt) {
+    elapsed = Date.now() - existing.startedAt;
+  }
+  if (!day || !existing.day || String(existing.day) === day || !existing.active) {
+    PropertiesService.getScriptProperties().setProperty("CUTTING_SESSION", JSON.stringify({
+      active: false,
+      day: "",
+      startedAt: 0
+    }));
+  }
+  var ok = { status: "success", elapsed: elapsed, session: getCuttingSession_() };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
 function handleUpdateCutting(ss, json, callback) {
@@ -1751,7 +1826,8 @@ function handleFinishCutting(ss, json, callback, fromPost) {
   if (missing.length) {
     handleRegisterCuttingDeficit(ss, { day: day, items: missing, immediate: true }, "cb", true);
   }
-  var ok = { status: "success", ready: ready.length, missing: missing.length };
+  handleStopCuttingSession({ day: day }, "cb", true);
+  var ok = { status: "success", ready: ready.length, missing: missing.length, session: getCuttingSession_() };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 

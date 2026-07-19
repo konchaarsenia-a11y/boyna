@@ -435,7 +435,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.6</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.7</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -615,7 +615,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.6";
+    const APP_VERSION = "v6.7";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -663,7 +663,16 @@
       active: false,
       startedAt: 0,
       timerId: null,
-      day: ""
+      day: "",
+      pollId: null,
+      fingerprint: ""
+    };
+    let routePlanState = {
+      courierCount: 1,
+      routes: [[], []],
+      geoCache: {},
+      matrix: null,
+      depot: null
     };
 
     // Пока всем 4 вкладки. Позже: "manager" | "cutter" | "courier" | "all"
@@ -987,16 +996,11 @@
     let currentCategory = "";
     let loadedClientsRawData = [];
     let courierClientsCache = [];
-    let routePlanState = {
-      courierCount: 1,
-      routes: [[], []],
-      geoCache: {}
-    };
 
     const DEPOT_LS_KEY = "superboyna_depot";
     const DEPART_LS_KEY = "superboyna_depart";
-    const ROAD_FACTOR = 1.45;
-    const AVG_SPEED_KMH = 26;
+    const ROAD_FACTOR = 1.35;
+    const AVG_SPEED_KMH = 24;
     const STOP_MINUTES = 4;
     const TIME_ITEM_H = 40;
     let departHour = 14;
@@ -1019,6 +1023,11 @@
       if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
         document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
         document.getElementById("btnMainSave").innerText = "Сохранить заказ";
+      }
+      if (screenId === "cuttingScreen") {
+        startCuttingPoll();
+      } else {
+        stopCuttingPoll();
       }
     }
 
@@ -1431,7 +1440,7 @@
       }
     }
 
-    async function loadCutting() {
+    async function loadCutting(fromPoll) {
       const day = document.getElementById("cuttingDaySelect").value;
       const box = document.getElementById("cuttingContainer");
       const summary = document.getElementById("cuttingSummary");
@@ -1442,32 +1451,96 @@
         summary.innerHTML = "";
         if (sessionBox) sessionBox.innerHTML = "";
         cuttingItemsCache = [];
-        stopCuttingTimer(false);
+        applyRemoteCuttingSession({ active: false, day: "", startedAt: 0 });
         if (finishBtn) finishBtn.style.display = "none";
+        stopCuttingPoll();
         return;
       }
-      if (cuttingSession.day && cuttingSession.day !== day) stopCuttingTimer(false);
-      box.innerHTML = '<p class="muted">Считаю нарезку...</p>';
+      if (!fromPoll) box.innerHTML = '<p class="muted">Считаю нарезку...</p>';
       try {
         const res = await apiGet({ action: "getCutting", day: day });
         if (res.status !== "success" || !res.items || !res.items.length) {
-          box.innerHTML = '<p class="muted">На этот день резать нечего</p>';
-          summary.innerHTML = "";
-          if (sessionBox) sessionBox.innerHTML = "";
+          if (!fromPoll) {
+            box.innerHTML = '<p class="muted">На этот день резать нечего</p>';
+            summary.innerHTML = "";
+            if (sessionBox) sessionBox.innerHTML = "";
+          }
           cuttingItemsCache = [];
-          stopCuttingTimer(false);
+          cuttingSession.fingerprint = "";
+          applyRemoteCuttingSession(res.session || { active: false });
           if (finishBtn) finishBtn.style.display = "none";
           return;
         }
+        const fp = cuttingFingerprint(res.items, res.session);
+        applyRemoteCuttingSession(res.session || { active: false, day: day, startedAt: 0 });
+        if (fromPoll && fp === cuttingSession.fingerprint) {
+          tickCuttingTimer();
+          return;
+        }
+        cuttingSession.fingerprint = fp;
         cuttingItemsCache = res.items.slice();
         sortCuttingItems();
         renderCuttingSummary();
         renderCuttingSessionBox();
         box.innerHTML = cuttingItemsCache.map(renderCutRowHtml).join("");
         if (finishBtn) finishBtn.style.display = cuttingSession.active ? "block" : "none";
+        startCuttingPoll();
       } catch (err) {
-        box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
-        if (finishBtn) finishBtn.style.display = "none";
+        if (!fromPoll) {
+          box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
+          if (finishBtn) finishBtn.style.display = "none";
+        }
+      }
+    }
+
+    function cuttingFingerprint(items, session) {
+      const parts = (items || []).map(function (it) {
+        return [it.row, !!it.done, !!it.laid, !!it.outNext, Number(it.surplus) || 0].join(":");
+      });
+      const s = session || {};
+      return parts.join("|") + "#" + (!!s.active) + "#" + (s.day || "") + "#" + (s.startedAt || 0);
+    }
+
+    function applyRemoteCuttingSession(session) {
+      session = session || {};
+      const day = document.getElementById("cuttingDaySelect").value;
+      const active = !!session.active && (!session.day || String(session.day) === String(day));
+      const startedAt = Number(session.startedAt) || 0;
+      const wasActive = cuttingSession.active;
+      cuttingSession.active = active;
+      cuttingSession.startedAt = active ? startedAt : 0;
+      cuttingSession.day = active ? (session.day || day) : "";
+      if (active && startedAt) {
+        if (cuttingSession.timerId) clearInterval(cuttingSession.timerId);
+        cuttingSession.timerId = setInterval(tickCuttingTimer, 1000);
+        if (!wasActive) renderCuttingSessionBox();
+        else tickCuttingTimer();
+      } else {
+        if (cuttingSession.timerId) {
+          clearInterval(cuttingSession.timerId);
+          cuttingSession.timerId = null;
+        }
+        if (wasActive) renderCuttingSessionBox();
+      }
+      const finishBtn = document.getElementById("btnFinishCutting");
+      if (finishBtn) finishBtn.style.display = cuttingSession.active ? "block" : "none";
+    }
+
+    function startCuttingPoll() {
+      stopCuttingPoll();
+      const day = document.getElementById("cuttingDaySelect").value;
+      if (!day) return;
+      cuttingSession.pollId = setInterval(function () {
+        const screen = document.getElementById("cuttingScreen");
+        if (!screen || !screen.classList.contains("active")) return;
+        loadCutting(true);
+      }, 3500);
+    }
+
+    function stopCuttingPoll() {
+      if (cuttingSession.pollId) {
+        clearInterval(cuttingSession.pollId);
+        cuttingSession.pollId = null;
       }
     }
 
@@ -1550,35 +1623,39 @@
       el.textContent = formatCutElapsed(Date.now() - cuttingSession.startedAt);
     }
 
-    function startCutting() {
+    async function startCutting() {
       const day = document.getElementById("cuttingDaySelect").value;
       if (!day) {
-        uiAlertAsync("Сначала выберите день");
+        await uiAlertAsync("Сначала выберите день");
         return;
       }
       if (!cuttingItemsCache.length) {
-        uiAlertAsync("Нечего резать");
+        await uiAlertAsync("Нечего резать");
         return;
       }
-      cuttingSession.active = true;
-      cuttingSession.startedAt = Date.now();
-      cuttingSession.day = day;
-      if (cuttingSession.timerId) clearInterval(cuttingSession.timerId);
-      cuttingSession.timerId = setInterval(tickCuttingTimer, 1000);
+      const startedAt = Date.now();
+      try {
+        const res = await apiGet({ action: "startCuttingSession", day: day, startedAt: startedAt });
+        applyRemoteCuttingSession((res && res.session) || { active: true, day: day, startedAt: startedAt });
+      } catch (e) {
+        applyRemoteCuttingSession({ active: true, day: day, startedAt: startedAt });
+      }
       renderCuttingSessionBox();
       const finishBtn = document.getElementById("btnFinishCutting");
       if (finishBtn) finishBtn.style.display = "block";
-      showToast("Нарезка началась");
+      cuttingSession.fingerprint = "";
+      showToast("Нарезка началась — видно всем");
+      startCuttingPoll();
     }
 
     function stopCuttingTimer(keepElapsed) {
-      if (cuttingSession.timerId) {
-        clearInterval(cuttingSession.timerId);
-        cuttingSession.timerId = null;
-      }
       var elapsed = 0;
       if (cuttingSession.active && cuttingSession.startedAt) {
         elapsed = Date.now() - cuttingSession.startedAt;
+      }
+      if (cuttingSession.timerId) {
+        clearInterval(cuttingSession.timerId);
+        cuttingSession.timerId = null;
       }
       cuttingSession.active = false;
       cuttingSession.startedAt = 0;
@@ -1641,6 +1718,9 @@
       const cached = cuttingItemsCache.find(function (x) { return Number(x.row) === Number(row); });
       if (cached) cached.laid = !!laid;
       reorderCuttingDom();
+      cuttingSession.fingerprint = cuttingFingerprint(cuttingItemsCache, {
+        active: cuttingSession.active, day: cuttingSession.day, startedAt: cuttingSession.startedAt
+      });
     }
 
     async function toggleCutDone(row, done) {
@@ -1649,6 +1729,9 @@
       const cached = cuttingItemsCache.find(function (x) { return Number(x.row) === Number(row); });
       if (cached) cached.done = !!done;
       reorderCuttingDom();
+      cuttingSession.fingerprint = cuttingFingerprint(cuttingItemsCache, {
+        active: cuttingSession.active, day: cuttingSession.day, startedAt: cuttingSession.startedAt
+      });
       if (done) celebrateSuccess("cut");
     }
 
@@ -1692,11 +1775,13 @@
         const ok = await uiConfirmAsync("Все позиции уже отмечены. Завершить нарезку?");
         if (!ok) return;
         const elapsed = stopCuttingTimer(true);
+        try { await apiGet({ action: "stopCuttingSession", day: day }); } catch (e) {}
         celebrateSuccess("finish", { elapsedLabel: formatCutElapsed(elapsed) });
         showToast("Нарезка завершена");
         renderCuttingSessionBox();
         const finishBtn = document.getElementById("btnFinishCutting");
         if (finishBtn) finishBtn.style.display = "none";
+        cuttingSession.fingerprint = "";
         return;
       }
       const ready = [];
@@ -1721,9 +1806,11 @@
       const btn = document.getElementById("btnFinishCutting");
       if (btn) { btn.disabled = true; btn.innerText = "Завершаю…"; }
       try {
+        const elapsed = cuttingSession.active && cuttingSession.startedAt
+          ? (Date.now() - cuttingSession.startedAt) : 0;
         await apiPost({ action: "finishCutting", day: day, ready: ready, missing: missing });
         await new Promise(function (r) { setTimeout(r, 500); });
-        const elapsed = stopCuttingTimer(true);
+        stopCuttingTimer(true);
         celebrateSuccess("finish", { elapsedLabel: formatCutElapsed(elapsed) });
         if (missing.length) {
           showToast("Дефицит: пуш сейчас + с утра каждые 30 мин");
@@ -1731,7 +1818,8 @@
         } else {
           showToast("Нарезка завершена за " + formatCutElapsed(elapsed));
         }
-        await loadCutting();
+        cuttingSession.fingerprint = "";
+        await loadCutting(false);
       } catch (err) {
         await uiAlertAsync(err.message || String(err));
       } finally {
@@ -2425,10 +2513,137 @@
       return 2 * R * Math.asin(Math.sqrt(h));
     }
 
+    function geoKey(p) {
+      if (!p || p.lat == null || p.lon == null) return "";
+      return Number(p.lat).toFixed(5) + "," + Number(p.lon).toFixed(5);
+    }
+
     function driveMinutesBetween(a, b) {
       if (!a || !b || a.lat == null || b.lat == null) return 12;
+      const m = routePlanState.matrix;
+      if (m && m.index && m.durations) {
+        const ia = m.index[geoKey(a)];
+        const ib = m.index[geoKey(b)];
+        if (ia != null && ib != null && m.durations[ia] && m.durations[ia][ib] != null) {
+          const sec = Number(m.durations[ia][ib]);
+          if (isFinite(sec) && sec >= 0) return Math.max(1, sec / 60);
+        }
+      }
       const km = haversineKm(a, b) * ROAD_FACTOR;
       return (km / AVG_SPEED_KMH) * 60;
+    }
+
+    async function refreshDriveMatrix(depot, stops) {
+      routePlanState.matrix = null;
+      const nodes = [depot].concat((stops || []).filter(function (s) {
+        return s && s.lat != null && s.lon != null;
+      }));
+      if (nodes.length < 2) return;
+      const index = {};
+      nodes.forEach(function (n, i) {
+        index[geoKey(n)] = i;
+      });
+      try {
+        const coords = nodes.map(function (n) { return n.lon + "," + n.lat; }).join(";");
+        const url = "https://router.project-osrm.org/table/v1/driving/" + coords + "?annotations=duration";
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.code === "Ok" && data.durations) {
+          routePlanState.matrix = { index: index, durations: data.durations };
+        }
+      } catch (e) {}
+    }
+
+    function estimateDriveOnlyMinutes(depot, stops) {
+      if (!stops.length) return 0;
+      let t = 0;
+      let cur = depot;
+      for (let i = 0; i < stops.length; i++) {
+        t += driveMinutesBetween(cur, stops[i]);
+        cur = stops[i];
+      }
+      return t;
+    }
+
+    function nearestNeighborOrder(depot, stops) {
+      const left = stops.slice();
+      const ordered = [];
+      let cur = depot;
+      while (left.length) {
+        let bestI = 0;
+        let bestD = Infinity;
+        for (let i = 0; i < left.length; i++) {
+          const d = driveMinutesBetween(cur, left[i]);
+          if (d < bestD) { bestD = d; bestI = i; }
+        }
+        const next = left.splice(bestI, 1)[0];
+        ordered.push(next);
+        cur = next;
+      }
+      return ordered;
+    }
+
+    function twoOptImprove(depot, stops) {
+      let route = stops.slice();
+      if (route.length < 3) return route;
+      let improved = true;
+      let guard = 0;
+      while (improved && guard < 40) {
+        improved = false;
+        guard++;
+        const base = estimateDriveOnlyMinutes(depot, route);
+        for (let i = 0; i < route.length - 1; i++) {
+          for (let k = i + 1; k < route.length; k++) {
+            const cand = route.slice(0, i)
+              .concat(route.slice(i, k + 1).reverse())
+              .concat(route.slice(k + 1));
+            const score = estimateDriveOnlyMinutes(depot, cand);
+            if (score + 0.05 < base) {
+              route = cand;
+              improved = true;
+              i = route.length;
+              break;
+            }
+          }
+        }
+      }
+      return route;
+    }
+
+    /** Оптимальный порядок: NN + перебор стартов + 2-opt. Без координат — в конец. */
+    function optimizeRouteOrder(depot, stops) {
+      const withGeo = (stops || []).filter(function (s) { return s && s.lat != null; });
+      const noGeo = (stops || []).filter(function (s) { return !s || s.lat == null; });
+      if (withGeo.length <= 1) return withGeo.concat(noGeo);
+      let best = nearestNeighborOrder(depot, withGeo);
+      let bestScore = estimateDriveOnlyMinutes(depot, best);
+      const limit = Math.min(withGeo.length, 12);
+      for (let i = 0; i < limit; i++) {
+        const start = withGeo[i];
+        const rest = withGeo.filter(function (_, idx) { return idx !== i; });
+        const cand = [start].concat(nearestNeighborOrder(start, rest));
+        const score = estimateDriveOnlyMinutes(depot, cand);
+        if (score < bestScore) {
+          best = cand;
+          bestScore = score;
+        }
+      }
+      best = twoOptImprove(depot, best);
+      return best.concat(noGeo);
+    }
+
+    function estimateRouteMinutes(depot, stops) {
+      // время до прибытия к последнему клиенту (без стоянки на последней точке)
+      if (!stops.length) return 0;
+      let t = 0;
+      let cur = depot;
+      for (let i = 0; i < stops.length; i++) {
+        t += driveMinutesBetween(cur, stops[i]);
+        if (i < stops.length - 1) t += STOP_MINUTES;
+        cur = stops[i];
+      }
+      return Math.round(t);
     }
 
     function bearingFrom(depot, p) {
@@ -2495,36 +2710,6 @@
       return best || { address: list[0].address, lat: list[0].lat, lon: list[0].lon, dist: 0 };
     }
 
-    function nearestNeighborOrder(depot, stops) {
-      const left = stops.slice();
-      const ordered = [];
-      let cur = depot;
-      while (left.length) {
-        let bestI = 0;
-        let bestD = Infinity;
-        for (let i = 0; i < left.length; i++) {
-          const d = driveMinutesBetween(cur, left[i]);
-          if (d < bestD) { bestD = d; bestI = i; }
-        }
-        const next = left.splice(bestI, 1)[0];
-        ordered.push(next);
-        cur = next;
-      }
-      return ordered;
-    }
-
-    function estimateRouteMinutes(depot, stops) {
-      if (!stops.length) return 0;
-      let t = 0;
-      let cur = depot;
-      for (let i = 0; i < stops.length; i++) {
-        t += driveMinutesBetween(cur, stops[i]);
-        t += STOP_MINUTES;
-        cur = stops[i];
-      }
-      return Math.round(t);
-    }
-
     function formatMinutes(m) {
       if (m < 60) return "~" + m + " мин";
       const h = Math.floor(m / 60);
@@ -2559,12 +2744,10 @@
       const noGeo = stops.filter(function (s) { return s.lat == null; });
 
       if (routePlanState.courierCount === 1 || stops.length <= 1) {
-        const ordered = nearestNeighborOrder(depot, withGeo).concat(noGeo);
-        routePlanState.routes = [ordered, []];
+        routePlanState.routes = [optimizeRouteOrder(depot, withGeo.concat(noGeo)), []];
         return;
       }
 
-      // Делим по «лучам» от точки выезда, ищем разрез с самым ровным временем езды
       const sorted = withGeo.slice().sort(function (a, b) {
         return bearingFrom(depot, a) - bearingFrom(depot, b);
       });
@@ -2579,23 +2762,22 @@
       for (let rot = 0; rot < n; rot++) {
         const rotated = sorted.slice(rot).concat(sorted.slice(0, rot));
         for (let cut = 1; cut < n; cut++) {
-          const a = nearestNeighborOrder(depot, rotated.slice(0, cut));
-          const b = nearestNeighborOrder(depot, rotated.slice(cut));
+          const a = optimizeRouteOrder(depot, rotated.slice(0, cut));
+          const b = optimizeRouteOrder(depot, rotated.slice(cut));
           const ta = estimateRouteMinutes(depot, a);
           const tb = estimateRouteMinutes(depot, b);
           const score = Math.max(ta, tb) * 1000 + Math.abs(ta - tb);
-          if (!best || score < best.score) best = { a: a, b: b, score: score, ta: ta, tb: tb };
+          if (!best || score < best.score) best = { a: a, b: b, score: score };
         }
       }
 
-      // Раскидываем точки без координат в более короткий маршрут
       let a = best.a.slice();
       let b = best.b.slice();
       noGeo.forEach(function (s) {
         if (estimateRouteMinutes(depot, a) <= estimateRouteMinutes(depot, b)) a.push(s);
         else b.push(s);
       });
-      routePlanState.routes = [a, b];
+      routePlanState.routes = [optimizeRouteOrder(depot, a), optimizeRouteOrder(depot, b)];
     }
 
     async function buildRoutePlan() {
@@ -2673,12 +2855,15 @@
         }
       }
 
+      box.innerHTML = '<div class="card"><p class="muted">Считаю оптимальный порядок по дорогам…</p></div>';
+      await refreshDriveMatrix(routePlanState.depot, stops);
       autoSplitStops(stops);
       renderRoutePlan();
       celebrateSuccess("route");
-      const total = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[0]) +
-        estimateRouteMinutes(routePlanState.depot, routePlanState.routes[1]);
-      showToast("Готово · суммарно " + formatMinutes(total));
+      const t0 = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[0]);
+      const t1 = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[1]);
+      const wall = routePlanState.courierCount === 2 ? Math.max(t0, t1) : t0;
+      showToast("Готово · до конца маршрута " + formatMinutes(wall));
     }
 
     function moveStopBetweenRoutes(fromRoute, stopIndex, toRoute) {
@@ -2686,8 +2871,8 @@
       if (!item) return;
       routePlanState.routes[toRoute].push(item);
       const depot = routePlanState.depot;
-      routePlanState.routes[toRoute] = nearestNeighborOrder(depot, routePlanState.routes[toRoute].filter(function (s) { return s.lat != null; }))
-        .concat(routePlanState.routes[toRoute].filter(function (s) { return s.lat == null; }));
+      routePlanState.routes[toRoute] = optimizeRouteOrder(depot, routePlanState.routes[toRoute]);
+      routePlanState.routes[fromRoute] = optimizeRouteOrder(depot, routePlanState.routes[fromRoute]);
       renderRoutePlan();
     }
 
@@ -2706,22 +2891,33 @@
       return { stops: stops, points: points, depotAddr: depotAddr };
     }
 
+    function pointToYandexRtext(p) {
+      if (p == null) return "";
+      if (typeof p === "object") {
+        if (p.lat != null && p.lon != null && isFinite(Number(p.lat)) && isFinite(Number(p.lon))) {
+          return Number(p.lat) + "," + Number(p.lon);
+        }
+        return String(p.address || p.name || "").trim();
+      }
+      return String(p).trim();
+    }
+
     function buildYandexRouteUrl(points) {
-      const parts = (points || []).map(function (p) { return String(p).trim(); }).filter(Boolean);
+      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
       const rtext = parts.join("~");
       return "https://yandex.ru/maps/?mode=routes&rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
     }
 
     function buildYandexMapsAppUrl(points) {
-      const parts = (points || []).map(function (p) { return String(p).trim(); }).filter(Boolean);
+      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
       const rtext = parts.join("~");
       return "yandexmaps://maps.yandex.ru/?rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
     }
 
     function buildYandexWidgetUrl(points) {
-      const parts = (points || []).map(function (p) { return String(p).trim(); }).filter(Boolean);
+      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
       const rtext = parts.join("~");
       return "https://yandex.ru/map-widget/v1/?lang=ru_RU&mode=routes&rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
@@ -2734,7 +2930,7 @@
     }
 
     function buildYandexBridgeUrl(points) {
-      const parts = (points || []).map(function (p) { return String(p).trim(); }).filter(Boolean);
+      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
       const rtext = parts.join("~");
       return YANDEX_ROUTE_PAGE + "?rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
@@ -2742,7 +2938,7 @@
 
     /** Все адреса одним маршрутом в Яндекс: виджет внутри мини-аппа + приложение */
     function openAllInYandex(points) {
-      const pts = (points || []).map(function (p) { return String(p).trim(); }).filter(Boolean);
+      const pts = (points || []).map(pointToYandexRtext).filter(Boolean);
       if (pts.length < 1) {
         showToast("Нет точек для маршрута");
         return;
@@ -2978,7 +3174,7 @@
       for (let r = 0; r < count; r++) {
         const stops = routePlanState.routes[r] || [];
         const mins = estimateRouteMinutes(depot, stops);
-        totalMin += mins;
+        if (mins > totalMin) totalMin = mins;
         html += '<div class="route-card">';
         html += '<div class="route-head"><div class="route-title">Курьер ' + (r + 1) + " · " + stops.length + " точ" +
           (stops.length === 1 ? "ка" : (stops.length >= 2 && stops.length <= 4 ? "ки" : "ек")) +
@@ -2991,10 +3187,12 @@
             const other = r === 0 ? 1 : 0;
             const canMove = count === 2;
             const msg = igMessageForStop(depot, stops, i, depart);
+            const eta = etaLabelForStop(depot, stops, i, depart);
             html += '<div class="route-stop">';
             html += '<div class="route-stop-top">';
             html += '<div><div class="route-stop-name">' + (i + 1) + ". " + escapeHtml(s.name) + "</div>";
             html += '<div class="route-stop-addr">' + escapeHtml(s.address) + "</div>";
+            html += '<div class="route-time" style="margin-top:4px;">ETA: ' + escapeHtml(eta) + "</div>";
             if (s.deliveryLabel) {
               html += '<div class="route-badge">' + escapeHtml(s.deliveryLabel) +
                 (s.clientAddress ? (" → " + escapeHtml(s.clientAddress)) : "") + "</div>";
@@ -3017,10 +3215,11 @@
       }
 
       if (count === 2) {
-        html = '<div class="total-summary-badge">Суммарно по двоим ' + formatMinutes(totalMin) +
-          " · «→» перекинуть точку · «Отправить» — маршрут второму</div>" + html;
+        html = '<div class="total-summary-badge">До конца смены (параллельно) ' + formatMinutes(totalMin) +
+          " · порядок по оптимальному времени · «→» перекинуть</div>" + html;
       } else {
-        html = '<div class="total-summary-badge">Общее время маршрута ' + formatMinutes(totalMin) + "</div>" + html;
+        html = '<div class="total-summary-badge">Время до последнего клиента ' + formatMinutes(totalMin) +
+          " · порядок оптимальный</div>" + html;
       }
       box.innerHTML = html;
     }
@@ -3078,7 +3277,7 @@
       }
     }
 
-    /** Все адреса дня / собранного маршрута — одним маршрутом в Яндекс */
+    /** Все адреса дня — оптимальный порядок, независимо от числа курьеров */
     async function openYandexMaps() {
       const dayStops = courierClientsCache.filter(function (c) {
         return String(c.address || "").trim();
@@ -3088,18 +3287,53 @@
         return;
       }
 
-      let points = [];
+      showToast("Собираю все адреса дня…");
       const depotAddr = normalizeAddressForMaps(getDepotAddress());
-      if (routePlanState.routes[0] && routePlanState.routes[0].length) {
-        points = routePointsForYandex(0).points;
-        if (routePlanState.courierCount === 2 && routePlanState.routes[1] && routePlanState.routes[1].length) {
-          showToast("Открыт маршрут курьера 1 · для 2-го жми кнопку в плане");
-        }
-      } else {
-        points = [depotAddr].concat(dayStops.map(function (c) {
-          return normalizeAddressForMaps(c.address);
-        }));
+      saveDepotAddress();
+      let depotGeo = routePlanState.depot;
+      if (!depotGeo || depotGeo.lat == null) {
+        depotGeo = await geocodeAddress(depotAddr, true);
+        routePlanState.depot = depotGeo || { lat: MINSK_CENTER.lat, lon: MINSK_CENTER.lon };
       }
+
+      const stops = [];
+      for (let i = 0; i < dayStops.length; i++) {
+        const c = dayStops[i];
+        let method = parseDeliveryMethod(c.note || "");
+        const clientAddr = String(c.address || "").trim();
+        const outside = await isOutsideMinskDelivery(clientAddr);
+        if (!method && outside) method = "euro";
+
+        if (method === "euro" || method === "bel") {
+          const officeAddr = parseOfficeAddress(c.note || "");
+          let lat = null, lon = null, address = officeAddr;
+          if (officeAddr) {
+            const geo = await geocodeAddress(normalizeAddressForMaps(officeAddr), true);
+            if (geo) { lat = geo.lat; lon = geo.lon; }
+          } else {
+            const office = await nearestPostOffice(method, routePlanState.depot);
+            address = office.address; lat = office.lat; lon = office.lon;
+          }
+          stops.push({ name: c.name, address: address, lat: lat, lon: lon });
+        } else {
+          const addr = normalizeAddressForMaps(clientAddr);
+          const savedGeo = c.geo || parseGeoFromNote(c.note || "");
+          let lat = savedGeo ? savedGeo.lat : null;
+          let lon = savedGeo ? savedGeo.lon : null;
+          if (lat == null) {
+            const geo = await geocodeAddress(addr, true);
+            if (geo) { lat = geo.lat; lon = geo.lon; }
+          }
+          stops.push({ name: c.name, address: addr, lat: lat, lon: lon });
+        }
+      }
+
+      await refreshDriveMatrix(routePlanState.depot, stops);
+      const ordered = optimizeRouteOrder(routePlanState.depot, stops);
+      const points = [depotAddr].concat(ordered.map(function (s) {
+        if (s.lat != null && s.lon != null) return { lat: s.lat, lon: s.lon, address: s.address };
+        return s.address;
+      }));
       openAllInYandex(points);
     }
 
