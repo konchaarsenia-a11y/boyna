@@ -951,6 +951,18 @@
       return u.toString();
     }
 
+    /** Пачка адресов на iPhone надёжнее через Google Maps Dir API */
+    function buildGoogleMapsDirUrl(addrs) {
+      if (!addrs.length) return "";
+      if (addrs.length === 1) {
+        return "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(addrs[0]) + "&travelmode=driving";
+      }
+      const destination = encodeURIComponent(addrs[addrs.length - 1]);
+      const waypoints = addrs.slice(0, -1).map(encodeURIComponent).join("%7C");
+      return "https://www.google.com/maps/dir/?api=1&destination=" + destination +
+        "&waypoints=" + waypoints + "&travelmode=driving";
+    }
+
     function openExternalLink(url) {
       try {
         if (tg && typeof tg.openLink === "function") {
@@ -1000,8 +1012,8 @@
     }
 
     /**
-     * В Telegram второе окно (maps.html) часто НЕ открывается.
-     * Поэтому показываем адреса прямо в мини-аппе, а Яндекс открываем по кнопке.
+     * iPhone: Яндекс пачкой (rtext) часто открывает пустую страницу.
+     * Один адрес (?text=) работает. Пачку даём через Google Maps + точечно в Яндекс.
      */
     async function openYandexMaps() {
       const addrs = courierClientsCache.map(c => normalizeAddressForMaps(c.address)).filter(Boolean);
@@ -1011,29 +1023,42 @@
       }
 
       const listHtml = addrs.map(function (a, i) {
-        return '<div style="padding:8px 0;border-bottom:1px solid #2c2c2e;font-size:14px;">' +
-          (i + 1) + ". " + escapeHtml(a) + "</div>";
+        return '<button type="button" class="modal-day-btn maps-one-addr" data-idx="' + i + '" style="text-align:left;height:auto;min-height:44px;padding:10px 12px;white-space:normal;">' +
+          (i + 1) + ". " + escapeHtml(a) + "<br><span style=\"color:#8e8e93;font-size:12px;\">Открыть в Яндекс</span></button>";
       }).join("");
 
       const p = openModal(
         '<div class="modal-title">Адреса на маршрут</div>' +
-        '<div class="modal-text" style="max-height:40vh;overflow:auto;margin-bottom:12px;">' + listHtml + "</div>" +
+        '<div class="modal-text" style="margin-bottom:10px;">Пачкой на iPhone лучше Google Maps. В Яндекс — по одному адресу (как у вас уже работает).</div>' +
+        '<div class="modal-actions" style="margin-bottom:12px;">' +
+          '<button class="btn-action btn-green" type="button" id="mapsGoogle">Маршрут пачкой (Google Maps)</button>' +
+          '<button class="btn-action btn-blue" type="button" id="mapsYandexBatch">Маршрут пачкой (Яндекс)</button>' +
+          '<button class="btn-action" type="button" id="mapsCopy" style="background:#3a3a3c;">Скопировать адреса</button>' +
+        "</div>" +
+        '<div class="modal-text" style="margin-bottom:8px;font-size:12px;color:#8e8e93;">Или откройте адрес точечно:</div>' +
+        '<div class="modal-actions" style="max-height:32vh;overflow:auto;margin-bottom:12px;">' + listHtml + "</div>" +
         '<div class="modal-actions">' +
-          '<button class="btn-action btn-green" type="button" id="mapsBuild">Построить маршрут в Яндекс</button>' +
-          '<button class="btn-action btn-blue" type="button" id="mapsCopy">Скопировать адреса</button>' +
           '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Закрыть</button>' +
         "</div>"
       );
 
       setTimeout(function () {
-        const build = document.getElementById("mapsBuild");
+        const g = document.getElementById("mapsGoogle");
+        const y = document.getElementById("mapsYandexBatch");
         const copy = document.getElementById("mapsCopy");
         const cancel = document.getElementById("modalCancel");
-        if (build) {
-          build.onclick = function () {
-            // Важно: openLink вызываем сразу по нажатию кнопки (жест пользователя)
+
+        if (g) {
+          g.onclick = function () {
+            openExternalLink(buildGoogleMapsDirUrl(addrs));
+            showToast("Открываю Google Maps…");
+          };
+        }
+        if (y) {
+          y.onclick = function () {
+            // На части iPhone будет пусто — оставляем как доп.попытку
             openExternalLink(buildYandexRouteUrl(addrs));
-            showToast("Открываю Яндекс.Карты…");
+            showToast("Если пусто — откройте Google или адрес точечно");
           };
         }
         if (copy) {
@@ -1043,6 +1068,15 @@
             showToast(ok ? "Адреса скопированы" : "Не удалось скопировать");
           };
         }
+        document.querySelectorAll(".maps-one-addr").forEach(function (btn) {
+          btn.onclick = function () {
+            const idx = Number(btn.getAttribute("data-idx"));
+            const addr = addrs[idx];
+            if (!addr) return;
+            openExternalLink(buildYandexPointUrl(addr));
+            showToast("Открываю точку в Яндекс…");
+          };
+        });
         if (cancel) cancel.onclick = function () { closeModal(true); };
       }, 0);
 
