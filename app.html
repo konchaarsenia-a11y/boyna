@@ -346,11 +346,18 @@
     .yandex-route-overlay iframe {
       flex: 1; width: 100%; border: 0; background: #1c1c1e; min-height: 50vh;
     }
+    .ig-bubble {
+      margin-top: 6px; padding: 8px 10px; border-radius: 10px;
+      background: rgba(36,139,242,0.12); border: 1px solid rgba(36,139,242,0.35);
+      font-size: 13px; line-height: 1.35; color: #e5e5ea;
+    }
+    .ig-bubble-actions { margin-top: 6px; }
+    .ig-bubble-actions .route-mini { height: 28px; font-size: 11px; }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v5.9</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.0</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -516,7 +523,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v5.9";
+    const APP_VERSION = "v6.0";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1959,9 +1966,8 @@
       wrap.innerHTML =
         '<div class="yandex-route-top">' +
           '<div class="yr-title">Яндекс · все ' + pts.length + " точек</div>" +
-          '<div class="yr-sub">Маршрут по всем адресам. Если карта пустая — жми «В приложение».</div>' +
-          '<button class="btn-action btn-green" type="button" id="yrOpenApp">Открыть все точки в приложении Яндекс</button>' +
-          '<button class="btn-action btn-blue" type="button" id="yrOpenPage">Открыть маршрут на весь экран</button>' +
+          '<div class="yr-sub">Карта — полный маршрут. Кнопка = то же, что «Подробнее» на карте.</div>' +
+          '<button class="btn-action btn-green" type="button" id="yrOpenApp">Открыть все точки в Яндекс.Картах</button>' +
           '<button class="btn-action" type="button" id="yrClose" style="background:#3a3a3c;">Закрыть</button>' +
         "</div>" +
         '<iframe id="yrFrame" src="' + buildYandexWidgetUrl(pts).replace(/"/g, "&quot;") + '" allow="geolocation *; clipboard-write *"></iframe>';
@@ -1971,13 +1977,8 @@
 
       document.getElementById("yrClose").onclick = function () { wrap.remove(); };
       document.getElementById("yrOpenApp").onclick = function () {
-        try { window.location.href = buildYandexMapsAppUrl(pts); } catch (e) {
-          openExternalLink(buildYandexMapsAppUrl(pts));
-        }
-        showToast("Открываю приложение Яндекс…");
-      };
-      document.getElementById("yrOpenPage").onclick = function () {
-        openExternalLink(buildYandexBridgeUrl(pts));
+        openExternalLink(buildYandexRouteUrl(pts));
+        showToast("Открываю Яндекс…");
       };
     }
 
@@ -1996,7 +1997,7 @@
       const depot = routePlanState.depot;
       const depart = parseDepartTime();
       const mins = estimateRouteMinutes(depot, stops);
-      let t = "Курьер " + (routeIndex + 1) + " · " + formatMinutes(mins) + "\n";
+      let t = "Маршрут курьера · " + formatMinutes(mins) + "\n";
       t += "Выезд: " + normalizeAddressForMaps(getDepotAddress()) + "\n";
       t += "Время: " + pad2(departHour) + ":" + pad2(departMinute) + "\n\n";
       stops.forEach(function (s, i) {
@@ -2006,8 +2007,22 @@
         t += "\n" + s.address + "\nоколо " + eta + "\n\n";
       });
       const info = routePointsForYandex(routeIndex);
-      t += "Яндекс (все точки):\n" + buildYandexBridgeUrl(info.points);
+      t += "Яндекс (все точки):\n" + buildYandexRouteUrl(info.points);
       return t.trim();
+    }
+
+    async function registerMeAsCourier() {
+      try {
+        if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) return;
+        const u = tg.initDataUnsafe.user;
+        const name = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
+        await apiPost({
+          action: "registerCourier",
+          telegramId: u.id,
+          name: name,
+          username: u.username || ""
+        });
+      } catch (e) {}
     }
 
     async function shareCourierRoute(routeIndex) {
@@ -2017,83 +2032,74 @@
         return;
       }
 
+      let couriers = [];
+      try {
+        const res = await apiGet({ action: "getCouriers" });
+        if (res.status === "success" && res.couriers) couriers = res.couriers;
+      } catch (e) {}
+
+      if (!couriers.length) {
+        await uiAlertAsync("Пока никого в списке. Пусть курьер напишет боту /start или откроет этот мини-апп — тогда появится здесь.");
+        return;
+      }
+
+      const listHtml = couriers.map(function (c, i) {
+        const label = (c.name || c.username || ("id " + c.id));
+        const sub = c.username ? ("@" + c.username) : ("id " + c.id);
+        return '<button type="button" class="modal-day-btn courier-pick-btn" data-idx="' + i + '" style="text-align:left;height:auto;min-height:44px;padding:10px 12px;">' +
+          escapeHtml(label) + '<br><span style="color:#8e8e93;font-size:12px;">' + escapeHtml(sub) + "</span></button>";
+      }).join("");
+
       const p = openModal(
-        '<div class="modal-title">Курьеру ' + (routeIndex + 1) + "</div>" +
-        '<div class="modal-text">Список адресов + ссылка на Яндекс со всеми точками.</div>' +
+        '<div class="modal-title">Кому отправить маршрут</div>' +
+        '<div class="modal-text">Бот пришлёт маршрут в личку (нужен /start боту).</div>' +
+        '<div class="modal-actions" style="max-height:45vh;overflow:auto;margin-bottom:12px;">' + listHtml + "</div>" +
         '<div class="modal-actions">' +
-          '<button class="btn-action btn-green" type="button" id="shareCopy">Скопировать</button>' +
-          '<button class="btn-action btn-blue" type="button" id="shareTg">В Telegram</button>' +
+          '<button class="btn-action" type="button" id="shareCopy" style="background:#3a3a3c;">Скопировать текст</button>' +
           '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Закрыть</button>' +
         "</div>"
       );
 
       setTimeout(function () {
-        const copy = document.getElementById("shareCopy");
-        const tgBtn = document.getElementById("shareTg");
-        const cancel = document.getElementById("modalCancel");
-        if (copy) {
-          copy.onclick = async function () {
-            showToast((await copyText(text)) ? "Скопировано" : "Не скопировалось");
-          };
-        }
-        if (tgBtn) {
-          tgBtn.onclick = function () {
+        document.querySelectorAll(".courier-pick-btn").forEach(function (btn) {
+          btn.onclick = async function () {
+            const c = couriers[Number(btn.getAttribute("data-idx"))];
+            if (!c) return;
+            btn.disabled = true;
             try {
-              if (tg && typeof tg.openTelegramLink === "function") {
-                tg.openTelegramLink("https://t.me/share/url?text=" + encodeURIComponent(text));
-                return;
-              }
-            } catch (e) {}
-            copyText(text).then(function (ok) {
-              showToast(ok ? "Скопировано" : "Не скопировалось");
-            });
-          };
-        }
-        if (cancel) cancel.onclick = function () { closeModal(true); };
-      }, 0);
-
-      await p;
-      recoverUiFocus();
-    }
-
-    async function inviteSecondCourierPick() {
-      const link = "https://konchaarsenia-a11y.github.io/superboyna/app.html";
-      const text = "Открой мини-апп Бойня → Курьер → день → собери маршрут.\n" + link;
-      const p = openModal(
-        '<div class="modal-title">2-й курьер</div>' +
-        '<div class="modal-text">Скинь ссылку на мини-апп или список через «Курьеру».</div>' +
-        '<div class="modal-actions">' +
-          '<button class="btn-action btn-green" type="button" id="inviteCopy">Скопировать ссылку</button>' +
-          '<button class="btn-action btn-blue" type="button" id="inviteTg">В Telegram</button>' +
-          '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Закрыть</button>' +
-        "</div>"
-      );
-      setTimeout(function () {
-        const c = document.getElementById("inviteCopy");
-        const t = document.getElementById("inviteTg");
-        const cancel = document.getElementById("modalCancel");
-        if (c) c.onclick = async function () {
-          showToast((await copyText(text)) ? "Ссылка скопирована" : "Не скопировалось");
-        };
-        if (t) t.onclick = function () {
-          try {
-            if (tg && typeof tg.openTelegramLink === "function") {
-              tg.openTelegramLink("https://t.me/share/url?url=" + encodeURIComponent(link) + "&text=" + encodeURIComponent("Бойня → Курьер"));
+              await apiPost({ action: "sendCourierRoute", telegramId: c.id, text: text });
+              await new Promise(function (r) { setTimeout(r, 700); });
+              showToast("Отправлено: " + (c.name || c.username || c.id));
+              closeModal(true);
+            } catch (err) {
+              showToast("Не отправилось — обновите Code.gs в Apps Script");
+              btn.disabled = false;
             }
-          } catch (e) {}
+          };
+        });
+        const copy = document.getElementById("shareCopy");
+        const cancel = document.getElementById("modalCancel");
+        if (copy) copy.onclick = async function () {
+          showToast((await copyText(text)) ? "Скопировано" : "Не скопировалось");
         };
         if (cancel) cancel.onclick = function () { closeModal(true); };
       }, 0);
+
       await p;
       recoverUiFocus();
     }
 
-    function personNameForMsg(name) {
-      const n = String(name || "").trim();
-      if (!n) return "";
-      // @ник или короткое имя без лишнего
-      if (n.charAt(0) === "@") return n;
-      return n.split(/\s+/)[0];
+    function igMessageForStop(depot, stops, index, depart) {
+      const eta = etaShortForMsg(depot, stops, index, depart);
+      return "Здравствуйте! Привезём сегодня около " + eta + ".";
+    }
+
+    async function copyOneIgMessage(routeIndex, stopIndex) {
+      const depot = routePlanState.depot;
+      const stops = routePlanState.routes[routeIndex] || [];
+      if (!stops[stopIndex]) return;
+      const text = igMessageForStop(depot, stops, stopIndex, parseDepartTime());
+      showToast((await copyText(text)) ? "Сообщение скопировано" : "Не скопировалось");
     }
 
     function etaShortForMsg(depot, stops, index, depart) {
@@ -2115,9 +2121,7 @@
       const stops = routePlanState.routes[routeIndex] || [];
       const depart = parseDepartTime();
       return stops.map(function (s, i) {
-        const who = personNameForMsg(s.name);
-        const eta = etaShortForMsg(depot, stops, i, depart);
-        return "Здравствуйте" + (who ? ", " + who : "") + "! Привезём сегодня около " + eta + ".";
+        return igMessageForStop(depot, stops, i, depart);
       }).join("\n\n---\n\n");
     }
 
@@ -2148,6 +2152,7 @@
       const box = document.getElementById("routePlanBox");
       if (!box) return;
       const depot = routePlanState.depot || { lat: 53.9, lon: 27.56 };
+      const depart = parseDepartTime();
       const count = routePlanState.courierCount;
       let html = "";
       let totalMin = 0;
@@ -2167,6 +2172,7 @@
           stops.forEach(function (s, i) {
             const other = r === 0 ? 1 : 0;
             const canMove = count === 2;
+            const msg = igMessageForStop(depot, stops, i, depart);
             html += '<div class="route-stop">';
             html += '<div class="route-stop-top">';
             html += '<div><div class="route-stop-name">' + (i + 1) + ". " + escapeHtml(s.name) + "</div>";
@@ -2175,6 +2181,8 @@
               html += '<div class="route-badge">' + escapeHtml(s.deliveryLabel) +
                 (s.clientAddress ? (" → " + escapeHtml(s.clientAddress)) : "") + "</div>";
             }
+            html += '<div class="ig-bubble">' + escapeHtml(msg) +
+              '<div class="ig-bubble-actions"><button type="button" class="route-mini" onclick="copyOneIgMessage(' + r + "," + i + ')">Копировать</button></div></div>';
             html += "</div>";
             if (canMove) {
               html += '<button type="button" class="route-mini" onclick="moveStopBetweenRoutes(' + r + "," + i + "," + other + ')">→ ' + (other + 1) + "</button>";
@@ -2184,8 +2192,8 @@
         }
 
         html += '<div class="route-actions">';
-        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Яндекс · курьер ' + (r + 1) + "</button>";
-        html += '<button class="btn-action btn-blue" type="button" onclick="shareCourierRoute(' + r + ')">Отправить курьеру ' + (r + 1) + "</button>";
+        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Яндекс · все точки · курьер ' + (r + 1) + "</button>";
+        html += '<button class="btn-action btn-blue" type="button" onclick="shareCourierRoute(' + r + ')">Отправить курьеру ' + (r + 1) + " в Telegram</button>";
         html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Тексты Instagram · ' + (r + 1) + "</button>";
         html += "</div></div>";
       }
@@ -2193,7 +2201,6 @@
       if (count === 2) {
         html = '<div class="total-summary-badge">Суммарно по двоим ' + formatMinutes(totalMin) +
           " · «→» перекинуть точку · «Отправить» — маршрут второму</div>" + html;
-        html += '<button class="btn-action" type="button" style="background:#3a3a3c;margin-bottom:10px;" onclick="inviteSecondCourierPick()">Пригласить 2-го собрать адреса в мини-аппе</button>';
       } else {
         html = '<div class="total-summary-badge">Общее время маршрута ' + formatMinutes(totalMin) + "</div>" + html;
       }
@@ -2280,6 +2287,7 @@
     }
 
     loadDepotAddress();
+    registerMeAsCourier();
     buildTimeWheels();
     renderBasket();
     applyRoleTabs();

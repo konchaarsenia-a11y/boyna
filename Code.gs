@@ -428,6 +428,11 @@ function doPost(e) {
   var callback = (e.parameter && e.parameter.callback) || "jsonp_callback";
   try {
     var json = JSON.parse(e.postData.contents);
+    // Входящие апдейты Telegram (если webhook смотрит на этот же URL)
+    if (json && (json.message || json.callback_query || json.edited_message)) {
+      handleTelegramUpdate_(json);
+      return ContentService.createTextOutput("ok");
+    }
     return handleApiAction(json, callback, true);
   } catch (err) {
     return jsonpText(callback, { status: "error", message: String(err) });
@@ -459,6 +464,9 @@ function doGet(e) {
   if (action === "getCourier") {
     return handleGetCourier(payload.day, callback);
   }
+  if (action === "getCouriers") {
+    return handleGetCouriers(callback, false);
+  }
 
   // delete / move доступны и через GET (JSONP из mini-app)
   if (action === "deleteClient" || action === "moveClient") {
@@ -488,6 +496,15 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "setDelivered") {
     return handleSetDelivered(ss, json, callback);
+  }
+  if (action === "registerCourier") {
+    return handleRegisterCourier(json, callback, fromPost);
+  }
+  if (action === "getCouriers") {
+    return handleGetCouriers(callback, fromPost);
+  }
+  if (action === "sendCourierRoute") {
+    return handleSendCourierRoute(json, callback, fromPost);
   }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
@@ -1116,4 +1133,116 @@ function sendTelegramSnabNotificationInternal(headerText) {
     payload: JSON.stringify({ chat_id: chatId, text: fullMessage, parse_mode: "Markdown" }),
     muteHttpExceptions: true
   });
+}
+
+function getTelegramToken_() {
+  return PropertiesService.getScriptProperties().getProperty("TELEGRAM_BOT_TOKEN") || "";
+}
+
+function telegramSendText_(chatId, text) {
+  var token = getTelegramToken_();
+  if (!token || !chatId) return { ok: false, error: "no_token_or_chat" };
+  var res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({
+      chat_id: String(chatId),
+      text: String(text || "").slice(0, 4000),
+      disable_web_page_preview: false
+    }),
+    muteHttpExceptions: true
+  });
+  try {
+    return JSON.parse(res.getContentText());
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+function getCouriersSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Курьеры_ТГ");
+  if (!sh) {
+    sh = ss.insertSheet("Курьеры_ТГ");
+    sh.getRange(1, 1, 1, 4).setValues([["chatId", "name", "username", "updatedAt"]]);
+    sh.hideSheet();
+  }
+  return sh;
+}
+
+function upsertCourier_(chatId, name, username) {
+  if (!chatId) return;
+  var sh = getCouriersSheet_();
+  var data = sh.getDataRange().getValues();
+  var idStr = String(chatId);
+  var now = new Date();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === idStr) {
+      sh.getRange(i + 1, 2, 1, 3).setValues([[
+        name || data[i][1] || "",
+        username || data[i][2] || "",
+        now
+      ]]);
+      return;
+    }
+  }
+  sh.appendRow([idStr, name || "", username || "", now]);
+}
+
+function handleTelegramUpdate_(update) {
+  var msg = update.message || update.edited_message;
+  if (!msg || !msg.chat) return;
+  var chat = msg.chat;
+  if (chat.type !== "private") return;
+  var from = msg.from || {};
+  var name = [from.first_name, from.last_name].filter(Boolean).join(" ").trim();
+  upsertCourier_(chat.id, name, from.username || "");
+  var text = String(msg.text || "");
+  if (/^\/start/i.test(text)) {
+    telegramSendText_(chat.id, "Привет! Ты в списке курьеров Бойни. Когда сменщик пришлёт маршрут — придёт сюда.");
+  }
+}
+
+function handleRegisterCourier(json, callback, fromPost) {
+  var chatId = json.telegramId || json.chatId || json.id;
+  var name = json.name || "";
+  var username = json.username || "";
+  if (!chatId) {
+    var body = { status: "error", message: "no_telegram_id" };
+    return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+  }
+  upsertCourier_(chatId, name, username);
+  var ok = { status: "success" };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleGetCouriers(callback, fromPost) {
+  var sh = getCouriersSheet_();
+  var data = sh.getDataRange().getValues();
+  var list = [];
+  for (var i = 1; i < data.length; i++) {
+    var id = data[i][0];
+    if (id === "" || id == null) continue;
+    list.push({
+      id: String(id),
+      name: data[i][1] != null ? String(data[i][1]) : "",
+      username: data[i][2] != null ? String(data[i][2]) : ""
+    });
+  }
+  var body = { status: "success", couriers: list };
+  return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
+}
+
+function handleSendCourierRoute(json, callback, fromPost) {
+  var chatId = json.telegramId || json.chatId || json.id;
+  var text = json.text || "";
+  if (!chatId || !text) {
+    var bad = { status: "error", message: "need_id_and_text" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var result = telegramSendText_(chatId, text);
+  var body = result && result.ok
+    ? { status: "success" }
+    : { status: "error", message: (result && (result.description || result.error)) || "send_failed" };
+  return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
 }
