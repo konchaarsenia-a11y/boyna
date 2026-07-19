@@ -375,7 +375,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.3</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.4</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -545,7 +545,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.3";
+    const APP_VERSION = "v6.4";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1103,7 +1103,7 @@
 
       try {
         await apiPost(payload);
-        await new Promise(r => setTimeout(r, 700));
+        await new Promise(r => setTimeout(r, 400));
         const check = await apiGet({ action: "getClients", day: day });
         const found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
         const okPositions = found && found.basket && found.basket.length > 0;
@@ -1575,44 +1575,69 @@
         clearAddressSuggest();
         return;
       }
-      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 280);
+      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 180);
     }
 
     function onAddressBlurDelayed() {
       setTimeout(function () {
+        // не закрывать список, если тапнули по подсказке
+        var a = document.activeElement;
+        if (a && a.closest && a.closest("#addressSuggest")) return;
         clearAddressSuggest();
         onAddressBlur();
-      }, 250);
+      }, 280);
+    }
+
+    function mergeSuggestLists() {
+      var seen = {};
+      var out = [];
+      for (var ai = 0; ai < arguments.length; ai++) {
+        var arr = arguments[ai] || [];
+        for (var i = 0; i < arr.length; i++) {
+          var it = arr[i];
+          if (!it) continue;
+          var key = (it.lat != null && it.lon != null)
+            ? (Number(it.lat).toFixed(5) + "," + Number(it.lon).toFixed(5))
+            : String(it.address || it.title || "").toLowerCase();
+          if (!key || seen[key]) continue;
+          seen[key] = true;
+          out.push(it);
+        }
+      }
+      return out.slice(0, 10);
     }
 
     async function fetchAddressSuggest(q) {
       var seq = ++addressSuggestSeq;
       var box = document.getElementById("addressSuggest");
       if (!box) return;
-      var cacheKey = "asuggest:" + q.toLowerCase();
+      var cacheKey = "asuggest:v2:" + q.toLowerCase();
       try {
         var cached = localStorage.getItem(cacheKey);
         if (cached) {
           var parsed = JSON.parse(cached);
           if (parsed && parsed.length && seq === addressSuggestSeq) {
             renderAddressSuggestList(box, parsed);
-            return;
+            // всё равно обновим в фоне — Photon иногда «тупит»
           }
         }
       } catch (e0) {}
-      box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу адрес…</div>';
-      box.classList.add("open");
-      var list = [];
-      try {
-        list = await photonSuggestClient(q);
-      } catch (e1) {}
-      if ((!list || !list.length) && seq === addressSuggestSeq) {
-        try {
-          var res = await apiGet({ action: "suggestAddress", text: q });
-          list = (res && res.results) || [];
-        } catch (e2) {}
+      if (seq === addressSuggestSeq && (!box._items || !box._items.length)) {
+        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу адрес…</div>';
+        box.classList.add("open");
       }
+      var photonList = [];
+      var apiList = [];
+      var nominatimList = [];
+      await Promise.all([
+        photonSuggestClient(q).then(function (r) { photonList = r || []; }).catch(function () {}),
+        apiGet({ action: "suggestAddress", text: q }).then(function (res) {
+          apiList = (res && res.results) || [];
+        }).catch(function () {}),
+        nominatimSuggestClient(q).then(function (r) { nominatimList = r || []; }).catch(function () {})
+      ]);
       if (seq !== addressSuggestSeq) return;
+      var list = mergeSuggestLists(photonList, apiList, nominatimList);
       if (!list.length) {
         box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — попробуйте «улица дом» или «Минск, …»</div>';
         box.classList.add("open");
@@ -1640,18 +1665,10 @@
       });
     }
 
-    async function photonSuggestClient(text) {
-      var q = String(text || "").trim();
-      if (!q) return [];
-      if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(q)) q = q + ", Минск";
-      var url = "https://photon.komoot.io/api/?limit=7&lang=ru&lat=53.9&lon=27.56&q=" + encodeURIComponent(q);
-      var res = await fetch(url);
-      if (!res.ok) return [];
-      var data = await res.json();
-      var features = (data && data.features) || [];
+    function mapPhotonFeatures(features, text) {
       var out = [];
       var seen = {};
-      features.forEach(function (f) {
+      (features || []).forEach(function (f) {
         var coords = (f.geometry && f.geometry.coordinates) || [];
         if (coords.length < 2) return;
         var lon = Number(coords[0]);
@@ -1678,6 +1695,54 @@
           title: title,
           subtitle: subtitle,
           address: address,
+          lat: lat,
+          lon: lon,
+          yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
+        });
+      });
+      return out;
+    }
+
+    async function photonSuggestClient(text) {
+      var raw = String(text || "").trim();
+      if (!raw) return [];
+      var queries = [raw];
+      if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(raw)) {
+        queries.push(raw + ", Минск");
+        queries.push("Минск, " + raw);
+      }
+      var merged = [];
+      for (var qi = 0; qi < queries.length; qi++) {
+        try {
+          var url = "https://photon.komoot.io/api/?limit=8&lang=ru&lat=53.9&lon=27.56&q=" + encodeURIComponent(queries[qi]);
+          var res = await fetch(url);
+          if (!res.ok) continue;
+          var data = await res.json();
+          merged = mergeSuggestLists(merged, mapPhotonFeatures(data && data.features, text));
+          if (merged.length >= 5) break;
+        } catch (e) {}
+      }
+      return merged;
+    }
+
+    async function nominatimSuggestClient(text) {
+      var q = String(text || "").trim();
+      if (!q) return [];
+      if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(q)) q = q + ", Минск, Беларусь";
+      var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&countrycodes=by&accept-language=ru&q=" + encodeURIComponent(q);
+      var res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) return [];
+      var data = await res.json();
+      var out = [];
+      (data || []).forEach(function (row) {
+        var lat = Number(row.lat);
+        var lon = Number(row.lon);
+        if (!isFinite(lat) || !isFinite(lon)) return;
+        var title = String(row.display_name || "").split(",").slice(0, 3).join(",").trim() || "Адрес";
+        out.push({
+          title: title,
+          subtitle: "Минск / Беларусь",
+          address: String(row.display_name || title),
           lat: lat,
           lon: lon,
           yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
@@ -2280,44 +2345,56 @@
           btn.onclick = async function () {
             const c = couriers[Number(btn.getAttribute("data-idx"))];
             if (!c) return;
+            var labelRestore = btn.innerHTML;
             btn.disabled = true;
+            btn.textContent = "Отправляю…";
             var id = String(c.id || "").trim();
-            if (!id) { showToast("Пустой id курьера"); btn.disabled = false; return; }
+            if (!id) { showToast("Пустой id курьера"); btn.disabled = false; btn.innerHTML = labelRestore; return; }
             var st = null;
             try { st = await apiGet({ action: "telegramStatus" }); } catch (e) {}
             if (st && st.hasToken === false) {
-              await uiAlertAsync("Бот не настроен: в Apps Script → Project Settings → Script properties добавьте TELEGRAM_BOT_TOKEN (токен от BotFather).");
+              await uiAlertAsync("Бот не настроен: в Apps Script → Project Settings → Script properties добавьте TELEGRAM_BOT_TOKEN (токен от BotFather), затем Deploy → New version.");
               btn.disabled = false;
+              btn.innerHTML = labelRestore;
               return;
             }
-            // Короткий текст для надёжного GET; полный — POST
-            var shortText = text;
-            if (shortText.length > 900) {
-              shortText = text.split("\n\n").slice(0, 8).join("\n\n").slice(0, 900) + "\n…";
-            }
+            // POST не отдаёт ответ из‑за CORS → кладём текст в ticket, шлём одним GET
+            var ticket = "r" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+            try {
+              await apiPost({ action: "prepareCourierRoute", ticket: ticket, text: text });
+            } catch (ePrep) {}
+            await new Promise(function (r) { setTimeout(r, 350); });
             var sendRes = null;
             try {
-              sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, text: shortText });
-            } catch (e2) {}
-            if (!sendRes || sendRes.status !== "success") {
-              try { await apiPost({ action: "sendCourierRoute", telegramId: id, text: text }); } catch (e3) {}
-              await new Promise(function (r) { setTimeout(r, 700); });
-              // повторная короткая проверка
+              sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, ticket: ticket });
+            } catch (eSend) {}
+            if ((!sendRes || sendRes.status !== "success") && /ticket|need_id|text/i.test(String((sendRes && sendRes.message) || ""))) {
+              await new Promise(function (r) { setTimeout(r, 500); });
               try {
-                sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, text: "Маршрут Бойня отправлен. Открой предыдущее сообщение или мини-апп." });
-              } catch (e4) {}
+                sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, ticket: ticket });
+              } catch (eRetry) {}
+            }
+            // запасной путь: короткий GET без ticket
+            if (!sendRes || sendRes.status !== "success") {
+              var shortText = text.length > 850 ? (text.slice(0, 850) + "\n…") : text;
+              try {
+                sendRes = await apiGet({ action: "sendCourierRoute", telegramId: id, text: shortText });
+              } catch (eShort) {}
             }
             if (sendRes && sendRes.status === "success") {
               showToast("Отправлено: " + (c.name || c.username || id));
               closeModal(true);
             } else {
-              var msg = (sendRes && (sendRes.message || sendRes.description)) || "no_token_or_chat";
-              if (/token/i.test(String(msg))) {
-                await uiAlertAsync("Нет TELEGRAM_BOT_TOKEN в Script Properties. Добавьте токен бота и задеплойте Code.gs.");
+              var msg = (sendRes && (sendRes.message || sendRes.description || sendRes.error)) || "send_failed";
+              if (/token|no_token/i.test(String(msg))) {
+                await uiAlertAsync("Нет TELEGRAM_BOT_TOKEN в Script Properties. Добавьте токен бота и задеплойте Code.gs заново (Deploy → Manage deployments → Edit → New version).");
+              } else if (/chat|forbidden|bot was blocked|not found|blocked/i.test(String(msg))) {
+                await uiAlertAsync("Курьер должен сначала написать боту /start (или открыть мини-апп). Потом отправка сработает.");
               } else {
                 showToast("Не дошло: " + msg);
               }
               btn.disabled = false;
+              btn.innerHTML = labelRestore;
             }
           };
         });
@@ -2376,20 +2453,6 @@
         return;
       }
       showToast((await copyText(text)) ? "Тексты скопированы" : "Не скопировалось");
-    }
-
-    async function copyAllIgMessages() {
-      const parts = [];
-      routePlanState.routes.forEach(function (r, i) {
-        if (!r.length) return;
-        parts.push("КУРЬЕР " + (i + 1) + "\n\n" + buildIgMessagesForRoute(i));
-      });
-      const text = parts.join("\n\n==========\n\n");
-      if (!text) {
-        showToast("Сначала соберите маршруты");
-        return;
-      }
-      showToast((await copyText(text)) ? "Все тексты скопированы" : "Не скопировалось");
     }
 
     function renderRoutePlan() {

@@ -1284,16 +1284,20 @@ function handleGetCouriers(callback, fromPost) {
 function handleSendCourierRoute(json, callback, fromPost) {
   var chatId = json.telegramId || json.chatId || json.id;
   var text = json.text || "";
-  // Короткий текст можно передать; длинный — через ticket в CacheService
+  // Длинный текст — через ticket в CacheService (POST prepare → GET send)
   if (json.ticket) {
     try {
       var cached = CacheService.getScriptCache().get("route_" + String(json.ticket));
       if (cached) text = cached;
     } catch (e) {}
   }
-  if (!chatId || !text) {
-    var bad = { status: "error", message: !chatId ? "no_chat" : "need_id_and_text" };
-    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  if (!chatId) {
+    var noChat = { status: "error", message: "no_chat", description: "Пустой chat id курьера" };
+    return fromPost ? jsonpText(callback, noChat) : jsonp(callback, noChat);
+  }
+  if (!text) {
+    var noText = { status: "error", message: "need_id_and_text", description: "Нет текста маршрута (ticket не найден — подождите и повторите)" };
+    return fromPost ? jsonpText(callback, noText) : jsonp(callback, noText);
   }
   var result = telegramSendText_(chatId, text);
   var body = result && result.ok
@@ -1312,7 +1316,8 @@ function handlePrepareCourierRoute(json, callback, fromPost) {
     var bad = { status: "error", message: "empty_text" };
     return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
   }
-  var ticket = String(Date.now()) + "_" + String(Math.floor(Math.random() * 1e6));
+  var ticket = json.ticket ? String(json.ticket).replace(/[^a-zA-Z0-9_:-]/g, "").slice(0, 64) : "";
+  if (!ticket) ticket = String(Date.now()) + "_" + String(Math.floor(Math.random() * 1e6));
   try {
     CacheService.getScriptCache().put("route_" + ticket, text.slice(0, 90000), 300);
   } catch (e) {
