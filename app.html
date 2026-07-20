@@ -485,7 +485,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.1</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -671,7 +671,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4";
+    const APP_VERSION = "v7.4.1";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -3862,7 +3862,7 @@
 
       await refreshDriveMatrix(routePlanState.depot, stops);
       const ordered = optimizeRouteOrder(routePlanState.depot, stops);
-      const depotGeo = routePlanState.depot;
+      depotGeo = routePlanState.depot;
       const points = [];
       if (depotGeo && depotGeo.lat != null && depotGeo.lon != null) {
         points.push({ lat: Number(depotGeo.lat), lon: Number(depotGeo.lon), label: depotAddr, address: depotAddr });
