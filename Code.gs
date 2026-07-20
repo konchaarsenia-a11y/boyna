@@ -157,6 +157,10 @@ function recalculateCuttingForDate_(ss, dateText) {
   return totals;
 }
 
+function asBool_(v) {
+  return v === true || v === "TRUE" || v === "true" || v === 1 || v === "1";
+}
+
 function restoreCuttingState_(cutting, memorySheet, dateText, tz) {
   cutting.getRange("C3:C60").clearContent();
   cutting.getRange("E3:E60").setValue(false);
@@ -172,9 +176,9 @@ function restoreCuttingState_(cutting, memorySheet, dateText, tz) {
     var row = saved[i] || [];
     surplus.push([row[0] === undefined || row[0] === null ? "" : row[0]]);
     // формат: [surplus, _, laid, done, outNext]; старый done всегда в [3]
-    laid.push([row[2] === true]);
-    done.push([row[3] === true]);
-    outNext.push([row[4] === true]);
+    laid.push([asBool_(row[2])]);
+    done.push([asBool_(row[3])]);
+    outNext.push([asBool_(row[4])]);
   }
   cutting.getRange("C3:C60").setValues(surplus);
   cutting.getRange("E3:E60").setValues(laid);
@@ -192,9 +196,9 @@ function saveCuttingState_(cutting, memorySheet, dateText, tz) {
     packed.push([
       c[i][0],
       "",
-      e[i][0] === true,
-      f[i][0] === true,
-      g[i][0] === true
+      asBool_(e[i][0]),
+      asBool_(f[i][0]),
+      asBool_(g[i][0])
     ]);
   }
   saveMemoryJson_(memorySheet, dateText, packed, tz);
@@ -485,6 +489,16 @@ function doGet(e) {
   if (action === "getCutting") {
     return handleGetCutting(payload.day, callback);
   }
+  if (action === "updateCutting") {
+    return handleUpdateCutting(SpreadsheetApp.getActiveSpreadsheet(), {
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
+      row: e.parameter.row,
+      done: e.parameter.done,
+      laid: e.parameter.laid,
+      surplus: e.parameter.surplus,
+      outNext: e.parameter.outNext
+    }, callback, false);
+  }
   if (action === "startCuttingSession") {
     return handleStartCuttingSession({
       day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
@@ -541,7 +555,7 @@ function handleApiAction(json, callback, fromPost) {
     return handleSaveOrder(ss, json, callback);
   }
   if (action === "updateCutting") {
-    return handleUpdateCutting(ss, json, callback);
+    return handleUpdateCutting(ss, json, callback, fromPost);
   }
   if (action === "setDelivered") {
     return handleSetDelivered(ss, json, callback);
@@ -607,9 +621,9 @@ function handleGetCutting(dayName, callback) {
     var surplus = Number(state[0]) || 0;
     // active C3:G = [C,D,E,F,G] → laid=E[2], done=F[3], outNext=G[4]
     // memory packed = [surplus,"",laid,done,outNext]
-    var laid = state[2] === true;
-    var done = state[3] === true;
-    var outNext = state[4] === true;
+    var laid = asBool_(state[2]);
+    var done = asBool_(state[3]);
+    var outNext = asBool_(state[4]);
     var raw;
     if (piece) {
       raw = dry;
@@ -696,49 +710,69 @@ function handleStopCuttingSession(json, callback, fromPost) {
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
-function handleUpdateCutting(ss, json, callback) {
-  var cutting = ss.getSheetByName("Нарезка");
-  var memory = ss.getSheetByName("Память_Нарезки");
-  var tz = ss.getSpreadsheetTimeZone();
-  var row = Number(json.row);
-  var dateValue = getDayDate_(ss, json.day);
-  if (!cutting || !dateValue || row < 3 || row > 48 || row % 1 !== 0) {
-    return jsonpText(callback, { status: "bad_request" });
+function handleUpdateCutting(ss, json, callback, fromPost) {
+  if (fromPost === undefined) fromPost = true;
+  var lock = LockService.getDocumentLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    var busy = { status: "error", message: "busy_retry" };
+    return fromPost ? jsonpText(callback, busy) : jsonp(callback, busy);
   }
-
-  var oldDate = formatSheetDate(cutting.getRange("A1").getValue(), tz);
-  var dateText = formatSheetDate(dateValue, tz);
-  if (oldDate && oldDate !== dateText) saveCuttingState_(cutting, memory, oldDate, tz);
-  cutting.getRange("A1").setValue(dateValue);
-  restoreCuttingState_(cutting, memory, dateText, tz);
-  recalculateCuttingForDate_(ss, dateText);
-
-  if (json.surplus !== undefined && json.surplus !== null) {
-    cutting.getRange("C" + row).setValue(Number(json.surplus) || 0);
-  }
-  if (json.done !== undefined && json.done !== null) {
-    var done = json.done === true || String(json.done).toLowerCase() === "true";
-    cutting.getRange("F" + row).setValue(done);
-  }
-  if (json.laid !== undefined && json.laid !== null) {
-    var laid = json.laid === true || String(json.laid).toLowerCase() === "true";
-    cutting.getRange("E" + row).setValue(laid);
-  }
-  if (json.outNext !== undefined && json.outNext !== null) {
-    var outNext = json.outNext === true || String(json.outNext).toLowerCase() === "true";
-    cutting.getRange("G" + row).setValue(outNext);
-    if (outNext) {
-      try {
-        notifyOutNextStock_({
-          day: json.day,
-          name: cutting.getRange("A" + row).getValue(),
-          row: row
-        });
-      } catch (eOut) {}
+  try {
+    var cutting = ss.getSheetByName("Нарезка");
+    var memory = ss.getSheetByName("Память_Нарезки");
+    var tz = ss.getSpreadsheetTimeZone();
+    var row = Number(json.row);
+    var dateValue = getDayDate_(ss, json.day);
+    if (!cutting || !dateValue || row < 3 || row > 48 || row % 1 !== 0) {
+      var bad = { status: "bad_request" };
+      return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
     }
+
+    var oldDate = formatSheetDate(cutting.getRange("A1").getValue(), tz);
+    var dateText = formatSheetDate(dateValue, tz);
+
+    // Важно: НЕ делать restore на каждый клик — иначе параллельные галочки затираются.
+    // Restore только при смене даты на листе «Нарезка».
+    if (oldDate !== dateText) {
+      if (oldDate) saveCuttingState_(cutting, memory, oldDate, tz);
+      cutting.getRange("A1").setValue(dateValue);
+      restoreCuttingState_(cutting, memory, dateText, tz);
+      recalculateCuttingForDate_(ss, dateText);
+    } else {
+      // дата уже активна — только пересчёт плана, флаги E/F/G не трогаем
+      recalculateCuttingForDate_(ss, dateText);
+    }
+
+    if (json.surplus !== undefined && json.surplus !== null && json.surplus !== "") {
+      cutting.getRange("C" + row).setValue(Number(json.surplus) || 0);
+    }
+    if (json.done !== undefined && json.done !== null && json.done !== "") {
+      cutting.getRange("F" + row).setValue(asBool_(json.done));
+    }
+    if (json.laid !== undefined && json.laid !== null && json.laid !== "") {
+      cutting.getRange("E" + row).setValue(asBool_(json.laid));
+    }
+    if (json.outNext !== undefined && json.outNext !== null && json.outNext !== "") {
+      var outNext = asBool_(json.outNext);
+      cutting.getRange("G" + row).setValue(outNext);
+      if (outNext) {
+        try {
+          notifyOutNextStock_({
+            day: json.day,
+            name: cutting.getRange("A" + row).getValue(),
+            row: row
+          });
+        } catch (eOut) {}
+      }
+    }
+    saveCuttingState_(cutting, memory, dateText, tz);
+    var ok = { status: "success" };
+    return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+  } finally {
+    try { lock.releaseLock(); } catch (eRel) {}
   }
-  saveCuttingState_(cutting, memory, dateText, tz);
-  return jsonpText(callback, { status: "success" });
 }
 
 /** На листе «Доставки» ники клиентов в строке 3, галочки в строке 2. Столбец C часто «итого» — ищем ник по имени. */

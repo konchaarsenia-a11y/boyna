@@ -435,7 +435,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.8</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v6.9</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -615,7 +615,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v6.8";
+    const APP_VERSION = "v6.9";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1482,6 +1482,11 @@
           tickCuttingTimer();
           return;
         }
+        // защита от отката: сервер ещё не догнал локальные галочки
+        if (fromPoll && cuttingFlagScore(res.items) < cuttingFlagScore(cuttingItemsCache)) {
+          tickCuttingTimer();
+          return;
+        }
         if (fromPoll && fp === cuttingSession.fingerprint) {
           tickCuttingTimer();
           return;
@@ -1500,6 +1505,16 @@
           if (finishBtn) finishBtn.style.display = "none";
         }
       }
+    }
+
+    function cuttingFlagScore(items) {
+      var n = 0;
+      (items || []).forEach(function (it) {
+        if (it.done) n += 2;
+        if (it.laid) n += 1;
+        if (it.outNext) n += 1;
+      });
+      return n;
     }
 
     function cuttingFingerprint(items, session) {
@@ -1753,7 +1768,9 @@
       reorderCuttingDom();
       markCuttingWriteStart();
       try {
-        await apiPost({ action: "updateCutting", day: day, row: row, laid: laid });
+        await apiGet({ action: "updateCutting", day: day, row: row, laid: laid ? "true" : "false" });
+      } catch (e) {
+        try { await apiPost({ action: "updateCutting", day: day, row: row, laid: !!laid }); } catch (e2) {}
       } finally {
         markCuttingWriteEnd();
       }
@@ -1767,7 +1784,9 @@
       if (done) queueCelebrateCut();
       markCuttingWriteStart();
       try {
-        await apiPost({ action: "updateCutting", day: day, row: row, done: done });
+        await apiGet({ action: "updateCutting", day: day, row: row, done: done ? "true" : "false" });
+      } catch (e) {
+        try { await apiPost({ action: "updateCutting", day: day, row: row, done: !!done }); } catch (e2) {}
       } finally {
         markCuttingWriteEnd();
       }
@@ -1791,7 +1810,9 @@
       }
       markCuttingWriteStart();
       try {
-        await apiPost({ action: "updateCutting", day: day, row: row, outNext: next });
+        await apiGet({ action: "updateCutting", day: day, row: row, outNext: next ? "true" : "false" });
+      } catch (e) {
+        try { await apiPost({ action: "updateCutting", day: day, row: row, outNext: !!next }); } catch (e2) {}
       } finally {
         markCuttingWriteEnd();
       }
@@ -1805,7 +1826,9 @@
       if (cached) cached.surplus = surplus;
       markCuttingWriteStart();
       try {
-        await apiPost({ action: "updateCutting", day: day, row: row, surplus: surplus });
+        await apiGet({ action: "updateCutting", day: day, row: row, surplus: surplus });
+      } catch (e) {
+        try { await apiPost({ action: "updateCutting", day: day, row: row, surplus: surplus }); } catch (e2) {}
       } finally {
         markCuttingWriteEnd();
       }
