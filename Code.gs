@@ -615,6 +615,12 @@ function doGet(e) {
       client: e.parameter.client ? decodeURIComponent(e.parameter.client) : ""
     }, callback, false);
   }
+  if (action === "crmInventory") {
+    return handleCrmInventory({}, callback, false);
+  }
+  if (action === "seedCrmClients") {
+    return handleSeedCrmClients({}, callback, false);
+  }
   if (action === "calcPrice") {
     return handleCalcPrice({
       mode: e.parameter.mode || "subscription",
@@ -738,6 +744,12 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "findClientMatch") {
     return handleFindClientMatch(json, callback, fromPost);
+  }
+  if (action === "crmInventory") {
+    return handleCrmInventory(json, callback, fromPost);
+  }
+  if (action === "seedCrmClients") {
+    return handleSeedCrmClients(json, callback, fromPost);
   }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
@@ -3137,8 +3149,9 @@ function getCrmSpreadsheetId_() {
 
 function getCrmSpreadsheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  // Одна книга: если в Бойне уже есть CRM-листы — читаем отсюда
-  if (ss.getSheetByName("Контакты") || ss.getSheetByName("ПП") || ss.getSheetByName("АФК")) {
+  // Чистовик: если CRM уже здесь — только локально (после переноса листов)
+  if (ss.getSheetByName("Контакты") || ss.getSheetByName("ПП") || ss.getSheetByName("АФК") ||
+      ss.getSheetByName("Июль") || ss.getSheetByName("Август") || ss.getSheetByName("Январь")) {
     return ss;
   }
   var forceExternal = PropertiesService.getScriptProperties().getProperty("CRM_FORCE_EXTERNAL");
@@ -3378,9 +3391,50 @@ function parseCrmCalendarCell_(text) {
   };
 }
 
-function readCrmClientsForDate_(crmSs, deliveryDate) {
+/** Лист месяца: «Июль», «Июль 2026», «июль_2026» — без переименования существующих. */
+function resolveCrmMonthSheet_(crmSs, deliveryDate) {
+  if (!crmSs || !deliveryDate) return null;
   var monthName = CRM_MONTH_NAMES_RU_[deliveryDate.getMonth()];
-  var sh = crmSs.getSheetByName(monthName);
+  var year = deliveryDate.getFullYear();
+  var candidates = [
+    monthName + " " + year,
+    monthName + "_" + year,
+    monthName + "-" + year,
+    monthName
+  ];
+  for (var i = 0; i < candidates.length; i++) {
+    var sh = crmSs.getSheetByName(candidates[i]);
+    if (sh) return sh;
+  }
+  // регистронезависимый / «Июль 26»
+  var sheets = crmSs.getSheets();
+  var wantBase = monthName.toUpperCase();
+  var yearShort = String(year).slice(-2);
+  var bestPlain = null;
+  for (var s = 0; s < sheets.length; s++) {
+    var title = String(sheets[s].getName() || "").trim();
+    var tU = title.toUpperCase().replace(/ё/g, "Е");
+    var baseU = wantBase.replace(/ё/g, "Е");
+    if (tU === baseU) { bestPlain = sheets[s]; continue; }
+    if (tU.indexOf(baseU) !== 0) continue;
+    if (tU.indexOf(String(year)) >= 0 || tU.indexOf(yearShort) >= 0) return sheets[s];
+  }
+  return bestPlain;
+}
+
+function headerDayNumber_(hv) {
+  if (hv instanceof Date) return hv.getDate();
+  if (typeof hv === "number" && isFinite(hv)) return Math.round(hv);
+  var s = String(hv || "").trim();
+  if (!s) return NaN;
+  var m = s.match(/^(\d{1,2})([./-]|$)/);
+  if (m) return Number(m[1]);
+  var n = Number(s);
+  return isFinite(n) ? Math.round(n) : NaN;
+}
+
+function readCrmClientsForDate_(crmSs, deliveryDate) {
+  var sh = resolveCrmMonthSheet_(crmSs, deliveryDate);
   if (!sh) return [];
   var dayNum = deliveryDate.getDate();
   var lastCol = Math.max(1, sh.getLastColumn());
@@ -3389,12 +3443,11 @@ function readCrmClientsForDate_(crmSs, deliveryDate) {
   var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
   var col = -1;
   for (var c = 0; c < headers.length; c++) {
-    var hv = headers[c];
-    var n = (hv instanceof Date) ? hv.getDate() : Number(hv);
-    if (n === dayNum) { col = c + 1; break; }
+    if (headerDayNumber_(headers[c]) === dayNum) { col = c + 1; break; }
   }
   if (col < 0) return [];
-  var values = sh.getRange(2, col, lastRow - 1, 1).getValues();
+  // важно: getRange(r1,c1,r2,c2) — до lastRow включительно, только нужный столбец
+  var values = sh.getRange(2, col, lastRow, col).getValues();
   var out = [];
   var seen = {};
   for (var r = 0; r < values.length; r++) {
@@ -3406,6 +3459,172 @@ function readCrmClientsForDate_(crmSs, deliveryDate) {
     out.push(parsed);
   }
   return out;
+}
+
+/**
+ * Инвентаризация CRM в чистовике: месяцы, дни, счётчики — без изменения данных.
+ */
+function handleCrmInventory(json, callback, fromPost) {
+  var active = SpreadsheetApp.getActiveSpreadsheet();
+  var crmSs;
+  try { crmSs = getCrmSpreadsheet_(); } catch (e) {
+    var bad = { status: "error", message: "crm_open_failed", detail: String(e) };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var local = crmSs.getId() === active.getId();
+  var sheetNames = crmSs.getSheets().map(function (s) { return s.getName(); });
+  var months = [];
+  for (var m = 0; m < CRM_MONTH_NAMES_RU_.length; m++) {
+    var base = CRM_MONTH_NAMES_RU_[m];
+    var matched = sheetNames.filter(function (n) {
+      var u = String(n).toUpperCase().replace(/ё/g, "Е");
+      var b = base.toUpperCase().replace(/ё/g, "Е");
+      return u === b || u.indexOf(b) === 0;
+    });
+    matched.forEach(function (name) {
+      var sh = crmSs.getSheetByName(name);
+      if (!sh) return;
+      var lastCol = Math.max(1, sh.getLastColumn());
+      var lastRow = Math.max(1, sh.getLastRow());
+      var headers = lastCol ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+      var days = [];
+      var cellsWithNick = 0;
+      for (var c = 0; c < headers.length; c++) {
+        var dn = headerDayNumber_(headers[c]);
+        if (!isFinite(dn) || dn < 1 || dn > 31) continue;
+        days.push(dn);
+        if (lastRow >= 2) {
+          var colVals = sh.getRange(2, c + 1, lastRow, c + 1).getValues();
+          for (var r = 0; r < colVals.length; r++) {
+            if (parseCrmCalendarCell_(colVals[r][0])) cellsWithNick++;
+          }
+        }
+      }
+      months.push({
+        sheet: name,
+        month: base,
+        days: days,
+        lastRow: lastRow,
+        nickCells: cellsWithNick
+      });
+    });
+  }
+  function countSheet(name, startRow) {
+    var sh = crmSs.getSheetByName(name);
+    if (!sh || sh.getLastRow() < startRow) return 0;
+    var data = sh.getDataRange().getValues();
+    var n = 0;
+    for (var i = startRow - 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim()) n++;
+    }
+    return n;
+  }
+  var ok = {
+    status: "success",
+    local: local,
+    spreadsheetId: crmSs.getId(),
+    hasContacts: !!crmSs.getSheetByName("Контакты"),
+    hasPP: !!crmSs.getSheetByName("ПП"),
+    hasAFK: !!crmSs.getSheetByName("АФК"),
+    hasBP: !!crmSs.getSheetByName("БП"),
+    contactsRows: countSheet("Контакты", 2),
+    ppRows: countSheet("ПП", 3),
+    afkRows: countSheet("АФК", 3),
+    bpRows: countSheet("БП", 3),
+    clientsProfiles: Math.max(0, getClientsProfilesSheet_().getLastRow() - 1),
+    months: months,
+    note: "Даты в месяцах: заголовок колонки = число дня; год = из даты доставки. Переупаковка не нужна."
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+/**
+ * Заливает всех из Контакты + ПП/АФК/БП + календари месяцев в лист «Клиенты».
+ * Только upsert: пустые поля не затирают уже заполненные; никого не удаляет.
+ */
+function seedCrmClientsIntoProfiles_() {
+  var crmSs = getCrmSpreadsheet_();
+  var stats = {
+    fromContacts: 0,
+    fromSubs: 0,
+    fromMonths: 0,
+    profilesBefore: Math.max(0, getClientsProfilesSheet_().getLastRow() - 1),
+    profilesAfter: 0
+  };
+
+  var contacts = crmSs.getSheetByName("Контакты");
+  if (contacts && contacts.getLastRow() > 1) {
+    var cdata = contacts.getDataRange().getValues();
+    for (var c = 1; c < cdata.length; c++) {
+      var nick = extractInstagramNick_(cdata[c][0]);
+      if (!nick) continue;
+      upsertClientProfile_(SpreadsheetApp.getActiveSpreadsheet(), nick, cdata[c][3], cdata[c][4], cdata[c][6], "Контакты");
+      stats.fromContacts++;
+    }
+  }
+
+  ["ПП", "АФК", "БП"].forEach(function (sheetName) {
+    var sh = crmSs.getSheetByName(sheetName);
+    if (!sh || sh.getLastRow() < 3) return;
+    var data = sh.getDataRange().getValues();
+    for (var r = 2; r < data.length; r++) {
+      var nick2 = extractInstagramNick_(data[r][0]);
+      if (!nick2) continue;
+      var wishes = String(data[r][4] || "").trim();
+      upsertClientProfile_(SpreadsheetApp.getActiveSpreadsheet(), nick2, "", "", wishes, sheetName);
+      stats.fromSubs++;
+    }
+  });
+
+  var sheets = crmSs.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var title = String(sheets[s].getName() || "");
+    var tU = title.toUpperCase().replace(/ё/g, "Е");
+    var isMonth = false;
+    for (var m = 0; m < CRM_MONTH_NAMES_RU_.length; m++) {
+      var b = CRM_MONTH_NAMES_RU_[m].toUpperCase().replace(/ё/g, "Е");
+      if (tU === b || tU.indexOf(b) === 0) { isMonth = true; break; }
+    }
+    if (!isMonth) continue;
+    var shM = sheets[s];
+    var lastCol = Math.max(1, shM.getLastColumn());
+    var lastRow = Math.max(1, shM.getLastRow());
+    if (lastRow < 2) continue;
+    var headers = shM.getRange(1, 1, 1, lastCol).getValues()[0];
+    for (var col = 0; col < headers.length; col++) {
+      var dn = headerDayNumber_(headers[col]);
+      if (!isFinite(dn) || dn < 1 || dn > 31) continue;
+      var vals = shM.getRange(2, col + 1, lastRow, col + 1).getValues();
+      for (var rr = 0; rr < vals.length; rr++) {
+        var parsed = parseCrmCalendarCell_(vals[rr][0]);
+        if (!parsed) continue;
+        upsertClientProfile_(
+          SpreadsheetApp.getActiveSpreadsheet(),
+          parsed.client,
+          parsed.address,
+          parsed.phone,
+          parsed.note,
+          "календарь:" + title
+        );
+        stats.fromMonths++;
+      }
+    }
+  }
+
+  stats.profilesAfter = Math.max(0, getClientsProfilesSheet_().getLastRow() - 1);
+  return stats;
+}
+
+function handleSeedCrmClients(json, callback, fromPost) {
+  var stats;
+  try {
+    stats = seedCrmClientsIntoProfiles_();
+  } catch (e) {
+    var bad = { status: "error", message: String(e) };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var ok = { status: "success", seeded: true, stats: stats };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
 function mapCrmHeaderToItem_(header) {
@@ -4287,14 +4506,24 @@ function setupOpsEcosystem() {
     sku.getRange(1, 1, 1, 5).setValues([["cutRow", "warehouseRow", "name", "unit", "notes"]]);
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var crmLocal = !!(ss.getSheetByName("Контакты") || ss.getSheetByName("ПП") || ss.getSheetByName("АФК"));
+  var crmLocal = !!(ss.getSheetByName("Контакты") || ss.getSheetByName("ПП") || ss.getSheetByName("АФК") ||
+    ss.getSheetByName("Июль") || ss.getSheetByName("Январь"));
   var dataId = PropertiesService.getScriptProperties().getProperty("DATA_SPREADSHEET_ID") || "";
-  Logger.log("setupOpsEcosystem ok; crmLocal=" + crmLocal + "; DATA_SPREADSHEET_ID=" + (dataId || "(active)"));
+  var seed = { profilesAfter: 0 };
+  if (crmLocal) {
+    try { seed = seedCrmClientsIntoProfiles_(); } catch (eSeed) {
+      seed = { error: String(eSeed) };
+    }
+  }
+  Logger.log("setupOpsEcosystem ok; crmLocal=" + crmLocal + "; DATA_SPREADSHEET_ID=" + (dataId || "(active)") + "; seed=" + JSON.stringify(seed));
   var msg = crmLocal
-    ? "ok — CRM листы уже в чистовике"
-    : "ok — скопируйте в чистовик листы Контакты/ПП/АФК/БП/месяцы из старой CRM";
-  if (!dataId) {
-    msg += "; укажите Script Property DATA_SPREADSHEET_ID = id старой книги (гео/дефициты/итоги/память)";
+    ? ("ok — CRM в чистовике; Клиенты: было " + (seed.profilesBefore || 0) + " → стало " + (seed.profilesAfter || 0) +
+      " (контакты " + (seed.fromContacts || 0) + ", подписки " + (seed.fromSubs || 0) + ", календарь-ячейки " + (seed.fromMonths || 0) + ")")
+    : "ok — CRM-листов не видно; скопируйте Контакты/ПП/АФК/БП/месяцы в эту книгу";
+  if (dataId) {
+    msg += "; DATA_SPREADSHEET_ID задан (гео/дефициты/итоги/память в старой книге)";
+  } else {
+    msg += "; данные мини-аппа в этой же книге";
   }
   return msg;
 }
