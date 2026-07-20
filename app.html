@@ -574,7 +574,7 @@
     <div class="load-dance-label" id="saveLoadLabel">Сохраняю заказ…</div>
   </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.3</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -608,9 +608,10 @@
         </div>
         <div class="form-group">
           <label>Ник / Имя клиента</label>
-          <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
+          <input type="text" id="client" placeholder="Например: Мария" autocomplete="off" oninput="onClientNameInput()">
+          <button type="button" class="btn-action btn-orange" id="clientMatchBtn" style="margin-top:8px;display:none;" onclick="applyClientMatch()"></button>
           <button type="button" class="btn-action btn-orange" style="margin-top:8px;" onclick="prepareSecondDog()">2 собаки</button>
-          <div class="field-hint">Вторая собака = отдельный заказ рядом (`Имя · 2`), для сборки видно оба набора.</div>
+          <div class="field-hint">Если клиент уже был — загорится «Есть совпадение» (адрес/телефон/заметка, без состава).</div>
         </div>
                 <div class="form-group">
           <label>Адрес доставки</label>
@@ -620,6 +621,11 @@
           </div>
           <div class="addr-picked" id="addressPickedHint">Адрес выбран — координаты сохранены</div>
           <div class="field-hint">Выберите вариант из подсказок (бесплатно) — тогда Яндекс откроет точку точно. Если не Минск / дальше 20 км — спросим почту.</div>
+        </div>
+        <div class="form-group">
+          <label>Телефон</label>
+          <input type="tel" id="phoneInput" placeholder="+375…" autocomplete="tel" inputmode="tel">
+          <div class="field-hint">Курьер сможет нажать номер и сразу открыть вызов.</div>
         </div>
 <div class="form-group" id="deliveryMethodGroup" style="display:none;">
           <label>Как доставляем (за Минском)</label>
@@ -754,18 +760,6 @@
             <button type="button" class="seg-btn" id="courierCount2" onclick="setCourierCount(2)">2</button>
           </div>
         </div>
-        <div class="form-group">
-          <label>Выезд примерно в</label>
-          <div class="time-wheel-label"><span>Часы</span><span></span><span>Минуты</span></div>
-          <div class="time-wheel-wrap" id="departTimeWheel">
-            <div class="time-wheel-col" id="departHourCol"></div>
-            <div class="time-wheel-sep">:</div>
-            <div class="time-wheel-col" id="departMinCol"></div>
-            <div class="time-wheel-glass"></div>
-            <div class="time-wheel-line"></div>
-          </div>
-          <div class="field-hint" id="departTimeHint">Листайте как будильник на iPhone</div>
-        </div>
         <button class="btn-action btn-green" type="button" onclick="buildRoutePlan()">Собрать маршруты</button>
       </div>
       <div id="routePlanBox"></div>
@@ -849,7 +843,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.6.2";
+    const APP_VERSION = "v7.6.3";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1372,9 +1366,59 @@
       basket = [];
       renderBasket();
       document.getElementById("btnMainSave").innerText = "Сохранить 2-ю собаку";
-      showToast("Корзина для 2-й собаки. Адрес тот же — наборы разные.");
+      showToast("Корзина для 2-й собаки. Адрес/телефон те же — наборы разные.");
     }
     window.prepareSecondDog = prepareSecondDog;
+
+    let clientMatchTimer = null;
+    let clientMatchCache = null;
+    function hideClientMatchBtn() {
+      const btn = document.getElementById("clientMatchBtn");
+      if (btn) { btn.style.display = "none"; btn.textContent = ""; }
+      clientMatchCache = null;
+    }
+    function onClientNameInput() {
+      const q = (document.getElementById("client").value || "").trim();
+      hideClientMatchBtn();
+      if (q.length < 2) return;
+      clearTimeout(clientMatchTimer);
+      clientMatchTimer = setTimeout(async function () {
+        try {
+          const res = await apiGet({ action: "findClientMatch", q: q });
+          if (!res || !res.match) return;
+          // не предлагать, если уже всё заполнено тем же
+          const addr = (document.getElementById("addressInput").value || "").trim();
+          const phone = (document.getElementById("phoneInput").value || "").trim();
+          if (addr && phone) return;
+          clientMatchCache = res.match;
+          const btn = document.getElementById("clientMatchBtn");
+          if (!btn) return;
+          btn.style.display = "";
+          btn.textContent = "Есть совпадение: " + (res.match.nick || q);
+        } catch (e) {}
+      }, 450);
+    }
+    function applyClientMatch() {
+      if (!clientMatchCache) return;
+      const m = clientMatchCache;
+      if (m.nick) document.getElementById("client").value = m.nick;
+      if (m.address) document.getElementById("addressInput").value = m.address;
+      if (m.phone) document.getElementById("phoneInput").value = m.phone;
+      if (m.note) {
+        const ni = document.getElementById("noteInput");
+        if (!(ni.value || "").trim()) ni.value = m.note;
+      }
+      hideClientMatchBtn();
+      showToast("Данные подставлены (состав не трогали)");
+    }
+    window.onClientNameInput = onClientNameInput;
+    window.applyClientMatch = applyClientMatch;
+
+    function formatWhNum(n) {
+      var x = Number(n);
+      if (!isFinite(x)) return "0";
+      return (Math.round(x * 100) / 100).toString();
+    }
 
     function showSaveLoading(label) {
       const ov = document.getElementById("saveLoadOverlay");
@@ -1664,6 +1708,11 @@
 
       // GEO не кладём в примечание — только отдельным полем
       clientNote = stripGeoTags(clientNote);
+      const phone = (document.getElementById("phoneInput") && document.getElementById("phoneInput").value || "").trim();
+      if (phone) {
+        clientNote = String(clientNote || "").replace(/\[TEL:[^\]]+\]/gi, "").trim();
+        clientNote = (clientNote ? clientNote + " " : "") + "[TEL:" + phone + "]";
+      }
       clientNote = applyNoteAudience(clientNote, getSelectedNoteRoles());
 
       const okConfirm = await uiConfirmAsync(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"));
@@ -1679,6 +1728,7 @@
         day: day,
         client: clientName,
         address: clientAddress,
+        phone: phone,
         note: clientNote,
         geo: selectedAddressGeo ? {
           lat: selectedAddressGeo.lat,
@@ -1702,6 +1752,7 @@
         alsoSaveOrder: false,
         client: clientName,
         address: clientAddress,
+        phone: phone,
         note: clientNote,
         source: "retail",
         basket: payload.basket,
@@ -1734,6 +1785,9 @@
         document.getElementById("client").value = "";
         document.getElementById("addressInput").value = "";
         document.getElementById("noteInput").value = "";
+        const phoneEl = document.getElementById("phoneInput");
+        if (phoneEl) phoneEl.value = "";
+        hideClientMatchBtn();
         const po = document.getElementById("postOfficeInput");
         if (po) po.value = "";
         selectedAddressGeo = null;
@@ -1878,6 +1932,9 @@
       document.getElementById("client").readOnly = true;
       document.getElementById("addressInput").value = client.address || "";
       const rawNote = client.note || "";
+      const phoneEl = document.getElementById("phoneInput");
+      if (phoneEl) phoneEl.value = client.phone || extractPhone(rawNote) || "";
+      hideClientMatchBtn();
       const geoFromNote = parseGeoFromNote(rawNote);
       const geo = client.geo || geoFromNote;
       selectedAddressGeo = geo ? {
@@ -4684,9 +4741,8 @@
         box.innerHTML = (res.items || []).map(function (it) {
           return '<div class="card" style="margin-bottom:8px;">' +
             '<b>' + escapeHtml(it.name) + '</b> <span class="muted">' + escapeHtml(it.unit) + '</span>' +
-            '<div style="margin-top:6px;font-size:13px;">Остаток: <b>' + it.stock + '</b>' +
-            (it.arrival ? ' · дозакуп: ' + it.arrival : '') +
-            (it.coef ? ' · коэф: ' + it.coef : '') +
+            '<div style="margin-top:6px;font-size:13px;">Остаток: <b>' + formatWhNum(it.stock) + '</b>' +
+            (it.arrival ? ' · дозакуп: ' + formatWhNum(it.arrival) : '') +
             (it.buy ? ' · <span style="color:var(--accent-color)">закупить</span>' : '') +
             '</div>' +
             '<div class="seg-row" style="margin-top:8px;">' +
@@ -4878,7 +4934,7 @@
 
     try { loadDepotAddress(); } catch (e) {}
     try { registerMeAsCourier(); } catch (e) {}
-    try { buildTimeWheels(); } catch (e) {}
+    try { if (document.getElementById("departHourCol")) buildTimeWheels(); } catch (e) {}
     try { renderBasket(); } catch (e) {}
     try { bindOrderLongPress(); } catch (e) {}
     try { bootstrapAccess(); } catch (e) { try { applyRoleTabs(); } catch (e2) {} }
