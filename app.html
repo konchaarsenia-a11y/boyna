@@ -485,7 +485,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.3</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.4</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -671,7 +671,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4.3";
+    const APP_VERSION = "v7.4.4";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1567,6 +1567,26 @@
       }
     }
 
+    function cutDoneStorageKey(day, dateText) {
+      return "cutDone_" + String(day || "") + "_" + String(dateText || "");
+    }
+
+    function readCutDoneLocal(day, dateText) {
+      try {
+        const raw = localStorage.getItem(cutDoneStorageKey(day, dateText));
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function writeCutDoneLocal(day, dateText, completion) {
+      try {
+        if (!completion) return;
+        localStorage.setItem(cutDoneStorageKey(day, dateText), JSON.stringify(completion));
+      } catch (e) {}
+    }
+
     async function loadCutting(fromPoll) {
       const day = document.getElementById("cuttingDaySelect").value;
       const box = document.getElementById("cuttingContainer");
@@ -1587,12 +1607,15 @@
       if (!fromPoll) box.innerHTML = '<p class="muted">Считаю нарезку...</p>';
       try {
         const res = await apiGet({ action: "getCutting", day: day });
-        if (res && res.completion) {
-          cuttingCompletionCache = res.completion;
+        let completion = (res && res.completion) || null;
+        if (!completion && res && res.date) completion = readCutDoneLocal(day, res.date);
+        if (completion) {
+          cuttingCompletionCache = completion;
           cuttingItemsCache = (res.items || []).slice();
+          if (res.date) writeCutDoneLocal(day, res.date, completion);
           applyRemoteCuttingSession({ active: false, day: "", startedAt: 0 });
           if (finishBtn) finishBtn.style.display = "none";
-          renderFinishedCuttingDay(res.completion);
+          renderFinishedCuttingDay(completion);
           stopCuttingPoll();
           return;
         }
@@ -1658,40 +1681,18 @@
       const finishBtn = document.getElementById("btnFinishCutting");
       if (finishBtn) finishBtn.style.display = "none";
       if (sessionBox) sessionBox.innerHTML = "";
+      if (box) box.innerHTML = "";
       const items = (completion && completion.items) || [];
-      const total = Number(completion && completion.count) || items.length;
+      const total = Number(completion && completion.count) || items.length || 0;
       const elapsed = formatCutElapsed(Number(completion && completion.elapsedMs) || 0);
+      const dayLabel = completion && completion.day ? escapeHtml(completion.day) : "";
       if (summary) {
         summary.innerHTML =
           '<div class="cut-done-summary">' +
-            '<div class="cut-done-title">Нарезка завершена</div>' +
+            '<div class="cut-done-title">Нарезка завершена' + (dayLabel ? " · " + dayLabel : "") + '</div>' +
             '<div class="cut-done-meta">Позиций: <b>' + total + '</b><br>Время: <b>' + escapeHtml(elapsed) + '</b></div>' +
-            '<button type="button" class="btn-action btn-blue" id="btnCutDoneDetails" onclick="toggleFinishedCuttingDetails()">Подробнее</button>' +
-            '<div class="cut-done-details" id="cutDoneDetails">' +
-              (items.length
-                ? items.map(function (it) {
-                    const dry = it.unit === "шт" ? ((it.dry || 0) + " шт") : ((it.dry || 0) + " гр");
-                    const flags = [];
-                    if (it.laid) flags.push("выложено");
-                    if (it.done) flags.push("нарезано");
-                    return '<div class="cut-done-item"><span>' + escapeHtml(it.name || "") +
-                      '<div class="muted">' + escapeHtml(dry) +
-                      (flags.length ? " · " + flags.join(", ") : "") +
-                      "</div></span></div>";
-                  }).join("")
-                : '<p class="muted">Нет данных по позициям</p>') +
-            "</div>" +
-          "</div>";
+          '</div>';
       }
-      if (box) box.innerHTML = "";
-    }
-
-    function toggleFinishedCuttingDetails() {
-      const el = document.getElementById("cutDoneDetails");
-      const btn = document.getElementById("btnCutDoneDetails");
-      if (!el) return;
-      const open = el.classList.toggle("open");
-      if (btn) btn.textContent = open ? "Скрыть" : "Подробнее";
     }
 
     function cuttingFlagScore(items) {
@@ -2153,7 +2154,11 @@
           return;
         }
         stopCuttingTimer(true);
-        if (res && res.completion) cuttingCompletionCache = res.completion;
+        if (res && res.completion) {
+          cuttingCompletionCache = res.completion;
+          const dateKey = (res.completion && res.completion.dateText) || "";
+          writeCutDoneLocal(day, dateKey, res.completion);
+        }
         celebrateSuccess("finish", { elapsedLabel: formatCutElapsed(elapsed) });
         if (missing.length) {
           showToast("Дефицит: пуш сейчас + с утра каждые 30 мин");

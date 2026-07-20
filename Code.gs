@@ -2070,7 +2070,6 @@ function handleFinishCutting(ss, json, callback, fromPost) {
       dateText: dateText,
       elapsedMs: elapsed,
       finishedAt: new Date().toISOString(),
-      items: summaryItems,
       count: summaryItems.length
     });
 
@@ -2140,34 +2139,58 @@ function getCuttingCompletionSheet_() {
 }
 
 function saveCuttingCompletion_(info) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
   var sh = getCuttingCompletionSheet_();
   var dateText = String(info.dateText || "");
+  var payloadObj = {
+    day: String(info.day || ""),
+    dateText: dateText,
+    elapsedMs: Number(info.elapsedMs) || 0,
+    finishedAt: info.finishedAt || new Date().toISOString(),
+    count: Number(info.count) || 0
+  };
+  var payload = JSON.stringify(payloadObj);
+  try {
+    PropertiesService.getScriptProperties().setProperty("CUT_DONE_" + dateText.replace(/\./g, "_"), payload);
+  } catch (eProp) {}
   var data = sh.getDataRange().getValues();
-  var payload = JSON.stringify(info);
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === dateText) {
-      sh.getRange(i + 1, 2, 1, 2).setValues([[info.day || "", payload]]);
+    if (formatSheetDate(data[i][0], tz) === dateText) {
+      sh.getRange(i + 1, 2, 1, 2).setValues([[payloadObj.day, payload]]);
       return;
     }
   }
-  sh.appendRow([dateText, info.day || "", payload]);
+  sh.appendRow([dateText, payloadObj.day, payload]);
 }
 
 function getCuttingCompletion_(dateText) {
+  var want = String(dateText || "");
+  if (!want) return null;
   try {
-    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Итоги_Нарезки");
-    if (!sh) return null;
-    var data = sh.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(dateText)) {
-        try {
-          return JSON.parse(String(data[i][2] || ""));
-        } catch (e) {
-          return null;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var tz = ss.getSpreadsheetTimeZone();
+    var sh = ss.getSheetByName("Итоги_Нарезки");
+    if (sh && sh.getLastRow() > 1) {
+      var data = sh.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (formatSheetDate(data[i][0], tz) === want) {
+          try {
+            var obj = JSON.parse(String(data[i][2] || ""));
+            if (obj && !obj.count && obj.items && obj.items.length) obj.count = obj.items.length;
+            if (obj && (obj.count || obj.elapsedMs)) return obj;
+          } catch (e) {}
         }
       }
     }
   } catch (e2) {}
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty("CUT_DONE_" + want.replace(/\./g, "_"));
+    if (raw) {
+      var cached = JSON.parse(raw);
+      if (cached && (cached.count || cached.elapsedMs)) return cached;
+    }
+  } catch (e3) {}
   return null;
 }
 
