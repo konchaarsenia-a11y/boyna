@@ -66,16 +66,28 @@
     .nav-tabs {
       display: flex; gap: 6px; margin-bottom: 16px; background: #1c1c1e;
       padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); overflow-x: auto;
-      position: sticky; top: 0; z-index: 300;
+      position: relative; z-index: 20;
     }
     .tab-link {
       flex: 1 0 auto; min-width: 72px; text-align: center; background: none; border: none;
       color: var(--text-muted); padding: 10px 8px; font-size: 12px; font-weight: 600;
       cursor: pointer; border-radius: 8px;
-      position: relative; z-index: 301; -webkit-user-select: none; user-select: none;
+      -webkit-user-select: none; user-select: none;
       touch-action: manipulation;
+      pointer-events: auto !important;
     }
     .tab-link.active { background: var(--accent-color); color: #fff; }
+    /* Страховка: кнопки всегда кликабельны даже если какой-то слой залип */
+    button, .btn-action, .btn-save, .seg-btn, .crm-mini-btn, .route-mini, select, input {
+      pointer-events: auto !important;
+      touch-action: manipulation;
+    }
+    .modal-overlay:not(.open),
+    .toast:not(.show) {
+      display: none !important;
+      pointer-events: none !important;
+      visibility: hidden !important;
+    }
     .section-title {
       font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
       color: var(--text-muted); margin: 20px 0 8px 4px;
@@ -473,13 +485,13 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.3.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4</div>
 
     <div class="nav-tabs" id="navTabs">
-      <button type="button" class="tab-link active" data-screen="orderScreen">Заказ</button>
-      <button type="button" class="tab-link" data-screen="clientsScreen">Неделя</button>
-      <button type="button" class="tab-link" data-screen="cuttingScreen">Нарезка</button>
-      <button type="button" class="tab-link" data-screen="courierScreen">Курьер</button>
+      <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
+      <button type="button" class="tab-link" data-screen="clientsScreen" onclick="switchTab('clientsScreen')">Неделя</button>
+      <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
+      <button type="button" class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
     </div>
 
     <!-- МЕНЕДЖЕР: ПРИЁМ -->
@@ -659,7 +671,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.3.1";
+    const APP_VERSION = "v7.4";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -890,6 +902,8 @@
     function closeModal(result) {
       const overlay = document.getElementById("modalOverlay");
       overlay.classList.remove("open");
+      overlay.style.display = "none";
+      overlay.style.pointerEvents = "none";
       document.getElementById("modalSheet").innerHTML = "";
       const resolver = modalResolver;
       modalResolver = null;
@@ -906,7 +920,10 @@
         if (modalResolver) closeModal(null);
         modalResolver = resolve;
         document.getElementById("modalSheet").innerHTML = html;
-        document.getElementById("modalOverlay").classList.add("open");
+        var overlay = document.getElementById("modalOverlay");
+        overlay.classList.add("open");
+        overlay.style.display = "flex";
+        overlay.style.pointerEvents = "auto";
       });
     }
 
@@ -1075,37 +1092,58 @@
         if (tyan) tyan.remove();
         document.querySelectorAll(".fx-burst").forEach(function (el) { el.remove(); });
         var modal = document.getElementById("modalOverlay");
-        if (modal) modal.classList.remove("open");
+        if (modal) {
+          modal.classList.remove("open");
+          modal.style.display = "none";
+          modal.style.pointerEvents = "none";
+        }
+        document.querySelectorAll(".addr-suggest.open").forEach(function (el) {
+          el.classList.remove("open");
+        });
       } catch (e) {}
-      recoverUiFocus();
+      try {
+        document.body.style.pointerEvents = "auto";
+        document.documentElement.style.pointerEvents = "auto";
+        var app = document.querySelector(".app");
+        if (app) app.style.pointerEvents = "auto";
+      } catch (e2) {}
     }
 
     function switchTab(screenId) {
       clearBlockingOverlays();
-      document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
-      document.querySelectorAll(".tab-link").forEach(el => el.classList.toggle("active", el.dataset.screen === screenId));
+      document.querySelectorAll(".screen").forEach(function (el) { el.classList.remove("active"); });
+      document.querySelectorAll(".tab-link").forEach(function (el) {
+        el.classList.toggle("active", el.getAttribute("data-screen") === screenId);
+      });
       var screen = document.getElementById(screenId);
       if (screen) screen.classList.add("active");
-      if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
-        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
-        document.getElementById("btnMainSave").innerText = "Сохранить заказ";
-      }
-      if (screenId === "cuttingScreen") {
-        startCuttingPoll();
-      } else {
-        stopCuttingPoll();
-      }
+      try {
+        if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
+          document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
+          document.getElementById("btnMainSave").innerText = "Сохранить заказ";
+        }
+      } catch (e) {}
+      try {
+        if (screenId === "cuttingScreen") startCuttingPoll();
+        else stopCuttingPoll();
+      } catch (e2) {}
     }
+    // доступно для inline onclick даже при странностях WebView
+    window.switchTab = switchTab;
+    window.clearBlockingOverlays = clearBlockingOverlays;
 
-    // Надёжная привязка вкладок (на случай если inline onclick залип в WebView)
+    // Надёжная привязка вкладок
     document.querySelectorAll(".tab-link").forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
+      btn.onclick = function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         var id = btn.getAttribute("data-screen");
         if (id) switchTab(id);
-      }, { passive: false });
+        return false;
+      };
     });
+
+    // Сразу снять возможные залипшие слои при загрузке скрипта
+    clearBlockingOverlays();
 
     function unitForItem(cat, main) {
       if (cat === "chew") return "шт";
@@ -3417,12 +3455,12 @@
       wrap.innerHTML =
         '<div class="yandex-route-top">' +
           '<div class="yr-title">Маршрут · ' + pts.length + " точек</div>" +
-          '<div class="yr-sub">Порядок как в мини-аппе. В Яндексе не нажимайте «Оптимизировать» — собьётся очередь и тексты клиентам.</div>' +
+          '<div class="yr-sub">Порядок как в мини-аппе. В Яндексе не жмите Оптимизировать.</div>' +
           (missing
-            ? '<div class="yr-sub" style="color:#ff9f0a;">Без координат: ' + missing + " — Яндекс может перегеокодировать адреса</div>"
+            ? ('<div class="yr-sub" style="color:#ff9f0a;">Без координат: ' + missing + " — Яндекс может перегеокодировать адреса</div>")
             : "") +
-          '<button class="btn-action btn-green" type="button" id="yrOpenNavi">Открыть в Яндекс Навигаторе (фикс. порядок)</button>' +
-          '<button class="btn-action btn-blue" type="button" id="yrOpenApp">Открыть в Яндекс.Картах</button>' +
+          '<button class="btn-action btn-green" type="button" id="yrOpenNavi">Навигатор (фикс. порядок)</button>' +
+          '<button class="btn-action btn-blue" type="button" id="yrOpenApp">Яндекс.Карты</button>' +
           '<button class="btn-action" type="button" id="yrClose" style="background:#3a3a3c;">Закрыть</button>' +
         "</div>" +
         '<iframe id="yrFrame" src="' + buildYandexWidgetUrl(pts).replace(/"/g, "&quot;") + '" allow="geolocation *; clipboard-write *"></iframe>';
@@ -3478,7 +3516,7 @@
       let t = "Маршрут курьера · " + formatMinutes(mins) + "\n";
       t += "Выезд: " + normalizeAddressForMaps(getDepotAddress()) + "\n";
       t += "Время: " + pad2(departHour) + ":" + pad2(departMinute) + "\n";
-      t += "Порядок зафиксирован мини-аппом — в Яндексе НЕ жмите «Оптимизировать».\n\n";
+      t += "Порядок зафиксирован мини-аппом. В Яндексе НЕ жмите Оптимизировать.\n\n";
       stops.forEach(function (s, i) {
         const eta = etaShortForMsg(depot, stops, i, depart);
         t += (i + 1) + ". " + s.name;
