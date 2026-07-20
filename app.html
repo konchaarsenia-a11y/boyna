@@ -849,7 +849,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.6.1";
+    const APP_VERSION = "v7.6.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1301,35 +1301,57 @@
       fly.classList.toggle("open", open);
     }
 
+    let orderFlyoutJustOpened = false;
+    let suppressOrderClick = false;
+
     function bindOrderLongPress() {
       const btn = document.querySelector('.tab-link[data-screen="orderScreen"]');
       if (!btn) return;
       let timer = null;
-      let longDone = false;
-      function clear() { if (timer) { clearTimeout(timer); timer = null; } }
-      function start() {
-        longDone = false;
-        clear();
+      function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+      function startPress() {
+        clearTimer();
         timer = setTimeout(function () {
-          longDone = true;
           if (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all") {
+            orderFlyoutJustOpened = true;
+            suppressOrderClick = true;
             toggleOrderFlyout(true);
             try { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium"); } catch (e) {}
           }
         }, 480);
       }
-      btn.addEventListener("touchstart", start, { passive: true });
-      btn.addEventListener("touchend", function (e) {
-        clear();
-        if (longDone && e) { e.preventDefault(); e.stopPropagation(); }
-      });
-      btn.addEventListener("touchcancel", clear);
-      btn.addEventListener("mousedown", start);
-      btn.addEventListener("mouseup", clear);
-      btn.addEventListener("mouseleave", clear);
+      function endPress(e) {
+        clearTimer();
+        // не даём «клику после зажатия» сразу закрыть меню
+        if (suppressOrderClick && e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+      btn.addEventListener("touchstart", startPress, { passive: true });
+      btn.addEventListener("touchend", endPress);
+      btn.addEventListener("touchcancel", clearTimer);
+      btn.addEventListener("mousedown", startPress);
+      btn.addEventListener("mouseup", endPress);
+      btn.addEventListener("mouseleave", clearTimer);
+      btn.addEventListener("click", function (e) {
+        if (suppressOrderClick) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          suppressOrderClick = false;
+          return;
+        }
+        // короткое нажатие при открытом меню — свернуть
+        var fly = document.getElementById("orderFlyout");
+        if (fly && fly.classList.contains("open") && !orderFlyoutJustOpened) {
+          toggleOrderFlyout(false);
+        }
+        orderFlyoutJustOpened = false;
+      }, true);
       document.querySelectorAll("#orderFlyout .order-flyout-btn").forEach(function (b) {
         b.onclick = function () {
           const id = b.getAttribute("data-fly");
+          orderFlyoutJustOpened = false;
           toggleOrderFlyout(false);
           if (id) switchTab(id);
         };
@@ -1392,7 +1414,19 @@
 
     function switchTab(screenId) {
       clearBlockingOverlays();
-      toggleOrderFlyout(false);
+      var fly = document.getElementById("orderFlyout");
+      var flyOpen = fly && fly.classList.contains("open");
+      // меню Заказа сворачивается только при уходе на другую вкладку / выборе пункта
+      if (FLYOUT_SCREENS.indexOf(screenId) >= 0) {
+        toggleOrderFlyout(false);
+        orderFlyoutJustOpened = false;
+      } else if (screenId !== "orderScreen") {
+        toggleOrderFlyout(false);
+        orderFlyoutJustOpened = false;
+      } else if (flyOpen && orderFlyoutJustOpened) {
+        // только что открыли long-press — не закрывать
+        orderFlyoutJustOpened = false;
+      }
       document.querySelectorAll(".screen").forEach(function (el) { el.classList.remove("active"); });
       document.querySelectorAll(".tab-link").forEach(function (el) {
         el.classList.toggle("active", el.getAttribute("data-screen") === screenId);
@@ -1418,7 +1452,6 @@
         if (screenId === "warehouseScreen") loadWarehouse();
         if (screenId === "subsScreen") loadSubscriptions();
         if (screenId === "peopleScreen") loadPeople();
-        if (screenId === "priceScreen") { /* wait user action */ }
         if (screenId === "courierScreen" && courierSub === "assembly") loadAssembly();
       } catch (e3) {}
     }
