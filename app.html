@@ -470,7 +470,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.2</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.3</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -656,7 +656,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.2";
+    const APP_VERSION = "v7.3";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -3246,20 +3246,60 @@
       const depotAddr = normalizeAddressForMaps(getDepotAddress());
       const depotGeo = routePlanState.depot;
       const points = [];
-      // Координаты, если есть — приложению Яндекс так надёжнее
-      if (depotGeo && depotGeo.lat != null) points.push(depotGeo.lat + "," + depotGeo.lon);
-      else points.push(depotAddr);
+      // Только координаты в порядке мини-аппа — иначе Яндекс перегеокодирует и может сбить порядок
+      if (depotGeo && depotGeo.lat != null && depotGeo.lon != null) {
+        points.push({ lat: Number(depotGeo.lat), lon: Number(depotGeo.lon), label: depotAddr });
+      } else {
+        points.push({ address: depotAddr, label: depotAddr });
+      }
       stops.forEach(function (s) {
-        if (s.lat != null && s.lon != null) points.push(s.lat + "," + s.lon);
-        else if (s.address) points.push(s.address);
+        if (s && s.lat != null && s.lon != null && isFinite(Number(s.lat)) && isFinite(Number(s.lon))) {
+          points.push({
+            lat: Number(s.lat),
+            lon: Number(s.lon),
+            label: s.name || s.address || "",
+            address: s.address || ""
+          });
+        } else if (s && s.address) {
+          points.push({ address: String(s.address), label: s.name || s.address });
+        }
       });
       return { stops: stops, points: points, depotAddr: depotAddr };
+    }
+
+    /** Приводим точки к lat,lon / address, порядок не меняем */
+    function normalizeYandexPointList(points) {
+      const out = [];
+      (points || []).forEach(function (p) {
+        if (p == null || p === "") return;
+        if (typeof p === "object") {
+          if (p.lat != null && p.lon != null && isFinite(Number(p.lat)) && isFinite(Number(p.lon))) {
+            out.push({
+              lat: Number(p.lat),
+              lon: Number(p.lon),
+              label: p.label || p.address || p.name || "",
+              address: p.address || ""
+            });
+            return;
+          }
+          const addr = String(p.address || p.name || "").trim();
+          if (addr) out.push({ address: addr, label: p.label || addr });
+          return;
+        }
+        const s = String(p).trim();
+        if (!s) return;
+        const m = s.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+        if (m) out.push({ lat: Number(m[1]), lon: Number(m[2]), label: s });
+        else out.push({ address: s, label: s });
+      });
+      return out;
     }
 
     function pointToYandexRtext(p) {
       if (p == null) return "";
       if (typeof p === "object") {
         if (p.lat != null && p.lon != null && isFinite(Number(p.lat)) && isFinite(Number(p.lon))) {
+          // Яндекс: lat,lon
           return Number(p.lat) + "," + Number(p.lon);
         }
         return String(p.address || p.name || "").trim();
@@ -3267,25 +3307,48 @@
       return String(p).trim();
     }
 
+    function yandexRtextFromPoints(points) {
+      return normalizeYandexPointList(points).map(pointToYandexRtext).filter(Boolean).join("~");
+    }
+
     function buildYandexRouteUrl(points) {
-      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
-      const rtext = parts.join("~");
+      const rtext = yandexRtextFromPoints(points);
+      if (!rtext) return "https://yandex.ru/maps/";
+      // Порядок точек = порядок в rtext. Не добавляем auto-optimize.
       return "https://yandex.ru/maps/?mode=routes&rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
     }
 
     function buildYandexMapsAppUrl(points) {
-      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
-      const rtext = parts.join("~");
+      const rtext = yandexRtextFromPoints(points);
+      if (!rtext) return "yandexmaps://maps.yandex.ru/";
       return "yandexmaps://maps.yandex.ru/?rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
     }
 
     function buildYandexWidgetUrl(points) {
-      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
-      const rtext = parts.join("~");
+      const rtext = yandexRtextFromPoints(points);
+      if (!rtext) return "https://yandex.ru/map-widget/v1/?lang=ru_RU";
       return "https://yandex.ru/map-widget/v1/?lang=ru_RU&mode=routes&rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
+    }
+
+    /** Навигатор: via-точки жёстко в нашем порядке (не «оптимизировать») */
+    function buildYandexNaviUrl(points) {
+      const list = normalizeYandexPointList(points).filter(function (p) {
+        return p.lat != null && p.lon != null;
+      });
+      if (list.length < 2) return "";
+      const from = list[0];
+      const to = list[list.length - 1];
+      let url = "yandexnavi://build_route_on_map?lat_from=" + from.lat + "&lon_from=" + from.lon +
+        "&lat_to=" + to.lat + "&lon_to=" + to.lon;
+      for (let i = 1; i < list.length - 1; i++) {
+        const v = list[i];
+        const idx = i - 1;
+        url += "&lat_via_" + idx + "=" + v.lat + "&lon_via_" + idx + "=" + v.lon;
+      }
+      return url;
     }
 
     function buildYandexPointUrl(addr) {
@@ -3295,19 +3358,27 @@
     }
 
     function buildYandexBridgeUrl(points) {
-      const parts = (points || []).map(pointToYandexRtext).filter(Boolean);
-      const rtext = parts.join("~");
+      const rtext = yandexRtextFromPoints(points);
       return YANDEX_ROUTE_PAGE + "?rtext=" +
-        encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
+        encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~") +
+        "&fixed=1";
     }
 
-    /** Все адреса одним маршрутом в Яндекс: виджет внутри мини-аппа + приложение */
+    function countMissingGeoInPoints(points) {
+      return normalizeYandexPointList(points).filter(function (p) {
+        return p.lat == null || p.lon == null;
+      }).length;
+    }
+
+    /** Все адреса одним маршрутом в Яндекс: порядок как в мини-аппе */
     function openAllInYandex(points) {
-      const pts = (points || []).map(pointToYandexRtext).filter(Boolean);
-      if (pts.length < 1) {
+      const list = normalizeYandexPointList(points);
+      if (!list.length) {
         showToast("Нет точек для маршрута");
         return;
       }
+      const missing = countMissingGeoInPoints(list);
+      const pts = list;
 
       const old = document.getElementById("yandexRouteOverlay");
       if (old) old.remove();
@@ -3317,9 +3388,13 @@
       wrap.className = "yandex-route-overlay";
       wrap.innerHTML =
         '<div class="yandex-route-top">' +
-          '<div class="yr-title">Яндекс · все ' + pts.length + " точек</div>" +
-          '<div class="yr-sub">Карта — полный маршрут. Кнопка = то же, что «Подробнее» на карте.</div>' +
-          '<button class="btn-action btn-green" type="button" id="yrOpenApp">Открыть все точки в Яндекс.Картах</button>' +
+          '<div class="yr-title">Маршрут · ' + pts.length + " точек</div>" +
+          '<div class="yr-sub">Порядок как в мини-аппе. В Яндексе не нажимайте «Оптимизировать» — собьётся очередь и тексты клиентам.</div>' +
+          (missing
+            ? '<div class="yr-sub" style="color:#ff9f0a;">Без координат: ' + missing + " — Яндекс может перегеокодировать адреса</div>"
+            : "") +
+          '<button class="btn-action btn-green" type="button" id="yrOpenNavi">Открыть в Яндекс Навигаторе (фикс. порядок)</button>' +
+          '<button class="btn-action btn-blue" type="button" id="yrOpenApp">Открыть в Яндекс.Картах</button>' +
           '<button class="btn-action" type="button" id="yrClose" style="background:#3a3a3c;">Закрыть</button>' +
         "</div>" +
         '<iframe id="yrFrame" src="' + buildYandexWidgetUrl(pts).replace(/"/g, "&quot;") + '" allow="geolocation *; clipboard-write *"></iframe>';
@@ -3329,8 +3404,22 @@
 
       document.getElementById("yrClose").onclick = function () { wrap.remove(); };
       document.getElementById("yrOpenApp").onclick = function () {
-        openExternalLink(buildYandexRouteUrl(pts));
-        showToast("Открываю Яндекс…");
+        // Сначала приложение Карт с тем же порядком, запасной — веб
+        const appUrl = buildYandexMapsAppUrl(pts);
+        const webUrl = buildYandexRouteUrl(pts);
+        openExternalLink(appUrl);
+        setTimeout(function () { openExternalLink(webUrl); }, 600);
+        showToast("Порядок как в мини-аппе");
+      };
+      document.getElementById("yrOpenNavi").onclick = function () {
+        const navi = buildYandexNaviUrl(pts);
+        if (!navi) {
+          showToast("Нужны координаты всех точек — соберите маршрут ещё раз");
+          openExternalLink(buildYandexRouteUrl(pts));
+          return;
+        }
+        openExternalLink(navi);
+        showToast("Навигатор · порядок зафиксирован");
       };
     }
 
@@ -3340,7 +3429,6 @@
         showToast("В этом маршруте нет адресов");
         return;
       }
-      // Все точки курьера разом в Яндекс
       openAllInYandex(info.points);
     }
 
@@ -3351,7 +3439,8 @@
       const mins = estimateRouteMinutes(depot, stops);
       let t = "Маршрут курьера · " + formatMinutes(mins) + "\n";
       t += "Выезд: " + normalizeAddressForMaps(getDepotAddress()) + "\n";
-      t += "Время: " + pad2(departHour) + ":" + pad2(departMinute) + "\n\n";
+      t += "Время: " + pad2(departHour) + ":" + pad2(departMinute) + "\n";
+      t += "Порядок зафиксирован мини-аппом — в Яндексе НЕ жмите «Оптимизировать».\n\n";
       stops.forEach(function (s, i) {
         const eta = etaShortForMsg(depot, stops, i, depart);
         t += (i + 1) + ". " + s.name;
@@ -3359,7 +3448,9 @@
         t += "\n" + s.address + "\nоколо " + eta + "\n\n";
       });
       const info = routePointsForYandex(routeIndex);
-      t += "Яндекс (все точки):\n" + buildYandexRouteUrl(info.points);
+      t += "Яндекс.Карты (тот же порядок):\n" + buildYandexRouteUrl(info.points);
+      const navi = buildYandexNaviUrl(info.points);
+      if (navi) t += "\n\nЯндекс Навигатор (фикс. порядок):\n" + navi;
       return t.trim();
     }
 
@@ -3573,7 +3664,7 @@
         }
 
         html += '<div class="route-actions">';
-        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Яндекс · все точки · курьер ' + (r + 1) + "</button>";
+        html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Карты · порядок мини-аппа · курьер ' + (r + 1) + "</button>";
         html += '<button class="btn-action btn-blue" type="button" onclick="shareCourierRoute(' + r + ')">Отправить курьеру ' + (r + 1) + " в Telegram</button>";
         html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Тексты Instagram · ' + (r + 1) + "</button>";
         html += "</div></div>";
@@ -3695,10 +3786,20 @@
 
       await refreshDriveMatrix(routePlanState.depot, stops);
       const ordered = optimizeRouteOrder(routePlanState.depot, stops);
-      const points = [depotAddr].concat(ordered.map(function (s) {
-        if (s.lat != null && s.lon != null) return { lat: s.lat, lon: s.lon, address: s.address };
-        return s.address;
-      }));
+      const depotGeo = routePlanState.depot;
+      const points = [];
+      if (depotGeo && depotGeo.lat != null && depotGeo.lon != null) {
+        points.push({ lat: Number(depotGeo.lat), lon: Number(depotGeo.lon), label: depotAddr, address: depotAddr });
+      } else {
+        points.push({ address: depotAddr, label: depotAddr });
+      }
+      ordered.forEach(function (s) {
+        if (s.lat != null && s.lon != null) {
+          points.push({ lat: Number(s.lat), lon: Number(s.lon), address: s.address || "", label: s.name || s.address || "" });
+        } else if (s.address) {
+          points.push({ address: s.address, label: s.name || s.address });
+        }
+      });
       openAllInYandex(points);
     }
 

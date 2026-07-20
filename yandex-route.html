@@ -13,32 +13,29 @@
       display: grid; gap: 8px;
     }
     .title { font-weight: 700; font-size: 15px; }
-    .sub { font-size: 12px; color: #8e8e93; }
+    .sub { font-size: 12px; color: #8e8e93; line-height: 1.35; }
+    .warn { font-size: 12px; color: #ff9f0a; }
     .btn {
       height: 44px; border: none; border-radius: 10px; font-weight: 700; font-size: 14px; color: #fff;
       background: #248bf2; width: 100%;
     }
     .btn.sec { background: #3a3a3c; }
+    .btn.navi { background: #30d158; }
     #mapFrame {
       position: fixed; left: 0; right: 0; bottom: 0;
-      top: calc(118px + env(safe-area-inset-top, 0px));
+      top: calc(168px + env(safe-area-inset-top, 0px));
       width: 100%; border: 0; background: #1c1c1e;
-    }
-    #mapApi {
-      position: fixed; left: 0; right: 0; bottom: 0;
-      top: calc(118px + env(safe-area-inset-top, 0px));
-      width: 100%; display: none;
     }
   </style>
 </head>
 <body>
   <div class="bar">
     <div class="title" id="title">Маршрут в Яндекс</div>
-    <div class="sub" id="sub">Все точки одним маршрутом</div>
-    <button class="btn" type="button" id="openApp">Открыть в приложении Яндекс.Карты</button>
+    <div class="sub" id="sub">Порядок как в мини-аппе. Не нажимайте «Оптимизировать».</div>
+    <button class="btn navi" type="button" id="openNavi">Яндекс Навигатор (фикс. порядок)</button>
+    <button class="btn" type="button" id="openApp">Яндекс.Карты</button>
   </div>
   <iframe id="mapFrame" allow="geolocation *; clipboard-write *" referrerpolicy="no-referrer-when-downgrade"></iframe>
-  <div id="mapApi"></div>
 
   <script>
     function parsePoints() {
@@ -51,6 +48,12 @@
         }
       } catch (e) {}
       return [];
+    }
+
+    function parseCoord(s) {
+      var m = String(s || "").match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (!m) return null;
+      return { lat: Number(m[1]), lon: Number(m[2]) };
     }
 
     function buildWebUrl(points) {
@@ -67,9 +70,26 @@
 
     function buildWidgetUrl(points) {
       var rtext = points.join("~");
-      // Виджет Яндекса специально для встраивания — в Telegram/Safari пачка через него стабильнее
       return "https://yandex.ru/map-widget/v1/?lang=ru_RU&mode=routes&rtt=auto&rtext=" +
         encodeURIComponent(rtext).replace(/%2C/gi, ",").replace(/%7E/gi, "~");
+    }
+
+    function buildNaviUrl(points) {
+      var coords = [];
+      for (var i = 0; i < points.length; i++) {
+        var c = parseCoord(points[i]);
+        if (c) coords.push(c);
+      }
+      if (coords.length < 2) return "";
+      var from = coords[0];
+      var to = coords[coords.length - 1];
+      var url = "yandexnavi://build_route_on_map?lat_from=" + from.lat + "&lon_from=" + from.lon +
+        "&lat_to=" + to.lat + "&lon_to=" + to.lon;
+      for (var v = 1; v < coords.length - 1; v++) {
+        var idx = v - 1;
+        url += "&lat_via_" + idx + "=" + coords[v].lat + "&lon_via_" + idx + "=" + coords[v].lon;
+      }
+      return url;
     }
 
     var points = parsePoints();
@@ -77,20 +97,26 @@
     var sub = document.getElementById("sub");
     var frame = document.getElementById("mapFrame");
     var openApp = document.getElementById("openApp");
+    var openNavi = document.getElementById("openNavi");
 
     if (!points.length) {
       title.textContent = "Нет точек";
       sub.textContent = "Вернитесь в мини-апп и соберите маршрут";
+      openNavi.style.display = "none";
+      openApp.style.display = "none";
     } else {
       title.textContent = "Маршрут · " + points.length + " точек";
-      sub.textContent = "Яндекс строит путь по всем адресам";
+      sub.textContent = "Порядок как в мини-аппе. В Яндексе не жмите «Оптимизировать».";
       frame.src = buildWidgetUrl(points);
-
-      // Пробуем сразу открыть приложение с полной пачкой
-      setTimeout(function () {
-        try { window.location.href = buildAppUrl(points); } catch (e) {}
-      }, 400);
+      var navi = buildNaviUrl(points);
+      if (!navi) openNavi.style.display = "none";
     }
+
+    openNavi.onclick = function () {
+      var navi = buildNaviUrl(points);
+      if (!navi) return;
+      try { window.location.href = navi; } catch (e) {}
+    };
 
     openApp.onclick = function () {
       if (!points.length) return;
