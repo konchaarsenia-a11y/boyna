@@ -485,7 +485,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.2</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.3</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -671,7 +671,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4.2";
+    const APP_VERSION = "v7.4.3";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -3143,31 +3143,35 @@
     }
 
     function formatMinutes(m) {
+      m = Math.max(0, Math.round(Number(m) || 0));
       if (m < 60) return "~" + m + " мин";
       const h = Math.floor(m / 60);
       const mm = m % 60;
       return "~" + h + " ч " + (mm ? mm + " мин" : "");
     }
 
+    /**
+     * Минуты до точки для сообщения клиенту.
+     * Считаем от предыдущей точки (или склада) — жми «Копировать», когда едешь к этому клиенту.
+     */
+    function driveMinutesToStop(depot, stops, index) {
+      if (!stops || !stops[index]) return 5;
+      const from = index <= 0 ? (depot || stops[0]) : stops[index - 1];
+      return Math.max(1, Math.round(driveMinutesBetween(from, stops[index])));
+    }
+
+    /** Округление для клиента: 5, 10, 15… */
+    function approxMinutesForClient(mins) {
+      const m = Math.max(5, Math.round(Number(mins) || 0));
+      return Math.max(5, Math.round(m / 5) * 5);
+    }
+
     function etaLabelForStop(depot, stops, index, depart) {
-      let t = 0;
-      let cur = depot;
-      for (let i = 0; i <= index; i++) {
-        t += driveMinutesBetween(cur, stops[i]);
-        if (i < index) t += STOP_MINUTES;
-        cur = stops[i];
-      }
-      const arrive = Math.round(t);
-      const leave = arrive + STOP_MINUTES;
-      if (!depart) {
-        return "через ~" + arrive + "–" + leave + " мин после выезда";
-      }
+      // оставлено для совместимости; в UI больше не показываем
+      const arrive = driveMinutesToStop(depot, stops, index);
+      if (!depart) return "через ~" + arrive + " мин";
       const a = new Date(depart.getTime() + arrive * 60000);
-      const b = new Date(depart.getTime() + leave * 60000);
-      function hhmm(d) {
-        return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-      }
-      return "примерно " + hhmm(a) + "–" + hhmm(b);
+      return String(a.getHours()).padStart(2, "0") + ":" + String(a.getMinutes()).padStart(2, "0");
     }
 
     function autoSplitStops(stops) {
@@ -3513,22 +3517,20 @@
     function buildCourierShareText(routeIndex) {
       const stops = routePlanState.routes[routeIndex] || [];
       const depot = routePlanState.depot;
-      const depart = parseDepartTime();
       const mins = estimateRouteMinutes(depot, stops);
-      let t = "Маршрут курьера · " + formatMinutes(mins) + "\n";
+      let t = "Маршрут курьера · " + stops.length + " точек\n";
       t += "Выезд: " + normalizeAddressForMaps(getDepotAddress()) + "\n";
-      t += "Время: " + pad2(departHour) + ":" + pad2(departMinute) + "\n";
-      t += "Порядок зафиксирован мини-аппом. В Яндексе НЕ жмите Оптимизировать.\n\n";
+      t += "Ориентир по длине: " + formatMinutes(mins) + " (точнее смотри Яндекс)\n";
+      t += "Порядок зафиксирован. В Яндексе НЕ жми Оптимизировать.\n\n";
       stops.forEach(function (s, i) {
-        const eta = etaShortForMsg(depot, stops, i, depart);
         t += (i + 1) + ". " + s.name;
         if (s.deliveryLabel) t += " (" + s.deliveryLabel + ")";
-        t += "\n" + s.address + "\nоколо " + eta + "\n\n";
+        t += "\n" + s.address + "\n\n";
       });
       const info = routePointsForYandex(routeIndex);
-      t += "Яндекс.Карты (тот же порядок):\n" + buildYandexRouteUrl(info.points);
+      t += "Яндекс.Карты:\n" + buildYandexRouteUrl(info.points);
       const navi = buildYandexNaviUrl(info.points);
-      if (navi) t += "\n\nЯндекс Навигатор (фикс. порядок):\n" + navi;
+      if (navi) t += "\n\nЯндекс Навигатор:\n" + navi;
       return t.trim();
     }
 
@@ -3651,39 +3653,30 @@
       recoverUiFocus();
     }
 
-    function igMessageForStop(depot, stops, index, depart) {
-      const eta = etaShortForMsg(depot, stops, index, depart);
-      return "Здравствуйте! Привезём сегодня около " + eta + ".";
+    /** Сообщение клиенту: время считается в момент копирования («через N мин»). */
+    function igMessageForStop(depot, stops, index) {
+      const mins = approxMinutesForClient(driveMinutesToStop(depot, stops, index));
+      return "Здравствуйте! Буду примерно через " + mins + " мин.";
     }
 
     async function copyOneIgMessage(routeIndex, stopIndex) {
       const depot = routePlanState.depot;
       const stops = routePlanState.routes[routeIndex] || [];
       if (!stops[stopIndex]) return;
-      const text = igMessageForStop(depot, stops, stopIndex, parseDepartTime());
-      showToast((await copyText(text)) ? "Сообщение скопировано" : "Не скопировалось");
+      const text = igMessageForStop(depot, stops, stopIndex);
+      const ok = await copyText(text);
+      showToast(ok ? ("Скопировано · через ~" + approxMinutesForClient(driveMinutesToStop(depot, stops, stopIndex)) + " мин") : "Не скопировалось");
     }
 
     function etaShortForMsg(depot, stops, index, depart) {
-      let t = 0;
-      let cur = depot;
-      for (let i = 0; i <= index; i++) {
-        t += driveMinutesBetween(cur, stops[i]);
-        if (i < index) t += STOP_MINUTES;
-        cur = stops[i];
-      }
-      const arrive = Math.round(t);
-      if (!depart) return "~" + arrive + " мин после выезда";
-      const a = new Date(depart.getTime() + arrive * 60000);
-      return String(a.getHours()).padStart(2, "0") + ":" + String(a.getMinutes()).padStart(2, "0");
+      return String(approxMinutesForClient(driveMinutesToStop(depot, stops, index))) + " мин";
     }
 
     function buildIgMessagesForRoute(routeIndex) {
       const depot = routePlanState.depot;
       const stops = routePlanState.routes[routeIndex] || [];
-      const depart = parseDepartTime();
       return stops.map(function (s, i) {
-        return igMessageForStop(depot, stops, i, depart);
+        return s.name + ":\n" + igMessageForStop(depot, stops, i);
       }).join("\n\n---\n\n");
     }
 
@@ -3693,14 +3686,13 @@
         showToast("Пустой маршрут");
         return;
       }
-      showToast((await copyText(text)) ? "Тексты скопированы" : "Не скопировалось");
+      showToast((await copyText(text)) ? "Тексты скопированы (время от сейчас)" : "Не скопировалось");
     }
 
     function renderRoutePlan() {
       const box = document.getElementById("routePlanBox");
       if (!box) return;
       const depot = routePlanState.depot || { lat: 53.9, lon: 27.56 };
-      const depart = parseDepartTime();
       const count = routePlanState.courierCount;
       let html = "";
       let totalMin = 0;
@@ -3712,7 +3704,7 @@
         html += '<div class="route-card">';
         html += '<div class="route-head"><div class="route-title">Курьер ' + (r + 1) + " · " + stops.length + " точ" +
           (stops.length === 1 ? "ка" : (stops.length >= 2 && stops.length <= 4 ? "ки" : "ек")) +
-          '</div><div class="route-time">' + formatMinutes(mins) + "</div></div>";
+          '</div><div class="route-time">ориентир ' + formatMinutes(mins) + "</div></div>";
 
         if (!stops.length) {
           html += '<p class="muted">Пока пусто — перенесите точки сюда</p>';
@@ -3720,19 +3712,16 @@
           stops.forEach(function (s, i) {
             const other = r === 0 ? 1 : 0;
             const canMove = count === 2;
-            const msg = igMessageForStop(depot, stops, i, depart);
-            const eta = etaLabelForStop(depot, stops, i, depart);
             html += '<div class="route-stop">';
             html += '<div class="route-stop-top">';
             html += '<div><div class="route-stop-name">' + (i + 1) + ". " + escapeHtml(s.name) + "</div>";
             html += '<div class="route-stop-addr">' + escapeHtml(s.address) + "</div>";
-            html += '<div class="route-time" style="margin-top:4px;">ETA: ' + escapeHtml(eta) + "</div>";
             if (s.deliveryLabel) {
               html += '<div class="route-badge">' + escapeHtml(s.deliveryLabel) +
                 (s.clientAddress ? (" → " + escapeHtml(s.clientAddress)) : "") + "</div>";
             }
-            html += '<div class="ig-bubble">' + escapeHtml(msg) +
-              '<div class="ig-bubble-actions"><button type="button" class="route-mini" onclick="copyOneIgMessage(' + r + "," + i + ')">Копировать</button></div></div>';
+            html += '<div class="ig-bubble">Сообщение клиенту посчитает время <b>в момент копирования</b>' +
+              '<div class="ig-bubble-actions"><button type="button" class="route-mini" onclick="copyOneIgMessage(' + r + "," + i + ')">Копировать «через N мин»</button></div></div>';
             html += "</div>";
             if (canMove) {
               html += '<button type="button" class="route-mini" onclick="moveStopBetweenRoutes(' + r + "," + i + "," + other + ')">→ ' + (other + 1) + "</button>";
@@ -3744,16 +3733,16 @@
         html += '<div class="route-actions">';
         html += '<button class="btn-action btn-green" type="button" onclick="openRouteInYandex(' + r + ')">Карты · порядок мини-аппа · курьер ' + (r + 1) + "</button>";
         html += '<button class="btn-action btn-blue" type="button" onclick="shareCourierRoute(' + r + ')">Отправить курьеру ' + (r + 1) + " в Telegram</button>";
-        html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Тексты Instagram · ' + (r + 1) + "</button>";
+        html += '<button class="btn-action" type="button" style="background:#3a3a3c;" onclick="copyIgMessages(' + r + ')">Все тексты клиентам · ' + (r + 1) + "</button>";
         html += "</div></div>";
       }
 
       if (count === 2) {
-        html = '<div class="total-summary-badge">До конца смены (параллельно) ≈' + formatMinutes(totalMin) +
-          " · с запасом на пробки · «→» перекинуть</div>" + html;
+        html = '<div class="total-summary-badge">Ориентир длины (параллельно) ' + formatMinutes(totalMin) +
+          " · точное время — в Яндексе · клиенту пиши кнопкой на точке</div>" + html;
       } else {
-        html = '<div class="total-summary-badge">До последнего клиента ≈' + formatMinutes(totalMin) +
-          " · с запасом на пробки (Яндекс может чуть отличаться)</div>" + html;
+        html = '<div class="total-summary-badge">Ориентир длины маршрута ' + formatMinutes(totalMin) +
+          " · точное время смотри в Яндексе · клиенту — «через N мин» при копировании</div>" + html;
       }
       box.innerHTML = html;
     }
