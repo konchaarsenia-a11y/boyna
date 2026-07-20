@@ -8,6 +8,15 @@
 | Apps Script webhook | https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec |
 | Репозиторий | https://github.com/konchaarsenia-a11y/superboyna.git |
 
+## Две книги Google Sheets (v7.6.4+)
+
+| Книга | Script Property | Листы |
+|-------|-----------------|-------|
+| **Чистовик** (active / Бойня) | — | Склад, Доступы, Клиенты, Прием заказов, Нарезка, Доставки, Брони, CRM (Контакты/ПП/…) после переноса |
+| **Данные мини-аппа** (старая) | `DATA_SPREADSHEET_ID` | `Гео_Клиентов`, `Дефицит_Нарезки`, `Итоги_Нарезки`, `Память_Нарезки`, `Память_Доставок` |
+
+Пока property пуст — всё читается из active. После переноса CRM в чистовик укажите id старой книги в Script Properties.
+
 ## Листы книги «Доставки Июнь»
 
 | Лист | Роль |
@@ -44,7 +53,7 @@
 | action | Параметры | Ответ |
 |--------|-----------|--------|
 | (пусто) | — | `{"status":"online"}` |
-| `getClients` | `day`, `callback` | `{status, clients:[{name,orderCount,address,note,basket,col}]}` |
+| `getClients` | `day`, `date` (опц.), `callback` | `{status, clients:[{name,orderCount,address,note,basket,col}], day, date, fromBookings?}` |
 | `deleteClient` | `client`, `day`, `callback` | `{status}` |
 | `moveClient` | `client`, `oldDay`, `newDay`, `callback` | `{status}` |
 | `getCutting` | `day`, `callback` | `{status, date, items:[{row,name,dry,unit,raw,surplus,done}]}` |
@@ -105,9 +114,9 @@
 
 Один раз в Script Editor: `setupOpsEcosystem()` + `setupBookingTriggersManual()`.
 
-Script Properties: `OWNER_TELEGRAM_IDS`, `CUTTER_TELEGRAM_IDS`, опционально `CRM_SPREADSHEET_ID`, `PRICE_SPREADSHEET_ID`.
+Script Properties: `OWNER_TELEGRAM_IDS`, `CUTTER_TELEGRAM_IDS`, опционально `CRM_SPREADSHEET_ID`, `PRICE_SPREADSHEET_ID`, `DATA_SPREADSHEET_ID` (старая книга: гео/дефициты/итоги/память).
 
-Навигация: менеджер — Заказ (long-press → Неделя), Подписки, Цена; курьер — Маршрут \| Сборка; нарезчик — Нарезка; логист — Склад; owner — всё + Люди.
+Навигация: менеджер — Заказ (long-press → Просмотр / Цена / Люди), Подписки, Цена; курьер — Маршрут \| Сборка; нарезчик — Нарезка; логист — Склад; owner — всё + Люди.
 
 ## Секреты
 

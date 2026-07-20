@@ -574,7 +574,7 @@
     <div class="load-dance-label" id="saveLoadLabel">Сохраняю заказ…</div>
   </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.3</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.4</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -584,7 +584,7 @@
       <button type="button" class="tab-link" data-screen="subsScreen" onclick="switchTab('subsScreen')">Подписки</button>
     </div>
     <div class="order-flyout" id="orderFlyout">
-      <button type="button" class="order-flyout-btn" data-fly="clientsScreen">Неделя</button>
+      <button type="button" class="order-flyout-btn" data-fly="clientsScreen">Просмотр</button>
       <button type="button" class="order-flyout-btn" data-fly="priceScreen">Цена</button>
       <button type="button" class="order-flyout-btn" data-fly="peopleScreen">Люди</button>
     </div>
@@ -666,49 +666,56 @@
         <div class="field-hint">Дрессура без фракции → «Среднее». Неизвестное — в примечание позиции.</div>
       </div>
 
-      <div class="section-title">Добавить товар</div>
-      <div class="grid-buttons">
-        <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">Дрессура</button>
-        <button class="btn-action btn-orange" onclick="openProductSelector('chew')">Жевалки</button>
-        <button class="btn-action btn-purple" onclick="openProductSelector('other')">Другое</button>
-        <button class="btn-action btn-brown" onclick="openProductSelector('powder')">Присыпки</button>
-        <button class="btn-action btn-green" onclick="openProductSelector('veg')">Овощи/Фрукты</button>
-      </div>
-
-      <div class="card" id="selectorCard" style="display:none;">
-        <div class="form-group">
-          <label id="selectorTitle">Позиция</label>
-          <select id="mainSelect" onchange="onProductChange()"></select>
+      <button type="button" class="btn-action btn-blue" id="btnManualEntry" onclick="toggleManualEntry()">Ручной ввод</button>
+      <div id="manualEntryPanel" style="display:none;margin-top:10px;">
+        <div class="grid-buttons">
+          <button class="btn-action btn-blue" onclick="openProductSelector('dressura')">Дрессура</button>
+          <button class="btn-action btn-orange" onclick="openProductSelector('chew')">Жевалки</button>
+          <button class="btn-action btn-purple" onclick="openProductSelector('other')">Другое</button>
+          <button class="btn-action btn-brown" onclick="openProductSelector('powder')">Присыпки</button>
+          <button class="btn-action btn-green" onclick="openProductSelector('veg')">Овощи/Фрукты</button>
         </div>
-        <div class="form-group" id="fractionGroup" style="display:none;">
-          <label>Фракция / тип</label>
-          <select id="fractionSelect"></select>
+        <div class="card" id="selectorCard" style="display:none;margin-top:10px;">
+          <div class="form-group">
+            <label id="selectorTitle">Позиция</label>
+            <select id="mainSelect" onchange="onProductChange()"></select>
+          </div>
+          <div class="form-group" id="fractionGroup" style="display:none;">
+            <label>Фракция / тип</label>
+            <select id="fractionSelect"></select>
+          </div>
+          <div class="form-group">
+            <label id="valueLabel">Объём</label>
+            <input type="number" id="volumeInput" placeholder="0" inputmode="numeric">
+          </div>
+          <button class="btn-action btn-blue" onclick="addItemToBasket()">В корзину</button>
         </div>
-        <div class="form-group">
-          <label id="valueLabel">Объём</label>
-          <input type="number" id="volumeInput" placeholder="0" inputmode="numeric">
-        </div>
-        <button class="btn-action btn-blue" onclick="addItemToBasket()">В корзину</button>
       </div>
 
       <button class="btn-save" id="btnMainSave" onclick="sendEntireOrder()">Сохранить заказ</button>
     </div>
 
-    <!-- МЕНЕДЖЕР: НЕДЕЛЯ -->
+    <!-- МЕНЕДЖЕР: ПРОСМОТР -->
     <div id="clientsScreen" class="screen">
       <div class="card">
         <div class="form-group">
-          <label>День для просмотра</label>
+          <label>Дата</label>
+          <input type="date" id="viewDate" onchange="onViewDateChange()">
+          <div class="field-hint">Любая дата доставки — не только текущая неделя.</div>
+        </div>
+        <div class="form-group">
+          <label>День (если дата уже в таблице недели)</label>
           <select id="viewDaySelect" onchange="loadClientsForDay()">
             <option value="">-- Выбрать день --</option>
             <option>Понедельник</option><option>Вторник</option><option>Среда</option>
             <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
         </div>
+        <button type="button" class="btn-action btn-orange" onclick="loadClientsForDay()">Показать</button>
       </div>
       <div id="totalDaySummaryContainer"></div>
       <div class="section-title">Клиенты</div>
-      <div class="card" id="clientsContainer"><p class="muted">Выберите день...</p></div>
+      <div class="card" id="clientsContainer"><p class="muted">Укажите дату или день…</p></div>
     </div>
 
     <!-- НАРЕЗЧИК -->
@@ -843,7 +850,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.6.3";
+    const APP_VERSION = "v7.6.4";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1270,7 +1277,7 @@
       const allowed = ROLE_TABS[APP_ROLE] || ROLE_TABS.all;
       document.querySelectorAll(".tab-link").forEach(btn => {
         const screen = btn.dataset.screen;
-        // Неделя / Цена / Люди — только через long-press у Заказа
+        // Просмотр / Цена / Люди — только через long-press у Заказа
         if (FLYOUT_SCREENS.indexOf(screen) >= 0) {
           btn.style.display = "none";
           return;
@@ -1486,6 +1493,9 @@
         if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
           document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
           document.getElementById("btnMainSave").innerText = "Сохранить заказ";
+        }
+        if (screenId === "clientsScreen") {
+          document.getElementById("appHeaderTitle").innerText = "Просмотр · " + APP_VERSION;
         }
       } catch (e) {}
       try {
@@ -1845,27 +1855,82 @@
       return html;
     }
 
+    function toggleManualEntry() {
+      const panel = document.getElementById("manualEntryPanel");
+      const btn = document.getElementById("btnManualEntry");
+      if (!panel) return;
+      const open = panel.style.display === "block";
+      panel.style.display = open ? "none" : "block";
+      if (open) {
+        const sel = document.getElementById("selectorCard");
+        if (sel) sel.style.display = "none";
+      }
+      if (btn) btn.textContent = open ? "Ручной ввод" : "Скрыть ручной ввод";
+    }
+    window.toggleManualEntry = toggleManualEntry;
+
+    function onViewDateChange() {
+      const el = document.getElementById("viewDate");
+      if (!el || !el.value) return;
+      const d = new Date(el.value + "T12:00:00");
+      if (isNaN(d.getTime())) return;
+      const names = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
+      const wd = names[d.getDay()];
+      const daySel = document.getElementById("viewDaySelect");
+      if (daySel) {
+        let matched = false;
+        for (let i = 0; i < daySel.options.length; i++) {
+          if (daySel.options[i].value === wd || daySel.options[i].text === wd) {
+            daySel.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) daySel.selectedIndex = 0;
+      }
+      loadClientsForDay();
+    }
+    window.onViewDateChange = onViewDateChange;
+
     async function loadClientsForDay() {
       const day = document.getElementById("viewDaySelect").value;
+      const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
       const box = document.getElementById("clientsContainer");
       const summary = document.getElementById("totalDaySummaryContainer");
-      if (!day) {
-        box.innerHTML = '<p class="muted">Выберите день...</p>';
+      if (!day && !dateStr) {
+        box.innerHTML = '<p class="muted">Укажите дату или день…</p>';
         summary.innerHTML = "";
         return;
       }
       summary.innerHTML = "";
       box.innerHTML = loadingDanceHtml("Загружаю клиентов…");
       try {
-        const res = await apiGet({ action: "getClients", day: day });
+        const params = { action: "getClients" };
+        if (day) params.day = day;
+        if (dateStr) params.date = dateStr;
+        const res = await apiGet(params);
+        if (res.day) {
+          const daySel = document.getElementById("viewDaySelect");
+          if (daySel) {
+            for (let i = 0; i < daySel.options.length; i++) {
+              if (daySel.options[i].value === res.day || daySel.options[i].text === res.day) {
+                daySel.selectedIndex = i;
+                break;
+              }
+            }
+          }
+        }
         if (res.status !== "success" || !res.clients || !res.clients.length) {
-          box.innerHTML = '<p class="muted">На этот день никто не записан</p>';
+          box.innerHTML = '<p class="muted">На эту дату никто не записан</p>';
           summary.innerHTML = "";
           loadedClientsRawData = [];
           return;
         }
         loadedClientsRawData = res.clients;
-        summary.innerHTML = `<div class="total-summary-badge">Клиентов: ${res.clients.length}</div>`;
+        const src = res.fromBookings ? " · из броней" : "";
+        const dayLabel = res.day ? (" · " + res.day) : "";
+        const dateLabel = res.date ? (" · " + res.date) : (dateStr ? (" · " + dateStr) : "");
+        summary.innerHTML = `<div class="total-summary-badge">Клиентов: ${res.clients.length}${dayLabel}${dateLabel}${src}</div>`;
         box.innerHTML = res.clients.map((client, index) => {
           const lines = (client.basket || []).map(g => {
             const unit = g.unit || unitForItem(g.cat, g.name);
