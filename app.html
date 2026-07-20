@@ -512,17 +512,46 @@
       margin-top: 6px; font-size: 12px; color: var(--success-color); display: none;
     }
     .addr-picked.show { display: block; }
+    .sub-tabs { display:flex; gap:6px; margin-bottom:12px; }
+    .sub-tab {
+      flex:1; height:36px; border-radius:8px; border:1px solid var(--border-color);
+      background:#1a1a1a; color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer;
+    }
+    .sub-tab.active { background:var(--accent-color); color:#fff; border-color:var(--accent-color); }
+    .access-gate {
+      display:none; position:fixed; inset:0; z-index:10001; background:rgba(0,0,0,.92);
+      align-items:center; justify-content:center; padding:24px;
+    }
+    .access-gate.open { display:flex; }
+    .access-card {
+      width:100%; max-width:360px; background:#141414; border:1px solid var(--border-color);
+      border-radius:16px; padding:20px;
+    }
+    .pack-line { font-size:13px; color:#ddd; padding:4px 0; border-bottom:1px solid #222; }
+    .ig-paste { width:100%; min-height:90px; background:#111; color:#fff; border:1px solid var(--border-color);
+      border-radius:10px; padding:10px; font-size:13px; resize:vertical; }
   </style>
 </head>
 <body>
+  <div class="access-gate" id="accessGate">
+    <div class="access-card">
+      <div class="modal-title" id="accessTitle">Доступ</div>
+      <div class="modal-text" id="accessText">Проверяем доступ…</div>
+      <div class="modal-actions" id="accessActions"></div>
+    </div>
+  </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.5.0</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.0</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
-      <button type="button" class="tab-link" data-screen="clientsScreen" onclick="switchTab('clientsScreen')">Неделя</button>
+      <button type="button" class="tab-link" data-screen="clientsScreen" onclick="switchTab('clientsScreen')" id="tabWeek" style="display:none;">Неделя</button>
       <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
       <button type="button" class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
+      <button type="button" class="tab-link" data-screen="warehouseScreen" onclick="switchTab('warehouseScreen')">Склад</button>
+      <button type="button" class="tab-link" data-screen="subsScreen" onclick="switchTab('subsScreen')">Подписки</button>
+      <button type="button" class="tab-link" data-screen="priceScreen" onclick="switchTab('priceScreen')">Цена</button>
+      <button type="button" class="tab-link" data-screen="peopleScreen" onclick="switchTab('peopleScreen')">Люди</button>
     </div>
 
     <!-- МЕНЕДЖЕР: ПРИЁМ -->
@@ -586,6 +615,13 @@
 
       <div class="section-title">Корзина</div>
       <div class="card" id="basketContainer"></div>
+
+      <div class="section-title">Чеклист Instagram</div>
+      <div class="card">
+        <textarea class="ig-paste" id="igChecklistPaste" placeholder="Вставь чеклист из Instagram (позиции и граммы)…"></textarea>
+        <button class="btn-action btn-orange" type="button" style="margin-top:8px;" onclick="parseIgChecklistIntoBasket()">Разобрать в корзину</button>
+        <div class="field-hint">Дрессура без фракции → «Среднее». Неизвестное — в примечание позиции.</div>
+      </div>
 
       <div class="section-title">Добавить товар</div>
       <div class="grid-buttons">
@@ -652,6 +688,11 @@
 
     <!-- КУРЬЕР -->
     <div id="courierScreen" class="screen">
+      <div class="sub-tabs">
+        <button type="button" class="sub-tab active" id="courierSubRoute" onclick="setCourierSub('route')">Маршрут</button>
+        <button type="button" class="sub-tab" id="courierSubAsm" onclick="setCourierSub('assembly')">Сборка</button>
+      </div>
+      <div id="courierRoutePane">
       <div class="card">
         <div class="form-group">
           <label>День доставки</label>
@@ -695,6 +736,71 @@
       <div id="routePlanBox"></div>
       <div id="courierSummary"></div>
       <div id="courierContainer"><p class="muted">Выберите день...</p></div>
+      </div>
+      <div id="courierAssemblyPane" style="display:none;">
+        <div class="card">
+          <div class="form-group">
+            <label>День сборки</label>
+            <select id="assemblyDaySelect" onchange="loadAssembly()">
+              <option value="">-- Выбрать день --</option>
+              <option>Понедельник</option><option>Вторник</option><option>Среда</option>
+              <option>Четверг</option><option>Пятница</option>
+            </select>
+          </div>
+          <button class="btn-action btn-orange" type="button" onclick="loadAssembly()">Посчитать пакеты</button>
+        </div>
+        <div id="assemblyContainer"><p class="muted">Выберите день…</p></div>
+      </div>
+    </div>
+
+    <!-- СКЛАД -->
+    <div id="warehouseScreen" class="screen">
+      <div class="card">
+        <button class="btn-action btn-blue" type="button" onclick="loadWarehouse()">Обновить склад</button>
+        <button class="btn-action btn-orange" type="button" style="margin-top:8px;" onclick="loadWarehousePreview()">Прогноз / дефицит</button>
+      </div>
+      <div id="warehousePreviewBox"></div>
+      <div class="section-title">Остатки</div>
+      <div id="warehouseContainer"><p class="muted">Нажмите «Обновить»…</p></div>
+      <div class="section-title">Движения</div>
+      <div id="warehouseLedger"><p class="muted">—</p></div>
+    </div>
+
+    <!-- ПОДПИСКИ -->
+    <div id="subsScreen" class="screen">
+      <div class="card">
+        <button class="btn-action btn-blue" type="button" onclick="loadSubscriptions()">Загрузить из CRM</button>
+        <div class="form-group" style="margin-top:12px;">
+          <label>Дата выгрузки</label>
+          <input type="date" id="subPushDate">
+        </div>
+      </div>
+      <div id="subsContainer"><p class="muted">Загрузите список…</p></div>
+    </div>
+
+    <!-- ЦЕНА -->
+    <div id="priceScreen" class="screen">
+      <div class="card">
+        <div class="form-group">
+          <label>Режим</label>
+          <div class="seg-row">
+            <button type="button" class="seg-btn active" id="priceModeSub" onclick="setPriceMode('subscription')">Подписка</button>
+            <button type="button" class="seg-btn" id="priceModeRet" onclick="setPriceMode('retail')">Розница</button>
+          </div>
+        </div>
+        <div class="field-hint">Считает по текущей корзине заказа (вкладка Заказ) или вставьте чеклист ниже.</div>
+        <button class="btn-action btn-orange" type="button" onclick="calcPriceFromBasket()">Считать корзину заказа</button>
+      </div>
+      <div id="priceResult"><p class="muted">—</p></div>
+    </div>
+
+    <!-- ЛЮДИ -->
+    <div id="peopleScreen" class="screen">
+      <div class="card">
+        <button class="btn-action btn-blue" type="button" onclick="loadPeople()">Обновить список</button>
+        <div class="field-hint">Только владельцы назначают роли: manager / cutter / courier / logistics / denied</div>
+      </div>
+      <div id="peopleContainer"><p class="muted">—</p></div>
     </div>
 
     <div class="bottom-spacer" aria-hidden="true"></div>
@@ -708,7 +814,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.5.0";
+    const APP_VERSION = "v7.6.0";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -775,14 +881,24 @@
     };
     let departTimeLocked = false;
 
-    // Пока всем 4 вкладки. Позже: "manager" | "cutter" | "courier" | "all"
-    const APP_ROLE = "all";
+    // Роль с сервера (getMyAccess). Пока OWNER не задан / нет Telegram — all.
+    let APP_ROLE = "all";
+    let myTelegramId = "";
+    let myAccessName = "";
     const ROLE_TABS = {
-      all: ["orderScreen", "clientsScreen", "cuttingScreen", "courierScreen"],
-      manager: ["orderScreen", "clientsScreen"],
+      all: ["orderScreen", "clientsScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "subsScreen", "priceScreen"],
+      owner: ["orderScreen", "clientsScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "subsScreen", "priceScreen", "peopleScreen"],
+      manager: ["orderScreen", "clientsScreen", "subsScreen", "priceScreen"],
       cutter: ["cuttingScreen"],
-      courier: ["courierScreen"]
+      courier: ["courierScreen"],
+      logistics: ["warehouseScreen"],
+      none: [],
+      pending: [],
+      denied: []
     };
+    let priceMode = "subscription";
+    let courierSub = "route";
+    let weekTabUnlocked = false;
 
     let tg = null;
     try {
@@ -1116,11 +1232,50 @@
     function applyRoleTabs() {
       const allowed = ROLE_TABS[APP_ROLE] || ROLE_TABS.all;
       document.querySelectorAll(".tab-link").forEach(btn => {
-        const ok = allowed.indexOf(btn.dataset.screen) >= 0;
+        const screen = btn.dataset.screen;
+        let ok = allowed.indexOf(screen) >= 0;
+        // Неделя: у менеджера/owner — long-press на Заказ; вкладка скрыта по умолчанию
+        if (screen === "clientsScreen" && (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all")) {
+          ok = weekTabUnlocked;
+        }
         btn.style.display = ok ? "" : "none";
       });
-      const first = allowed[0];
+      const first = allowed.filter(function (s) {
+        if (s === "clientsScreen" && !weekTabUnlocked) return false;
+        return true;
+      })[0];
       if (first) switchTab(first);
+    }
+
+    function unlockWeekTab() {
+      weekTabUnlocked = true;
+      const tab = document.getElementById("tabWeek");
+      if (tab) tab.style.display = "";
+      switchTab("clientsScreen");
+      showToast("Неделя");
+    }
+
+    function bindOrderLongPress() {
+      const btn = document.querySelector('.tab-link[data-screen="orderScreen"]');
+      if (!btn) return;
+      let timer = null;
+      function clear() { if (timer) { clearTimeout(timer); timer = null; } }
+      btn.addEventListener("touchstart", function () {
+        clear();
+        timer = setTimeout(function () {
+          if (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all") unlockWeekTab();
+        }, 550);
+      }, { passive: true });
+      btn.addEventListener("touchend", clear);
+      btn.addEventListener("touchcancel", clear);
+      btn.addEventListener("mousedown", function () {
+        clear();
+        timer = setTimeout(function () {
+          if (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all") unlockWeekTab();
+        }, 550);
+      });
+      btn.addEventListener("mouseup", clear);
+      btn.addEventListener("mouseleave", clear);
     }
 
     function clearBlockingOverlays() {
@@ -1166,6 +1321,12 @@
         if (screenId === "cuttingScreen") startCuttingPoll();
         else stopCuttingPoll();
       } catch (e2) {}
+      try {
+        if (screenId === "warehouseScreen") loadWarehouse();
+        if (screenId === "subsScreen") loadSubscriptions();
+        if (screenId === "peopleScreen") loadPeople();
+        if (screenId === "courierScreen" && courierSub === "assembly") loadAssembly();
+      } catch (e3) {}
     }
     // доступно для inline onclick даже при странностях WebView
     window.switchTab = switchTab;
@@ -3995,11 +4156,422 @@
       openAllInYandex(points);
     }
 
+    /* ===== v7.6: роли / IG / сборка / склад / подписки / цена ===== */
+
+    function showAccessGate(title, text, actionsHtml) {
+      var gate = document.getElementById("accessGate");
+      document.getElementById("accessTitle").textContent = title;
+      document.getElementById("accessText").textContent = text;
+      document.getElementById("accessActions").innerHTML = actionsHtml || "";
+      gate.classList.add("open");
+    }
+    function hideAccessGate() {
+      document.getElementById("accessGate").classList.remove("open");
+    }
+
+    async function bootstrapAccess() {
+      try {
+        var u = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
+        myTelegramId = String(u.id || "");
+        myAccessName = String(u.first_name || "") + (u.last_name ? " " + u.last_name : "");
+        var username = String(u.username || "");
+        if (!myTelegramId) {
+          APP_ROLE = "all";
+          weekTabUnlocked = true;
+          applyRoleTabs();
+          return;
+        }
+        var res = await apiGet({
+          action: "getMyAccess",
+          telegramId: myTelegramId,
+          name: myAccessName,
+          username: username
+        });
+        if (!res || res.status !== "success") {
+          APP_ROLE = "all";
+          weekTabUnlocked = true;
+          applyRoleTabs();
+          return;
+        }
+        APP_ROLE = res.role || "none";
+        if (APP_ROLE === "owner" || APP_ROLE === "all") weekTabUnlocked = true;
+        if (APP_ROLE === "none" || APP_ROLE === "pending") {
+          showAccessGate(
+            APP_ROLE === "pending" ? "Ожидание" : "Нет доступа",
+            APP_ROLE === "pending"
+              ? "Заявка отправлена. Владелец назначит роль."
+              : "Нажмите «Запросить доступ». Владелец увидит заявку.",
+            APP_ROLE === "pending"
+              ? ""
+              : '<button class="btn-action btn-orange" type="button" onclick="doRequestAccess()">Запросить доступ</button>'
+          );
+          applyRoleTabs();
+          return;
+        }
+        if (APP_ROLE === "denied") {
+          showAccessGate("Доступ закрыт", "Обратитесь к владельцу.", "");
+          applyRoleTabs();
+          return;
+        }
+        hideAccessGate();
+        applyRoleTabs();
+      } catch (e) {
+        APP_ROLE = "all";
+        weekTabUnlocked = true;
+        applyRoleTabs();
+      }
+    }
+
+    async function doRequestAccess() {
+      var u = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
+      await apiPost({
+        action: "requestAccess",
+        telegramId: String(u.id || myTelegramId || ""),
+        name: myAccessName || String(u.first_name || ""),
+        username: String(u.username || "")
+      });
+      showAccessGate("Ожидание", "Заявка отправлена. Владелец назначит роль.", "");
+      showToast("Заявка отправлена");
+    }
+    window.doRequestAccess = doRequestAccess;
+
+    function setCourierSub(which) {
+      courierSub = which;
+      document.getElementById("courierSubRoute").classList.toggle("active", which === "route");
+      document.getElementById("courierSubAsm").classList.toggle("active", which === "assembly");
+      document.getElementById("courierRoutePane").style.display = which === "route" ? "" : "none";
+      document.getElementById("courierAssemblyPane").style.display = which === "assembly" ? "" : "none";
+      if (which === "assembly") {
+        var d = document.getElementById("courierDaySelect").value;
+        if (d) document.getElementById("assemblyDaySelect").value = d;
+        loadAssembly();
+      }
+    }
+    window.setCourierSub = setCourierSub;
+
+    async function loadAssembly() {
+      var day = document.getElementById("assemblyDaySelect").value || document.getElementById("courierDaySelect").value;
+      var box = document.getElementById("assemblyContainer");
+      if (!day) { box.innerHTML = '<p class="muted">Выберите день…</p>'; return; }
+      box.innerHTML = '<p class="muted">Считаю пакеты…</p>';
+      try {
+        var res = await apiGet({ action: "getAssembly", day: day });
+        if (!res || res.status !== "success") {
+          box.innerHTML = '<p class="muted">Не удалось загрузить</p>';
+          return;
+        }
+        if (!(res.clients || []).length) {
+          box.innerHTML = '<p class="muted">Нет клиентов</p>';
+          return;
+        }
+        box.innerHTML = (res.clients || []).map(function (c) {
+          var lines = (c.packs || []).map(function (p) {
+            return '<div class="pack-line">' + p.label + '</div>';
+          }).join("");
+          return '<div class="card" style="margin-bottom:10px;"><b>' + c.name + '</b>' +
+            ' <span class="muted">· ' + (c.totalBags || 0) + ' пак.</span>' +
+            (c.address ? '<div class="muted" style="font-size:12px;margin-top:4px;">' + c.address + '</div>' : '') +
+            lines + '</div>';
+        }).join("");
+      } catch (e) {
+        box.innerHTML = '<p class="muted">Ошибка сети</p>';
+      }
+    }
+    window.loadAssembly = loadAssembly;
+
+    function parseIgChecklistIntoBasket() {
+      var raw = (document.getElementById("igChecklistPaste").value || "").trim();
+      if (!raw) { showToast("Вставь текст чеклиста"); return; }
+      var lines = raw.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+      var added = 0;
+      var known = {};
+      Object.keys(catalog).forEach(function (k) {
+        (catalog[k].items || []).forEach(function (n) { known[n.toUpperCase()] = { cat: k, name: n, fractions: (catalog[k].fractions || {})[n] || [] }; });
+      });
+      lines.forEach(function (line) {
+        var m = line.match(/^(.+?)\s*[—\-–:]\s*(\d+(?:[.,]\d+)?)\s*(г|гр|грамм|шт|кг)?/i) ||
+                line.match(/^(\d+(?:[.,]\d+)?)\s*(г|гр|шт|кг)?\s+(.+)$/i);
+        var namePart = "";
+        var val = 0;
+        var unit = "";
+        if (m) {
+          if (m[3] && /г|шт|кг/i.test(String(m[2] || ""))) {
+            val = parseFloat(String(m[1]).replace(",", "."));
+            unit = m[2] || "";
+            namePart = m[3];
+          } else {
+            namePart = m[1];
+            val = parseFloat(String(m[2]).replace(",", "."));
+            unit = m[3] || "";
+          }
+        } else {
+          var m2 = line.match(/(.+?)\s+(\d+(?:[.,]\d+)?)\s*(г|гр|шт)?$/i);
+          if (!m2) return;
+          namePart = m2[1];
+          val = parseFloat(String(m2[2]).replace(",", "."));
+          unit = m2[3] || "";
+        }
+        if (!namePart || !(val > 0)) return;
+        if (/кг/i.test(unit)) val = Math.round(val * 1000);
+        var up = namePart.toUpperCase().replace(/\s+/g, " ").trim();
+        var frac = "";
+        var fracHit = up.match(/\b(МЕЛК\w*|СРЕДН\w*|БОЛЬШ\w*|КРУПН\w*|ЦЕЛ\w*)\b/);
+        if (fracHit) {
+          var f = fracHit[1];
+          if (/МЕЛК/.test(f)) frac = "Мелкое";
+          else if (/СРЕДН/.test(f)) frac = "Среднее";
+          else if (/БОЛЬШ|КРУПН/.test(f)) frac = /РУБЕЦ/.test(up) ? "Крупное" : "Большое";
+          else if (/ЦЕЛ/.test(f)) frac = "Целое";
+          up = up.replace(fracHit[0], "").replace(/\s+/g, " ").trim();
+        }
+        var hit = null;
+        Object.keys(known).forEach(function (k) {
+          if (hit) return;
+          if (up.indexOf(k) >= 0 || k.indexOf(up) >= 0) hit = known[k];
+        });
+        if (!hit) {
+          basket.push({
+            id: Date.now() + Math.random(),
+            cat: "other",
+            main: namePart.trim(),
+            name: namePart.trim(),
+            sub: "",
+            value: val,
+            val: val,
+            itemNote: "не распознано из IG"
+          });
+          added++;
+          return;
+        }
+        if (hit.fractions && hit.fractions.length && !frac) frac = "Среднее";
+        if (frac === "Большое" && hit.fractions.indexOf("Большое") < 0 && hit.fractions.indexOf("Крупное") >= 0) frac = "Крупное";
+        basket.push({
+          id: Date.now() + Math.random(),
+          cat: hit.cat,
+          main: hit.name,
+          name: hit.name,
+          sub: frac,
+          value: val,
+          val: val
+        });
+        added++;
+      });
+      renderBasket();
+      showToast("Добавлено позиций: " + added);
+    }
+    window.parseIgChecklistIntoBasket = parseIgChecklistIntoBasket;
+
+    async function loadWarehouse() {
+      var box = document.getElementById("warehouseContainer");
+      var led = document.getElementById("warehouseLedger");
+      box.innerHTML = '<p class="muted">Загрузка…</p>';
+      try {
+        var res = await apiGet({ action: "getWarehouse" });
+        if (!res || res.status !== "success") {
+          box.innerHTML = '<p class="muted">Нет данных склада</p>';
+          return;
+        }
+        box.innerHTML = (res.items || []).map(function (it) {
+          return '<div class="card" style="margin-bottom:8px;">' +
+            '<b>' + it.name + '</b> <span class="muted">' + it.unit + '</span>' +
+            '<div style="margin-top:6px;font-size:13px;">Остаток: <b>' + it.stock + '</b>' +
+            (it.arrival ? ' · дозакуп B: ' + it.arrival : '') +
+            (it.coef ? ' · коэф D: ' + it.coef : '') +
+            (it.buy ? ' · <span style="color:var(--accent-color)">закупить</span>' : '') +
+            '</div>' +
+            '<div class="seg-row" style="margin-top:8px;">' +
+            '<input type="number" id="arr_' + it.row + '" placeholder="дозакуп" inputmode="decimal" style="flex:1;height:40px;border-radius:8px;border:1px solid var(--border-color);background:#111;color:#fff;padding:0 10px;">' +
+            '<button type="button" class="seg-btn" onclick="saveWarehouseArrival(' + it.row + ')">Сохранить B</button>' +
+            '</div></div>';
+        }).join("") || '<p class="muted">Пусто</p>';
+        led.innerHTML = (res.ledger || []).slice(0, 15).map(function (x) {
+          return '<div class="pack-line">' + (x.type || "") + " · row " + x.skuRow + " · " + x.qty + " " + (x.unit || "") + "</div>";
+        }).join("") || '<p class="muted">Лента пуста</p>';
+      } catch (e) {
+        box.innerHTML = '<p class="muted">Ошибка</p>';
+      }
+    }
+    window.loadWarehouse = loadWarehouse;
+
+    async function saveWarehouseArrival(row) {
+      var el = document.getElementById("arr_" + row);
+      var qty = Number(el && el.value) || 0;
+      await apiPost({ action: "setWarehouseArrival", row: row, qty: qty, telegramId: myTelegramId });
+      showToast("Дозакуп сохранён");
+      loadWarehouse();
+    }
+    window.saveWarehouseArrival = saveWarehouseArrival;
+
+    async function loadWarehousePreview() {
+      var box = document.getElementById("warehousePreviewBox");
+      box.innerHTML = '<p class="muted">Считаю…</p>';
+      try {
+        var res = await apiGet({ action: "warehousePreview" });
+        var buy = (res.buyList || []).map(function (b) { return b.name; }).join(", ");
+        var def = (res.deficits || []).map(function (d) {
+          return d.name + " (F+B=" + d.available + ")";
+        }).join("; ");
+        box.innerHTML = '<div class="card"><b>Прогноз</b><div class="muted" style="margin-top:6px;font-size:13px;">' +
+          (res.note || "") + '</div>' +
+          (buy ? '<div style="margin-top:8px;">Флаг G: ' + buy + '</div>' : '') +
+          (def ? '<div style="margin-top:8px;color:var(--danger-color);">Мало: ' + def + '</div>' : '<div style="margin-top:8px;">Критических остатков нет</div>') +
+          '</div>';
+      } catch (e) {
+        box.innerHTML = '<p class="muted">Ошибка preview</p>';
+      }
+    }
+    window.loadWarehousePreview = loadWarehousePreview;
+
+    async function loadSubscriptions() {
+      var box = document.getElementById("subsContainer");
+      box.innerHTML = '<p class="muted">Загрузка CRM…</p>';
+      try {
+        var res = await apiGet({ action: "listSubscriptions" });
+        if (!res || res.status !== "success") {
+          box.innerHTML = '<p class="muted">CRM недоступна (нужен доступ Apps Script к таблице подписок)</p>';
+          return;
+        }
+        box.innerHTML = (res.subscriptions || []).map(function (s) {
+          var safeNick = String(s.nick || "").replace(/'/g, "\\'");
+          return '<div class="card" style="margin-bottom:8px;">' +
+            '<b>' + (s.nick || s.label) + '</b> <span class="muted">' + (s.subId || "") + ' · ' + (s.sheet || "") + '</span>' +
+            '<div class="muted" style="font-size:12px;margin-top:4px;">доставок/мес: ' + (s.deliveries || 0) +
+            (s.wishes ? ' · ' + s.wishes : '') + '</div>' +
+            '<button type="button" class="btn-action btn-orange" style="margin-top:8px;" onclick="pushSubToDay(\'' + safeNick + '\',\'' + (s.subId || "") + '\')">Выгрузить на дату</button>' +
+            '<button type="button" class="btn-action btn-blue" style="margin-top:8px;" onclick="openSubInOrder(\'' + safeNick + '\')">В заказ</button>' +
+            '</div>';
+        }).join("") || '<p class="muted">Пусто</p>';
+      } catch (e) {
+        box.innerHTML = '<p class="muted">Ошибка</p>';
+      }
+    }
+    window.loadSubscriptions = loadSubscriptions;
+
+    async function pushSubToDay(nick, subId) {
+      var date = (document.getElementById("subPushDate") && document.getElementById("subPushDate").value) || "";
+      if (!date) { await uiAlertAsync("Укажите дату выгрузки"); return; }
+      await apiPost({ action: "pushSubscriptionToDay", nick: nick, subId: subId, date: date });
+      showToast("Бронь " + nick + " на " + date);
+    }
+    window.pushSubToDay = pushSubToDay;
+
+    async function openSubInOrder(nick) {
+      try {
+        var res = await apiGet({ action: "getSubscription", nick: nick });
+        document.getElementById("client").value = nick;
+        if (res.address) document.getElementById("addressInput").value = res.address;
+        if (res.wishes || res.note) document.getElementById("noteInput").value = [res.wishes, res.note].filter(Boolean).join(" ");
+        basket = (res.basket || []).map(function (x) {
+          return {
+            id: Date.now() + Math.random(),
+            cat: x.cat || "dressura",
+            main: x.name || x.main,
+            name: x.name || x.main,
+            sub: x.sub || "",
+            value: x.val || x.value,
+            val: x.val || x.value
+          };
+        });
+        renderBasket();
+        switchTab("orderScreen");
+        showToast("Состав загружен в заказ");
+      } catch (e) {
+        showToast("Не удалось открыть подписку");
+      }
+    }
+    window.openSubInOrder = openSubInOrder;
+
+    function setPriceMode(mode) {
+      priceMode = mode;
+      document.getElementById("priceModeSub").classList.toggle("active", mode === "subscription");
+      document.getElementById("priceModeRet").classList.toggle("active", mode === "retail");
+    }
+    window.setPriceMode = setPriceMode;
+
+    async function calcPriceFromBasket() {
+      var box = document.getElementById("priceResult");
+      if (!basket.length) {
+        box.innerHTML = '<p class="muted">Корзина заказа пуста — сначала соберите на вкладке Заказ</p>';
+        return;
+      }
+      box.innerHTML = '<p class="muted">Считаю…</p>';
+      try {
+        // через GET с JSON в query может быть длинно — используем list + локальный fallback через apiGet calcPrice
+        var payloadBasket = basket.map(function (x) {
+          return { name: x.name || x.main, sub: x.sub || "", val: x.val || x.value, cat: x.cat };
+        });
+        await apiPost({ action: "calcPrice", mode: priceMode, basket: payloadBasket });
+        // POST opaque — пересчитаем упрощённо на клиенте если нет ответа; попробуем GET без basket (не сработает)
+        // Локальный ориентир: покажем что ушло на сервер + попросим смотреть Telegram? Better: use JSONP with short basket
+        var res = await apiGet({
+          action: "calcPrice",
+          mode: priceMode,
+          basket: JSON.stringify(payloadBasket)
+        });
+        if (!res || res.status !== "success") {
+          box.innerHTML = '<p class="muted">Прайс-таблица недоступна (нужен доступ Apps Script)</p>';
+          return;
+        }
+        box.innerHTML = '<div class="card"><b>Итого: ' + res.total + ' BYN</b>' +
+          '<div class="muted" style="margin-top:4px;">себест. ' + res.cost + ' × ' + res.markup + ' (' + (res.sheet || "") + ')</div>' +
+          (res.lines || []).map(function (l) {
+            return '<div class="pack-line">' + l.name + (l.sub ? " / " + l.sub : "") +
+              " · " + l.val + " → " + l.cost + "</div>";
+          }).join("") + "</div>";
+      } catch (e) {
+        box.innerHTML = '<p class="muted">Ошибка расчёта</p>';
+      }
+    }
+    window.calcPriceFromBasket = calcPriceFromBasket;
+
+    async function loadPeople() {
+      var box = document.getElementById("peopleContainer");
+      box.innerHTML = '<p class="muted">Загрузка…</p>';
+      try {
+        var res = await apiGet({ action: "listAccess", telegramId: myTelegramId });
+        if (!res || res.status !== "success") {
+          box.innerHTML = '<p class="muted">Только владелец. Задайте OWNER_TELEGRAM_IDS в Script Properties.</p>';
+          return;
+        }
+        var roles = ["manager", "cutter", "courier", "logistics", "owner", "denied"];
+        box.innerHTML = (res.people || []).map(function (p) {
+          var opts = roles.map(function (r) {
+            return '<option value="' + r + '"' + (p.role === r ? " selected" : "") + ">" + r + "</option>";
+          }).join("");
+          return '<div class="card" style="margin-bottom:8px;">' +
+            '<b>' + (p.name || p.telegramId) + '</b> <span class="muted">@' + (p.username || "") + ' · ' + p.telegramId + '</span>' +
+            '<div class="muted" style="font-size:12px;">сейчас: ' + p.role + ' / ' + p.status + '</div>' +
+            '<div class="seg-row" style="margin-top:8px;">' +
+            '<select id="role_' + p.telegramId + '" style="flex:1;height:40px;border-radius:8px;background:#111;color:#fff;border:1px solid var(--border-color);">' + opts + '</select>' +
+            '<button type="button" class="seg-btn" onclick="assignRole(\'' + p.telegramId + '\')">OK</button>' +
+            '</div></div>';
+        }).join("") || '<p class="muted">Пока никого нет — пусть люди нажмут «Запросить доступ»</p>';
+      } catch (e) {
+        box.innerHTML = '<p class="muted">Ошибка</p>';
+      }
+    }
+    window.loadPeople = loadPeople;
+
+    async function assignRole(targetId) {
+      var sel = document.getElementById("role_" + targetId);
+      var role = sel ? sel.value : "denied";
+      await apiPost({
+        action: "setAccessRole",
+        actorId: myTelegramId,
+        targetId: targetId,
+        role: role
+      });
+      showToast("Роль " + role);
+      loadPeople();
+    }
+    window.assignRole = assignRole;
+
     try { loadDepotAddress(); } catch (e) {}
     try { registerMeAsCourier(); } catch (e) {}
     try { buildTimeWheels(); } catch (e) {}
     try { renderBasket(); } catch (e) {}
-    try { applyRoleTabs(); } catch (e) {}
+    try { bindOrderLongPress(); } catch (e) {}
+    try { bootstrapAccess(); } catch (e) { try { applyRoleTabs(); } catch (e2) {} }
     try { applyTelegramSafeArea(); } catch (e) {}
     clearBlockingOverlays();
   </script>

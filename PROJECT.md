@@ -92,23 +92,25 @@
 4. Не вызывать `finishFullWeekProduction` без явного ОК от владельца.
 5. Фронт: открыть `app.html` локально / через хостинг mini-app; Telegram SDK: `https://telegram.org/js/telegram-web-app.js`.
 
-## API webhook (дополнение v7.5)
+## v7.6 — роли / склад / подписки / цена / сборка
 
 | action | Назначение |
 |--------|------------|
-| `saveBooking` | Бронь на календарную дату → лист `Брони_Заказов` |
-| `listBookings` | Список броней (`date` / `from`+`to`) |
-| `ensureDayMaterialized` | CRM-календарь → брони → «Прием заказов» на дату D |
-| `setupBookingTriggers` | Триггер 07:00 → материализация **завтрашних** доставок (утро D−1) |
+| `getMyAccess` / `requestAccess` | Роль пользователя; заявка владельцу |
+| `listAccess` / `setAccessRole` | Вкладка «Люди» (owner) |
+| `getWarehouse` / `setWarehouseArrival` / `warehousePreview` | Склад: остатки, дозакуп B, прогноз |
+| `listSubscriptions` / `getSubscription` / `pushSubscriptionToDay` | CRM-подписки → бронь на дату |
+| `calcPrice` | Калькулятор Подписка/Розница |
+| `getAssembly` | Пакеты сборки по клиентам дня |
 
-### Автоматика дней
+Один раз в Script Editor: `setupOpsEcosystem()` + `setupBookingTriggersManual()`.
 
-1. Менеджер / CRM бронируют **дату доставки D**.
-2. Утром **D−1** (~07:00) `morningMaterializeTomorrow` тянет CRM-календарь месяца + составы АФК/ПП/БП в брони и пишет в блок дня «Прием заказов».
-3. Поздняя правка с **ростом** объёма после ~12:00 дня D−1 → Telegram нарезчикам (`CUTTER_TELEGRAM_IDS` / роль cutter в `Доступы` / общий `TELEGRAM_CHAT_ID`) со списком позиций `+N г · ЛЁГКОЕ / Среднее`.
-4. Розничные брони (`source=retail`) CRM не затирает.
+Script Properties: `OWNER_TELEGRAM_IDS`, `CUTTER_TELEGRAM_IDS`, опционально `CRM_SPREADSHEET_ID`, `PRICE_SPREADSHEET_ID`.
 
-Один раз в Script Editor: `setupBookingTriggersManual()`.  
-Опционально Script Property: `CRM_SPREADSHEET_ID` (по умолчанию CRM-бот таблица).
+Навигация: менеджер — Заказ (long-press → Неделя), Подписки, Цена; курьер — Маршрут \| Сборка; нарезчик — Нарезка; логист — Склад; owner — всё + Люди.
 
+## Секреты
+
+В `Code.gs` токен Telegram читается из `PropertiesService` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `OWNER_TELEGRAM_IDS`).  
+Локально для заметок: `secrets.local.md` (в `.gitignore`), не коммитить.
 

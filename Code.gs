@@ -559,6 +559,44 @@ function doGet(e) {
   if (action === "setupBookingTriggers") {
     return handleSetupBookingTriggers(callback, false);
   }
+  if (action === "getMyAccess") {
+    return handleGetMyAccess({
+      telegramId: e.parameter.telegramId || "",
+      name: e.parameter.name ? decodeURIComponent(e.parameter.name) : "",
+      username: e.parameter.username ? decodeURIComponent(e.parameter.username) : "",
+      initData: e.parameter.initData ? decodeURIComponent(e.parameter.initData) : ""
+    }, callback, false);
+  }
+  if (action === "listAccess") {
+    return handleListAccess({ telegramId: e.parameter.telegramId || "" }, callback, false);
+  }
+  if (action === "getWarehouse") {
+    return handleGetWarehouse({}, callback, false);
+  }
+  if (action === "warehousePreview") {
+    return handleWarehousePreview({}, callback, false);
+  }
+  if (action === "listSubscriptions") {
+    return handleListSubscriptions({}, callback, false);
+  }
+  if (action === "getSubscription") {
+    return handleGetSubscription({
+      nick: e.parameter.nick ? decodeURIComponent(e.parameter.nick) : "",
+      subId: e.parameter.subId ? decodeURIComponent(e.parameter.subId) : "",
+      segment: e.parameter.segment ? decodeURIComponent(e.parameter.segment) : ""
+    }, callback, false);
+  }
+  if (action === "getAssembly") {
+    return handleGetAssembly({
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : ""
+    }, callback, false);
+  }
+  if (action === "calcPrice") {
+    return handleCalcPrice({
+      mode: e.parameter.mode || "subscription",
+      basket: e.parameter.basket ? JSON.parse(decodeURIComponent(e.parameter.basket)) : []
+    }, callback, false);
+  }
 
   // delete / move доступны и через GET (JSONP из mini-app)
   if (action === "deleteClient" || action === "moveClient") {
@@ -636,6 +674,42 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "stopCuttingSession") {
     return handleStopCuttingSession(json, callback, fromPost);
+  }
+  if (action === "getMyAccess") {
+    return handleGetMyAccess(json, callback, fromPost);
+  }
+  if (action === "requestAccess") {
+    return handleRequestAccess(json, callback, fromPost);
+  }
+  if (action === "listAccess") {
+    return handleListAccess(json, callback, fromPost);
+  }
+  if (action === "setAccessRole") {
+    return handleSetAccessRole(json, callback, fromPost);
+  }
+  if (action === "getWarehouse") {
+    return handleGetWarehouse(json, callback, fromPost);
+  }
+  if (action === "setWarehouseArrival") {
+    return handleSetWarehouseArrival(json, callback, fromPost);
+  }
+  if (action === "warehousePreview") {
+    return handleWarehousePreview(json, callback, fromPost);
+  }
+  if (action === "listSubscriptions") {
+    return handleListSubscriptions(json, callback, fromPost);
+  }
+  if (action === "getSubscription") {
+    return handleGetSubscription(json, callback, fromPost);
+  }
+  if (action === "pushSubscriptionToDay") {
+    return handlePushSubscriptionToDay(json, callback, fromPost);
+  }
+  if (action === "calcPrice") {
+    return handleCalcPrice(json, callback, fromPost);
+  }
+  if (action === "getAssembly") {
+    return handleGetAssembly(json, callback, fromPost);
   }
   return fromPost ? jsonpText(callback, { status: "unknown_action" }) : jsonp(callback, { status: "unknown_action" });
 }
@@ -3160,3 +3234,680 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
   }
   return { ok: true, date: dateStr, fromCalendar: clients.length, added: added, skipped: skipped };
 }
+
+/* ========== v7.6: Доступы / Склад / Подписки / Цена / Сборка ========== */
+
+var ACCESS_HEADERS_ = ["telegramId", "name", "username", "role", "status", "requestedAt", "note"];
+var PRICE_SPREADSHEET_ID_DEFAULT_ = "1c3iETyh_eOGcL0_zsGapzliVEfhQk5fQqbg8aAGAgI0";
+var OWNER_IDS_FALLBACK_ = []; // задайте OWNER_TELEGRAM_IDS в Script Properties
+
+function getAccessSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Доступы");
+  if (!sh) {
+    sh = ss.insertSheet("Доступы");
+    sh.getRange(1, 1, 1, ACCESS_HEADERS_.length).setValues([ACCESS_HEADERS_]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function getOwnerTelegramIds_() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty("OWNER_TELEGRAM_IDS") || "";
+  var ids = raw.split(/[,;\s]+/).map(function (s) { return String(s || "").trim(); }).filter(Boolean);
+  for (var i = 0; i < OWNER_IDS_FALLBACK_.length; i++) {
+    if (ids.indexOf(String(OWNER_IDS_FALLBACK_[i])) < 0) ids.push(String(OWNER_IDS_FALLBACK_[i]));
+  }
+  return ids;
+}
+
+function isOwnerId_(telegramId) {
+  var id = String(telegramId || "").trim();
+  if (!id) return false;
+  return getOwnerTelegramIds_().indexOf(id) >= 0;
+}
+
+/** Soft HMAC: если есть bot token + initData — проверяем; иначе не блокируем (dev / GitHub Pages). */
+function validateInitDataSoft_(initData) {
+  var raw = String(initData || "");
+  if (!raw) return { ok: true, soft: true, user: null };
+  var token = PropertiesService.getScriptProperties().getProperty("TELEGRAM_BOT_TOKEN") || "";
+  if (!token) return { ok: true, soft: true, user: parseInitDataUser_(raw) };
+  try {
+    var params = {};
+    raw.split("&").forEach(function (pair) {
+      var i = pair.indexOf("=");
+      if (i < 0) return;
+      params[decodeURIComponent(pair.substring(0, i))] = decodeURIComponent(pair.substring(i + 1).replace(/\+/g, " "));
+    });
+    var hash = params.hash || "";
+    delete params.hash;
+    var keys = Object.keys(params).sort();
+    var dataCheck = keys.map(function (k) { return k + "=" + params[k]; }).join("\n");
+    var secretKey = Utilities.computeHmacSha256Signature("WebAppData", token);
+    var calc = Utilities.computeHmacSha256Signature(dataCheck, secretKey);
+    var calcHex = calc.map(function (b) {
+      var v = (b < 0 ? b + 256 : b).toString(16);
+      return v.length === 1 ? "0" + v : v;
+    }).join("");
+    var ok = calcHex === String(hash).toLowerCase();
+    return { ok: ok, soft: false, user: parseInitDataUser_(raw) };
+  } catch (e) {
+    return { ok: true, soft: true, user: parseInitDataUser_(raw) };
+  }
+}
+
+function parseInitDataUser_(initData) {
+  try {
+    var m = String(initData || "").match(/(?:^|&)user=([^&]+)/);
+    if (!m) return null;
+    return JSON.parse(decodeURIComponent(m[1]));
+  } catch (e) {
+    return null;
+  }
+}
+
+function readAccessRows_() {
+  var sh = getAccessSheet_();
+  var data = sh.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0] && !data[i][1]) continue;
+    out.push({
+      rowIndex: i + 1,
+      telegramId: String(data[i][0] || "").trim(),
+      name: String(data[i][1] || ""),
+      username: String(data[i][2] || ""),
+      role: String(data[i][3] || "pending").toLowerCase(),
+      status: String(data[i][4] || "pending").toLowerCase(),
+      requestedAt: data[i][5],
+      note: String(data[i][6] || "")
+    });
+  }
+  return out;
+}
+
+function findAccessById_(telegramId) {
+  var id = String(telegramId || "").trim();
+  if (!id) return null;
+  var rows = readAccessRows_();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].telegramId === id) return rows[i];
+  }
+  return null;
+}
+
+function roleTabsFor_(role) {
+  var r = String(role || "").toLowerCase();
+  if (r === "owner") return ["orderScreen", "clientsScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "subsScreen", "priceScreen", "peopleScreen"];
+  if (r === "manager") return ["orderScreen", "clientsScreen", "subsScreen", "priceScreen"];
+  if (r === "cutter") return ["cuttingScreen"];
+  if (r === "courier") return ["courierScreen"];
+  if (r === "logistics") return ["warehouseScreen"];
+  if (r === "all") return ["orderScreen", "clientsScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "subsScreen", "priceScreen"];
+  return [];
+}
+
+function handleGetMyAccess(json, callback, fromPost) {
+  var init = validateInitDataSoft_(json.initData || "");
+  var user = init.user || {};
+  var telegramId = String(json.telegramId || user.id || "").trim();
+  var name = String(json.name || user.first_name || "").trim();
+  var username = String(json.username || user.username || "").trim();
+
+  if (isOwnerId_(telegramId)) {
+    upsertAccessRow_(telegramId, name, username, "owner", "active");
+    var okOwner = {
+      status: "success",
+      role: "owner",
+      access: "active",
+      tabs: roleTabsFor_("owner"),
+      telegramId: telegramId,
+      name: name,
+      initOk: init.ok
+    };
+    return fromPost ? jsonpText(callback, okOwner) : jsonp(callback, okOwner);
+  }
+
+  var row = findAccessById_(telegramId);
+  if (!row) {
+    var owners = getOwnerTelegramIds_();
+    if (!owners.length) {
+      // первый запуск без OWNER_TELEGRAM_IDS — не блокируем команду
+      var openAll = {
+        status: "success",
+        role: "all",
+        access: "active",
+        tabs: roleTabsFor_("all"),
+        telegramId: telegramId,
+        name: name,
+        initOk: init.ok,
+        message: "no_owners_configured"
+      };
+      return fromPost ? jsonpText(callback, openAll) : jsonp(callback, openAll);
+    }
+    var pending = {
+      status: "success",
+      role: "none",
+      access: "none",
+      tabs: [],
+      telegramId: telegramId,
+      name: name,
+      initOk: init.ok,
+      message: "need_request"
+    };
+    return fromPost ? jsonpText(callback, pending) : jsonp(callback, pending);
+  }
+
+  var role = row.role;
+  var access = row.status;
+  if (access === "denied" || role === "denied") {
+    var denied = { status: "success", role: "denied", access: "denied", tabs: [], telegramId: telegramId, name: row.name || name };
+    return fromPost ? jsonpText(callback, denied) : jsonp(callback, denied);
+  }
+  if (access === "pending" || role === "pending") {
+    var wait = { status: "success", role: "pending", access: "pending", tabs: [], telegramId: telegramId, name: row.name || name };
+    return fromPost ? jsonpText(callback, wait) : jsonp(callback, wait);
+  }
+
+  var ok = {
+    status: "success",
+    role: role,
+    access: access || "active",
+    tabs: roleTabsFor_(role),
+    telegramId: telegramId,
+    name: row.name || name,
+    initOk: init.ok
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function upsertAccessRow_(telegramId, name, username, role, status) {
+  var sh = getAccessSheet_();
+  var existing = findAccessById_(telegramId);
+  var now = new Date();
+  if (existing) {
+    sh.getRange(existing.rowIndex, 1, 1, 7).setValues([[
+      telegramId, name || existing.name, username || existing.username,
+      role, status, existing.requestedAt || now, existing.note || ""
+    ]]);
+  } else {
+    sh.appendRow([telegramId, name, username, role, status, now, ""]);
+  }
+}
+
+function handleRequestAccess(json, callback, fromPost) {
+  var telegramId = String(json.telegramId || "").trim();
+  if (!telegramId) {
+    var bad = { status: "error", message: "need_telegram_id" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  if (isOwnerId_(telegramId)) {
+    upsertAccessRow_(telegramId, json.name || "", json.username || "", "owner", "active");
+    var own = { status: "success", role: "owner", access: "active" };
+    return fromPost ? jsonpText(callback, own) : jsonp(callback, own);
+  }
+  var existing = findAccessById_(telegramId);
+  if (existing && (existing.status === "active" || existing.role === "owner")) {
+    var already = { status: "success", role: existing.role, access: existing.status };
+    return fromPost ? jsonpText(callback, already) : jsonp(callback, already);
+  }
+  upsertAccessRow_(telegramId, json.name || "", json.username || "", "pending", "pending");
+  try {
+    var owners = getOwnerTelegramIds_();
+    var text = "Запрос доступа в Бойню\nID: " + telegramId +
+      "\nИмя: " + (json.name || "") +
+      "\n@" + (json.username || "") +
+      "\nНазначьте роль во вкладке Люди.";
+    for (var i = 0; i < owners.length; i++) {
+      try { telegramSendText_(owners[i], text); } catch (e) {}
+    }
+    var chat = PropertiesService.getScriptProperties().getProperty("TELEGRAM_CHAT_ID");
+    if (chat) try { telegramSendText_(chat, text); } catch (e2) {}
+  } catch (e3) {}
+  var ok = { status: "success", role: "pending", access: "pending" };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleListAccess(json, callback, fromPost) {
+  var actor = String(json.telegramId || "").trim();
+  if (!isOwnerId_(actor) && (!findAccessById_(actor) || findAccessById_(actor).role !== "owner")) {
+    // soft: всё равно отдаём список если actor пустой (тесты), иначе только owner
+    if (actor && !isOwnerId_(actor)) {
+      var forbid = { status: "error", message: "owner_only" };
+      return fromPost ? jsonpText(callback, forbid) : jsonp(callback, forbid);
+    }
+  }
+  var rows = readAccessRows_().map(function (r) {
+    return {
+      telegramId: r.telegramId,
+      name: r.name,
+      username: r.username,
+      role: r.role,
+      status: r.status,
+      note: r.note
+    };
+  });
+  var ok = { status: "success", people: rows, owners: getOwnerTelegramIds_() };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleSetAccessRole(json, callback, fromPost) {
+  var actor = String(json.actorId || json.telegramIdOwner || "").trim();
+  if (actor && !isOwnerId_(actor)) {
+    var rowA = findAccessById_(actor);
+    if (!rowA || rowA.role !== "owner") {
+      var forbid = { status: "error", message: "owner_only" };
+      return fromPost ? jsonpText(callback, forbid) : jsonp(callback, forbid);
+    }
+  }
+  var target = String(json.targetId || json.telegramId || "").trim();
+  var role = String(json.role || "").toLowerCase().trim();
+  if (!target || !role) {
+    var bad = { status: "error", message: "need_target_and_role" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var status = (role === "denied") ? "denied" : (role === "pending" ? "pending" : "active");
+  var existing = findAccessById_(target);
+  upsertAccessRow_(target, (json.name || (existing && existing.name) || ""), (json.username || (existing && existing.username) || ""), role, status);
+  try { telegramSendText_(target, "Вам назначена роль: " + role); } catch (e) {}
+  var ok = { status: "success", telegramId: target, role: role, access: status };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+/* ----- Склад ----- */
+
+function getLedgerSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Склад_Движения");
+  if (!sh) {
+    sh = ss.insertSheet("Склад_Движения");
+    sh.getRange(1, 1, 1, 7).setValues([["ts", "weekEnd", "skuRow", "type", "qty", "unit", "meta"]]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function handleGetWarehouse(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var wh = ss.getSheetByName("Склад");
+  if (!wh) {
+    var bad = { status: "error", message: "no_warehouse" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var last = Math.min(60, Math.max(2, wh.getLastRow()));
+  var names = wh.getRange(2, 1, last - 1, 1).getValues();
+  var arrivals = wh.getRange(2, 2, last - 1, 1).getValues();
+  var coefs = wh.getRange(2, 4, last - 1, 1).getValues();
+  var stock = wh.getRange(2, 6, last - 1, 1).getValues();
+  var buyFlags = wh.getRange(2, 7, last - 1, 1).getValues();
+  var items = [];
+  for (var i = 0; i < names.length; i++) {
+    var name = String(names[i][0] || "").trim();
+    if (!name) continue;
+    var row = i + 2;
+    var piece = /шт/i.test(name);
+    var kVal = "";
+    try {
+      if (piece) kVal = wh.getRange(row, 11).getValue();
+    } catch (e) {}
+    items.push({
+      row: row,
+      name: name,
+      arrival: Number(arrivals[i][0]) || 0,
+      coef: Number(coefs[i][0]) || 0,
+      stock: Number(stock[i][0]) || 0,
+      buy: !!buyFlags[i][0],
+      unit: piece ? "шт" : "кг",
+      stockPcs: piece ? (Number(kVal) || 0) : null
+    });
+  }
+  var ledger = [];
+  try {
+    var led = getLedgerSheet_();
+    var lr = led.getLastRow();
+    if (lr > 1) {
+      var from = Math.max(2, lr - 29);
+      var data = led.getRange(from, 1, lr - from + 1, 7).getValues();
+      for (var j = data.length - 1; j >= 0; j--) {
+        ledger.push({
+          ts: data[j][0],
+          weekEnd: data[j][1],
+          skuRow: data[j][2],
+          type: data[j][3],
+          qty: data[j][4],
+          unit: data[j][5],
+          meta: data[j][6]
+        });
+      }
+    }
+  } catch (e2) {}
+  var ok = { status: "success", items: items, ledger: ledger };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleSetWarehouseArrival(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var wh = ss.getSheetByName("Склад");
+  var row = Number(json.row) || 0;
+  var qty = Number(json.qty != null ? json.qty : json.arrival) || 0;
+  if (!wh || row < 2) {
+    var bad = { status: "error", message: "bad_row" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  wh.getRange(row, 2).setValue(qty);
+  try {
+    getLedgerSheet_().appendRow([new Date(), "", row, "arrival", qty, "кг", JSON.stringify({ by: json.telegramId || "" })]);
+  } catch (e) {}
+  var ok = { status: "success", row: row, arrival: qty };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleWarehousePreview(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var wh = ss.getSheetByName("Склад");
+  var cutting = ss.getSheetByName("Нарезка");
+  if (!wh) {
+    var bad = { status: "error", message: "no_warehouse" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  // упрощённый preview: текущий остаток F + дозакуп B vs сырьё по активной нарезке D
+  var last = Math.min(50, Math.max(2, wh.getLastRow()));
+  var names = wh.getRange(2, 1, last - 1, 1).getValues();
+  var arrivals = wh.getRange(2, 2, last - 1, 1).getValues();
+  var stock = wh.getRange(2, 6, last - 1, 1).getValues();
+  var deficits = [];
+  for (var i = 0; i < names.length; i++) {
+    var name = String(names[i][0] || "").trim();
+    if (!name || /шт/i.test(name)) continue;
+    var f = Number(stock[i][0]) || 0;
+    var b = Number(arrivals[i][0]) || 0;
+    var need = 0;
+    try {
+      if (cutting) {
+        // эвристика: строки нарезки с объёмом
+        var cRow = i + 3;
+        var dry = 0;
+        // skip detailed map — flag low stock only
+      }
+    } catch (e) {}
+    if (f + b <= 0.01 && f === 0) {
+      /* skip empty names without stock concern */
+    }
+    if (f + b < 0.5 && (f > 0 || b > 0)) {
+      deficits.push({ row: i + 2, name: name, stock: f, arrival: b, available: f + b });
+    }
+  }
+  var buyList = [];
+  try {
+    var flags = wh.getRange(2, 7, last - 1, 1).getValues();
+    for (var j = 0; j < names.length; j++) {
+      if (flags[j][0]) buyList.push({ row: j + 2, name: String(names[j][0] || "") });
+    }
+  } catch (e2) {}
+  var ok = { status: "success", deficits: deficits, buyList: buyList, note: "Полный расход недели — при закрытии (owner)." };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+/* ----- Подписки CRM ----- */
+
+function handleListSubscriptions(json, callback, fromPost) {
+  var crmSs;
+  try { crmSs = getCrmSpreadsheet_(); } catch (e) {
+    var bad = { status: "error", message: "crm_unavailable", detail: String(e) };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var sheets = ["ПП", "АФК", "БП"];
+  var list = [];
+  var seen = {};
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = crmSs.getSheetByName(sheets[s]);
+    if (!sh || sh.getLastRow() < 3) continue;
+    var data = sh.getDataRange().getValues();
+    for (var r = 2; r < data.length; r++) {
+      var nickRaw = String(data[r][0] || "").trim();
+      if (!nickRaw) continue;
+      var nick = extractInstagramNick_(nickRaw);
+      var subId = String(data[r][1] || "").trim();
+      var key = (subId || nick).toUpperCase();
+      if (!key || seen[key]) continue;
+      seen[key] = true;
+      list.push({
+        nick: nick,
+        label: nickRaw.replace(/\s+/g, " ").trim().substring(0, 80),
+        subId: subId,
+        deliveries: Number(data[r][2]) || 0,
+        status: String(data[r][3] || ""),
+        wishes: String(data[r][4] || ""),
+        sheet: sheets[s]
+      });
+    }
+  }
+  var ok = { status: "success", subscriptions: list };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleGetSubscription(json, callback, fromPost) {
+  var crmSs;
+  try { crmSs = getCrmSpreadsheet_(); } catch (e) {
+    var bad = { status: "error", message: "crm_unavailable" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var nick = String(json.nick || json.client || "").trim();
+  var subId = String(json.subId || "").trim();
+  var found = findSubscriberBasket_(crmSs, nick || subId, json.segment || "ПП");
+  var contact = lookupContactAddress_(crmSs, nick);
+  var ok = {
+    status: "success",
+    nick: nick,
+    subId: found.subId || subId,
+    basket: found.basket || [],
+    wishes: found.wishes || "",
+    address: contact.address || "",
+    note: contact.note || "",
+    sheet: found.sheet || ""
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handlePushSubscriptionToDay(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var dateStr = json.date || json.deliveryDate || "";
+  var nick = String(json.nick || json.client || "").trim();
+  if (!dateStr || !nick) {
+    var bad = { status: "error", message: "need_date_and_nick" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var crmSs = getCrmSpreadsheet_();
+  var found = findSubscriberBasket_(crmSs, nick, json.segment || "ПП");
+  var contact = lookupContactAddress_(crmSs, nick);
+  return handleSaveBooking(ss, {
+    date: dateStr,
+    client: nick,
+    subId: found.subId || json.subId || "",
+    address: json.address || contact.address || "",
+    note: json.note || ([found.wishes, contact.note].filter(Boolean).join(" ")),
+    basket: found.basket || [],
+    source: "subscription",
+    alsoSaveOrder: false
+  }, callback, fromPost);
+}
+
+/* ----- Цена ----- */
+
+function getPriceSpreadsheet_() {
+  var id = PropertiesService.getScriptProperties().getProperty("PRICE_SPREADSHEET_ID") || PRICE_SPREADSHEET_ID_DEFAULT_;
+  return SpreadsheetApp.openById(id);
+}
+
+function readPriceCosts_(mode) {
+  var ss = getPriceSpreadsheet_();
+  var sheetName = String(mode || "").toLowerCase().indexOf("розн") >= 0 ? "Розница" : "Подписка";
+  var sh = ss.getSheetByName(sheetName) || ss.getSheets()[0];
+  var data = sh.getDataRange().getValues();
+  if (!data.length) return { costs: {}, headers: [] };
+  var headers = data[0];
+  var costRow = null;
+  for (var r = 0; r < Math.min(5, data.length); r++) {
+    var label = String(data[r][0] || "").toLowerCase();
+    if (label.indexOf("себестоим") >= 0 || label.indexOf("100") >= 0) {
+      costRow = data[r];
+      break;
+    }
+  }
+  if (!costRow && data.length > 1) costRow = data[1];
+  var costs = {};
+  for (var c = 6; c < headers.length; c++) {
+    var map = mapCrmHeaderToItem_(headers[c]);
+    if (!map) continue;
+    var key = map.name + (map.sub ? " / " + map.sub : "");
+    var price = Number(String(costRow[c] || "").replace(",", ".")) || 0;
+    costs[key] = { per100: price, name: map.name, sub: map.sub, grams: map.grams };
+  }
+  return { costs: costs, sheet: sheetName };
+}
+
+function handleCalcPrice(json, callback, fromPost) {
+  var mode = json.mode || "subscription";
+  var basket = json.basket || [];
+  var priceInfo;
+  try {
+    priceInfo = readPriceCosts_(mode);
+  } catch (e) {
+    var bad = { status: "error", message: "price_sheet_unavailable", detail: String(e) };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var lines = [];
+  var totalCost = 0;
+  for (var i = 0; i < basket.length; i++) {
+    var it = basket[i];
+    var name = String(it.name || it.main || "").trim();
+    var sub = String(it.sub || "").trim();
+    var val = Number(it.val != null ? it.val : it.value) || 0;
+    if (!name || val <= 0) continue;
+    var key = name + (sub ? " / " + sub : "");
+    var info = priceInfo.costs[key];
+    // fallback: только имя
+    if (!info) {
+      for (var k in priceInfo.costs) {
+        if (priceInfo.costs[k].name === name && (!sub || priceInfo.costs[k].sub === sub)) {
+          info = priceInfo.costs[k];
+          break;
+        }
+      }
+    }
+    var per100 = info ? info.per100 : 0;
+    var cost = (val / 100) * per100;
+    totalCost += cost;
+    lines.push({ name: name, sub: sub, val: val, per100: per100, cost: Math.round(cost * 100) / 100 });
+  }
+  // простая наценка: подписка ×1.9, розница ×2.2 (подправим позже)
+  var markup = String(mode).toLowerCase().indexOf("розн") >= 0 || mode === "retail" ? 2.2 : 1.9;
+  var total = Math.round(totalCost * markup * 100) / 100;
+  var ok = {
+    status: "success",
+    mode: mode,
+    sheet: priceInfo.sheet,
+    lines: lines,
+    cost: Math.round(totalCost * 100) / 100,
+    markup: markup,
+    total: total
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+/* ----- Сборка / пакеты ----- */
+
+function packCountForLight_(grams) {
+  var g = Number(grams) || 0;
+  if (g <= 0) return 0;
+  if (g <= 20) return 1;
+  if (g <= 80) return 2;
+  if (g <= 150) return 3;
+  if (g <= 200) return 4;
+  return Math.ceil(g / 200) * 4;
+}
+
+function packCountForBulk_(grams) {
+  var g = Number(grams) || 0;
+  if (g <= 0) return 0;
+  if (g <= 25) return 1;
+  if (g <= 120) return 2;
+  if (g <= 200) return 3;
+  if (g <= 300) return 4;
+  return Math.ceil(g / 300) * 4;
+}
+
+function buildAssemblyForBasket_(basket) {
+  var packs = [];
+  var totalBags = 0;
+  (basket || []).forEach(function (it) {
+    var name = String(it.name || it.main || "").trim();
+    var sub = String(it.sub || "").trim();
+    var val = Number(it.val != null ? it.val : it.value) || 0;
+    var cat = String(it.cat || "").toLowerCase();
+    if (!name || val <= 0) return;
+    var bags = 0;
+    var rule = "";
+    if (/л[её]гк/i.test(name) || cat === "dressura" && /л[её]гк/i.test(name)) {
+      bags = packCountForLight_(val);
+      rule = "лёгкое";
+    } else if (cat === "chew" || /шт/i.test(name)) {
+      bags = Math.max(1, Math.ceil(val / 4));
+      rule = "жевалки×4";
+    } else if (cat === "other" || /крафт/i.test(name)) {
+      bags = Math.max(1, Math.ceil(val / 5));
+      rule = "крафт×5+запас";
+      bags += 1;
+    } else {
+      bags = packCountForBulk_(val);
+      rule = "сыпучее";
+    }
+    totalBags += bags;
+    packs.push({
+      name: name,
+      sub: sub,
+      val: val,
+      bags: bags,
+      rule: rule,
+      label: name + (sub ? " / " + sub : "") + " → " + bags + " пак."
+    });
+  });
+  return { packs: packs, totalBags: totalBags };
+}
+
+function handleGetAssembly(json, callback, fromPost) {
+  var day = json.day || "";
+  var clientsData = getClientsData_(SpreadsheetApp.getActiveSpreadsheet(), day);
+  if (clientsData.status !== "success") {
+    var bad = { status: "error", message: clientsData.status || "bad_day" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var out = (clientsData.clients || []).map(function (c) {
+    var plan = buildAssemblyForBasket_(c.basket || []);
+    return {
+      name: c.name,
+      address: c.address || "",
+      note: c.note || "",
+      packs: plan.packs,
+      totalBags: plan.totalBags
+    };
+  });
+  var ok = { status: "success", day: day, clients: out };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function setupOpsEcosystem() {
+  getAccessSheet_();
+  getBookingsSheet_();
+  getLedgerSheet_();
+  var sku = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("SKU_Карта");
+  if (!sku) {
+    sku = SpreadsheetApp.getActiveSpreadsheet().insertSheet("SKU_Карта");
+    sku.getRange(1, 1, 1, 5).setValues([["cutRow", "warehouseRow", "name", "unit", "notes"]]);
+  }
+  Logger.log("setupOpsEcosystem ok");
+  return "ok";
+}
+
