@@ -392,23 +392,21 @@
     .cut-note-hint .muted { color: rgba(255,255,255,0.55); font-size: 11.5px; }
     .load-dance {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 28px 12px 36px; min-height: 220px; text-align: center;
+      padding: 20px 12px 28px; min-height: 260px; text-align: center;
     }
     .load-dance-stage {
-      width: min(58vw, 230px); height: min(58vw, 230px);
-      border-radius: 50%;
-      background: radial-gradient(circle at 50% 40%, rgba(255,140,200,0.35), rgba(0,0,0,0) 70%);
-      display: flex; align-items: flex-end; justify-content: center;
-      overflow: hidden; margin-bottom: 10px;
+      width: min(72vw, 280px); height: min(72vw, 280px);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 8px;
+      background: transparent;
     }
     .load-dance-img {
-      width: 92%; height: auto; object-fit: contain; object-position: center bottom;
-      transform-origin: 50% 90%;
-      animation: loadDance 0.7s ease-in-out infinite alternate;
-      filter: drop-shadow(0 10px 18px rgba(255,100,170,0.4));
-      /* белый фон картинки на тёмном экране — светлое пятно, маска смягчает края */
-      -webkit-mask-image: radial-gradient(ellipse 70% 85% at 50% 55%, #000 55%, transparent 100%);
-      mask-image: radial-gradient(ellipse 70% 85% at 50% 55%, #000 55%, transparent 100%);
+      width: 100%; height: 100%;
+      object-fit: contain;
+      background: transparent;
+      /* чёрный/тёмный фон гифки «растворяется» на тёмном UI */
+      mix-blend-mode: screen;
+      filter: contrast(1.05) saturate(1.1);
     }
     .load-dance-label {
       font-size: 14px; font-weight: 600; color: #ff9f0a; letter-spacing: 0.2px;
@@ -520,7 +518,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.5</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.6</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -706,7 +704,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4.5";
+    const APP_VERSION = "v7.4.6";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1431,7 +1429,9 @@
 
     function loadingDanceHtml(label) {
       return '<div class="load-dance" aria-busy="true">' +
-        '<div class="load-dance-stage"><img class="load-dance-img" src="assets/loading-dance.png" alt="" draggable="false"></div>' +
+        '<div class="load-dance-stage">' +
+          '<img class="load-dance-img" src="assets/loading-dance.gif" alt="" draggable="false">' +
+        '</div>' +
         '<div class="load-dance-label">' + escapeHtml(label || "Загружаю…") + "</div>" +
         '<div class="load-dance-sub">танцует, пока считаем день</div></div>';
     }
