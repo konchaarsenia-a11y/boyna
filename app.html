@@ -291,6 +291,14 @@
     }
     .cut-done-item:last-child { border-bottom: none; }
     .cut-done-item .muted { color: var(--text-muted); font-size: 12px; }
+    .cut-notes-box {
+      background: #1c1c1e; border: 1px solid rgba(255,159,10,0.35);
+      border-radius: 12px; padding: 12px; margin-bottom: 12px;
+    }
+    .cut-notes-title { font-size: 13px; font-weight: 700; color: #ff9f0a; margin-bottom: 8px; }
+    .cut-note-line { font-size: 13px; line-height: 1.4; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .cut-note-line:last-child { border-bottom: none; }
+    .cut-note-line b { font-weight: 600; }
     .time-wheel-label span { flex: 1; text-align: center; }
     .time-wheel-label span:nth-child(2) { flex: 0 0 18px; }
     .depot-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -462,7 +470,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.2</div>
 
     <div class="nav-tabs">
       <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -513,8 +521,14 @@
           <div class="field-hint">Введите адрес отделения, куда повезут заказ (не адрес клиента)</div>
         </div>
         <div class="form-group">
-          <label>Примечание курьеру</label>
-          <input type="text" id="noteInput" placeholder="Например: до 17:00" autocomplete="off">
+          <label>Примечание</label>
+          <input type="text" id="noteInput" placeholder="Текст примечания" autocomplete="off">
+          <div class="field-hint" style="margin-top:8px;">Кому показать</div>
+          <div class="seg-row" id="noteRoleRow">
+            <button type="button" class="seg-btn" id="noteRoleMgr" onclick="toggleNoteRole('mgr')">Менеджеру</button>
+            <button type="button" class="seg-btn" id="noteRoleCut" onclick="toggleNoteRole('cut')">Нарезчику</button>
+            <button type="button" class="seg-btn active" id="noteRoleCour" onclick="toggleNoteRole('cour')">Курьеру</button>
+          </div>
         </div>
       </div>
 
@@ -642,7 +656,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.1";
+    const APP_VERSION = "v7.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -681,6 +695,7 @@
     let selectedDeliveryMethod = null;
     let selectedAddressGeo = null; // {lat, lon, address, yandexUrl}
     let selectedPostOfficeGeo = null;
+    let noteRoles = { mgr: false, cut: false, cour: true };
     let postOfficeSuggestTimer = null;
     let postOfficeSuggestSeq = 0;
     let addressSuggestTimer = null;
@@ -1192,6 +1207,10 @@
       const isEdit = document.getElementById("isEditMode").value === "true";
       if (!clientName) { await uiAlertAsync("Введите имя клиента"); return; }
       if (!basket.length) { await uiAlertAsync("Корзина пуста"); return; }
+      if (clientNote && !getSelectedNoteRoles().length) {
+        await uiAlertAsync("Выберите, кому показать примечание (менеджер / нарезчик / курьер).");
+        return;
+      }
 
       const outside = await isOutsideMinskDelivery(clientAddress);
       if (outside) {
@@ -1232,6 +1251,7 @@
 
       // GEO не кладём в примечание — только отдельным полем
       clientNote = stripGeoTags(clientNote);
+      clientNote = applyNoteAudience(clientNote, getSelectedNoteRoles());
 
       const okConfirm = await uiConfirmAsync(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"));
       if (!okConfirm) return;
@@ -1290,6 +1310,7 @@
         selectedPostOfficeGeo = null;
         setAddressPickedHint(false);
         selectedDeliveryMethod = null;
+        setNoteRoles({ mgr: false, cut: false, cour: true });
         document.getElementById("deliveryMethodGroup").style.display = "none";
         document.getElementById("postOfficeGroup").style.display = "none";
         basket = [];
@@ -1332,10 +1353,14 @@
             return `<div class="order-detail-line"><span>• ${g.name}${frac}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
           }).join("") || '<p class="muted">Нет позиций</p>';
           const addr = client.address ? `<div class="delivery-line addr-line">Адрес: ${escapeHtml(client.address)}</div>` : "";
-          const noteClean = stripMetaFromNote(client.note || "");
+          const noteClean = noteTextForRole(client.note || "", "mgr");
           const office = parseOfficeAddress(client.note || "");
           const dm = parseDeliveryMethod(client.note || "");
           const note = noteClean ? `<div class="delivery-line time-alert">Примечание: ${escapeHtml(noteClean)}</div>` : "";
+          const roles = parseNoteAudience(client.note || "");
+          const roleHint = noteClean
+            ? `<div class="delivery-line muted" style="font-size:11px;opacity:0.75;">для: ${escapeHtml(formatNoteRoles(roles))}</div>`
+            : "";
           const deliv = (dm === "euro" || dm === "bel")
             ? `<div class="delivery-line">${dm === "euro" ? "Европочта" : "Белпочта"}${office ? ": " + escapeHtml(office) : ""}</div>`
             : "";
@@ -1349,7 +1374,7 @@
                 <span class="client-badge">${client.orderCount} поз.</span>
               </div>
             </div>
-            ${(addr || note || deliv) ? `<div class="delivery-info-box">${note}${deliv}${addr}</div>` : ""}
+            ${(addr || note || deliv) ? `<div class="delivery-info-box">${note}${roleHint}${deliv}${addr}</div>` : ""}
             <div class="client-order-details" id="details_${index}">${lines}</div>
           </div>`;
         }).join("");
@@ -1397,6 +1422,7 @@
       } : null;
       setAddressPickedHint(!!selectedAddressGeo);
       document.getElementById("noteInput").value = stripMetaFromNote(rawNote);
+      setNoteRolesFromNote(rawNote);
       const dm = parseDeliveryMethod(rawNote);
       selectedDeliveryMethod = dm;
       const office = parseOfficeAddress(rawNote);
@@ -1536,7 +1562,8 @@
         sortCuttingItems();
         renderCuttingSummary();
         renderCuttingSessionBox();
-        box.innerHTML = cuttingItemsCache.map(renderCutRowHtml).join("");
+        const notesHtml = renderCutterNotesHtml(res.cutterNotes || []);
+        box.innerHTML = notesHtml + cuttingItemsCache.map(renderCutRowHtml).join("");
         if (finishBtn) finishBtn.style.display = cuttingSession.active ? "block" : "none";
         startCuttingPoll();
       } catch (err) {
@@ -1547,6 +1574,15 @@
       }
     }
 
+    function renderCutterNotesHtml(notes) {
+      if (!notes || !notes.length) return "";
+      return '<div class="cut-notes-box"><div class="cut-notes-title">Примечания нарезчику</div>' +
+        notes.map(function (n) {
+          return '<div class="cut-note-line"><b>' + escapeHtml(n.client || "") + ":</b> " +
+            escapeHtml(n.text || "") + "</div>";
+        }).join("") + "</div>";
+    }
+
     function renderFinishedCuttingDay(completion) {
       const box = document.getElementById("cuttingContainer");
       const summary = document.getElementById("cuttingSummary");
@@ -1554,27 +1590,32 @@
       const finishBtn = document.getElementById("btnFinishCutting");
       if (finishBtn) finishBtn.style.display = "none";
       if (sessionBox) sessionBox.innerHTML = "";
-      const items = (completion && completion.items) || cuttingItemsCache || [];
-      const doneCount = items.filter(function (it) { return it.done || it.laid; }).length;
-      const total = items.length;
+      const items = (completion && completion.items) || [];
+      const total = Number(completion && completion.count) || items.length;
       const elapsed = formatCutElapsed(Number(completion && completion.elapsedMs) || 0);
       if (summary) {
         summary.innerHTML =
           '<div class="cut-done-summary">' +
             '<div class="cut-done-title">Нарезка завершена</div>' +
-            '<div class="cut-done-meta">Нарезано: <b>' + doneCount + '</b> из <b>' + total + '</b><br>Время: <b>' + escapeHtml(elapsed) + '</b></div>' +
+            '<div class="cut-done-meta">Позиций: <b>' + total + '</b><br>Время: <b>' + escapeHtml(elapsed) + '</b></div>' +
             '<button type="button" class="btn-action btn-blue" id="btnCutDoneDetails" onclick="toggleFinishedCuttingDetails()">Подробнее</button>' +
             '<div class="cut-done-details" id="cutDoneDetails">' +
-              items.map(function (it) {
-                const dry = it.unit === "шт" ? ((it.dry || 0) + " шт") : ((it.dry || 0) + " гр");
-                const mark = (it.done && it.laid) ? "✓" : (it.done || it.laid ? "·" : "—");
-                return '<div class="cut-done-item"><span>' + escapeHtml(it.name || "") +
-                  '<div class="muted">' + escapeHtml(dry) + "</div></span><span>" + mark + "</span></div>";
-              }).join("") +
+              (items.length
+                ? items.map(function (it) {
+                    const dry = it.unit === "шт" ? ((it.dry || 0) + " шт") : ((it.dry || 0) + " гр");
+                    const flags = [];
+                    if (it.laid) flags.push("выложено");
+                    if (it.done) flags.push("нарезано");
+                    return '<div class="cut-done-item"><span>' + escapeHtml(it.name || "") +
+                      '<div class="muted">' + escapeHtml(dry) +
+                      (flags.length ? " · " + flags.join(", ") : "") +
+                      "</div></span></div>";
+                  }).join("")
+                : '<p class="muted">Нет данных по позициям</p>') +
             "</div>" +
           "</div>";
       }
-      if (box) box.innerHTML = '<p class="muted">День уже закрыт — сверху сводка. Можно открыть подробнее.</p>';
+      if (box) box.innerHTML = "";
     }
 
     function toggleFinishedCuttingDetails() {
@@ -1919,56 +1960,86 @@
         const cached = cuttingItemsCache.find(function (x) { return Number(x.row) === Number(r.row); });
         if (cached) { cached.done = true; cached.laid = true; }
       });
-      const items = (cuttingItemsCache || []).map(function (it) {
-        return {
-          row: it.row,
-          name: it.name,
-          done: !!it.done,
-          laid: !!it.laid,
-          outNext: !!it.outNext,
-          surplus: Number(it.surplus) || 0
-        };
-      });
-      const ticket = "f" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
-      try {
-        await apiPost({
-          action: "prepareFinishCutting",
-          ticket: ticket,
-          day: day,
-          ready: ready || [],
-          missing: missing || [],
-          items: items,
-          elapsed: elapsed || 0
-        });
-      } catch (ePrep) {}
-      await new Promise(function (r) { setTimeout(r, 450); });
+      const flags = (cuttingItemsCache || []).map(function (it) {
+        return [
+          it.row,
+          it.laid ? 1 : 0,
+          it.done ? 1 : 0,
+          it.outNext ? 1 : 0,
+          Number(it.surplus) || 0
+        ].join(",");
+      }).join("|");
+      const readyRows = (ready || []).map(function (r) { return r.row; }).join(",");
+      const missingEnc = (missing || []).map(function (m) {
+        return String(m.row) + "~" + String(m.name || "").replace(/[|~]/g, " ");
+      }).join("|");
+
       let res = null;
       try {
-        res = await apiGet({ action: "finishCutting", ticket: ticket, day: day, elapsed: elapsed || 0 });
+        res = await apiGet({
+          action: "finishCutting",
+          day: day,
+          elapsed: elapsed || 0,
+          flags: flags,
+          readyRows: readyRows,
+          missing: missingEnc
+        });
       } catch (e1) {}
+
       if (!res || res.status !== "success") {
-        await new Promise(function (r) { setTimeout(r, 700); });
+        // запасной ticket-путь
+        const ticket = "f" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
         try {
-          res = await apiGet({ action: "finishCutting", ticket: ticket, day: day, elapsed: elapsed || 0 });
+          await apiPost({
+            action: "prepareFinishCutting",
+            ticket: ticket,
+            day: day,
+            ready: ready || [],
+            missing: missing || [],
+            items: (cuttingItemsCache || []).map(function (it) {
+              return {
+                row: it.row,
+                done: !!it.done,
+                laid: !!it.laid,
+                outNext: !!it.outNext,
+                surplus: Number(it.surplus) || 0
+              };
+            }),
+            elapsed: elapsed || 0
+          });
+        } catch (ePrep) {}
+        await new Promise(function (r) { setTimeout(r, 500); });
+        try {
+          res = await apiGet({ action: "finishCutting", ticket: ticket, day: day, elapsed: elapsed || 0, flags: flags });
         } catch (e2) {}
       }
-      // запасной путь: галочки по одной + стоп сессии
+
       if (!res || res.status !== "success") {
-        for (let i = 0; i < (ready || []).length; i++) {
-          const row = ready[i].row;
+        for (let i = 0; i < (cuttingItemsCache || []).length; i++) {
+          const it = cuttingItemsCache[i];
           try {
-            await apiGet({ action: "updateCutting", day: day, row: row, done: true, laid: true });
+            await apiGet({
+              action: "updateCutting",
+              day: day,
+              row: it.row,
+              done: it.done ? "true" : "false",
+              laid: it.laid ? "true" : "false",
+              outNext: it.outNext ? "true" : "false",
+              surplus: Number(it.surplus) || 0
+            });
           } catch (eUp) {}
         }
-        if ((missing || []).length) {
-          try {
-            await apiPost({ action: "registerCuttingDeficit", day: day, items: missing, immediate: true });
-          } catch (eDef) {}
-        }
-        try { await apiGet({ action: "stopCuttingSession", day: day }); } catch (eStop) {}
-        res = { status: "partial" };
+        try {
+          res = await apiGet({
+            action: "finishCutting",
+            day: day,
+            elapsed: elapsed || 0,
+            readyRows: readyRows,
+            missing: missingEnc
+          });
+        } catch (e3) {}
       }
-      return res;
+      return res || { status: "error" };
     }
 
     async function finishCutting() {
@@ -2009,6 +2080,10 @@
         const elapsed = cuttingSession.active && cuttingSession.startedAt
           ? (Date.now() - cuttingSession.startedAt) : 0;
         const res = await commitFinishCutting(day, ready, missing, elapsed);
+        if (!res || res.status !== "success") {
+          await uiAlertAsync("Не удалось сохранить завершение нарезки. Проверьте Deploy Code.gs и попробуйте ещё раз.");
+          return;
+        }
         stopCuttingTimer(true);
         if (res && res.completion) cuttingCompletionCache = res.completion;
         celebrateSuccess("finish", { elapsedLabel: formatCutElapsed(elapsed) });
@@ -2066,7 +2141,7 @@
               <span class="cut-title">${idx + 1}. ${escapeHtml(c.name)}</span>
             </label>
             <div class="cut-meta">${c.address ? ("Адрес: " + escapeHtml(c.address)) : "Адрес не указан"}
-              ${c.note ? ("<br>Примечание: " + escapeHtml(c.note)) : ""}
+              ${noteTextForRole(c.note || "", "cour") ? ("<br>Примечание: " + escapeHtml(noteTextForRole(c.note || "", "cour"))) : ""}
             </div>
             <div>${lines || '<span class="muted">Пустой заказ</span>'}</div>
           </div>`;
@@ -2123,6 +2198,7 @@
         .replace(/\[БЕЛПОЧТА\]/gi, "")
         .replace(/\[КУРЬЕР\]/gi, "")
         .replace(/\[ОТДЕЛЕНИЕ:[^\]]*\]/gi, "")
+        .replace(/\[TO:[^\]]+\]/gi, "")
         .replace(/\[GEO:[^\]]+\]/gi, "")
         .replace(/\[YMAPS:[^\]]+\]/gi, "")
         .replace(/\s{2,}/g, " ")
@@ -2131,6 +2207,71 @@
 
     function stripMetaFromNote(note) {
       return stripDeliveryTags(note);
+    }
+
+    function parseNoteAudience(note) {
+      const m = String(note || "").match(/\[TO:([^\]]+)\]/i);
+      if (!m) return ["mgr", "cour"]; // старые примечания — менеджеру и курьеру
+      const roles = String(m[1] || "").toLowerCase().split(/[,;\s]+/).filter(function (r) {
+        return r === "mgr" || r === "cut" || r === "cour";
+      });
+      return roles.length ? roles : ["mgr", "cour"];
+    }
+
+    function formatNoteRoles(roles) {
+      const map = { mgr: "менеджер", cut: "нарезчик", cour: "курьер" };
+      return (roles || []).map(function (r) { return map[r] || r; }).join(", ");
+    }
+
+    function noteTextForRole(note, role) {
+      const roles = parseNoteAudience(note);
+      if (roles.indexOf(role) < 0) return "";
+      return stripMetaFromNote(note);
+    }
+
+    function applyNoteAudience(note, roles) {
+      const clean = stripMetaFromNote(note);
+      const list = (roles || []).filter(function (r) {
+        return r === "mgr" || r === "cut" || r === "cour";
+      });
+      if (!clean || !list.length) return clean;
+      return ("[TO:" + list.join(",") + "] " + clean).trim();
+    }
+
+    function getSelectedNoteRoles() {
+      const out = [];
+      if (noteRoles.mgr) out.push("mgr");
+      if (noteRoles.cut) out.push("cut");
+      if (noteRoles.cour) out.push("cour");
+      return out;
+    }
+
+    function setNoteRoles(next) {
+      noteRoles = {
+        mgr: !!(next && next.mgr),
+        cut: !!(next && next.cut),
+        cour: !!(next && next.cour)
+      };
+      const map = { mgr: "noteRoleMgr", cut: "noteRoleCut", cour: "noteRoleCour" };
+      Object.keys(map).forEach(function (k) {
+        const el = document.getElementById(map[k]);
+        if (el) el.classList.toggle("active", !!noteRoles[k]);
+      });
+    }
+
+    function setNoteRolesFromNote(note) {
+      const roles = parseNoteAudience(note);
+      setNoteRoles({
+        mgr: roles.indexOf("mgr") >= 0,
+        cut: roles.indexOf("cut") >= 0,
+        cour: roles.indexOf("cour") >= 0
+      });
+    }
+
+    function toggleNoteRole(role) {
+      if (!noteRoles.hasOwnProperty(role)) return;
+      noteRoles[role] = !noteRoles[role];
+      setNoteRoles(noteRoles);
     }
 
     function stripOfficeTag(note) {

@@ -512,7 +512,10 @@ function doGet(e) {
     return handleFinishCutting(SpreadsheetApp.getActiveSpreadsheet(), {
       day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
       ticket: e.parameter.ticket || "",
-      elapsed: e.parameter.elapsed || ""
+      elapsed: e.parameter.elapsed || "",
+      flags: e.parameter.flags ? decodeURIComponent(e.parameter.flags) : "",
+      readyRows: e.parameter.readyRows || "",
+      missing: e.parameter.missing ? decodeURIComponent(e.parameter.missing) : ""
     }, callback, false);
   }
   if (action === "setupTelegramWebhook") {
@@ -669,7 +672,8 @@ function handleGetCutting(dayName, callback) {
     day: dayName,
     items: items,
     session: getCuttingSession_(),
-    completion: getCuttingCompletion_(dateText)
+    completion: getCuttingCompletion_(dateText),
+    cutterNotes: collectDayRoleNotes_(ss, dayName, "cut")
   });
 }
 
@@ -1723,6 +1727,54 @@ function stripGeoTagsFromNote_(note) {
     .trim();
 }
 
+/** Аудитория примечания: [TO:mgr,cut,cour]. Без тега — менеджеру и курьеру (как раньше). */
+function parseNoteAudience_(note) {
+  var m = String(note || "").match(/\[TO:([^\]]+)\]/i);
+  if (!m) return ["mgr", "cour"];
+  var roles = String(m[1] || "").toLowerCase().split(/[,;\s]+/).filter(function (r) {
+    return r === "mgr" || r === "cut" || r === "cour";
+  });
+  return roles.length ? roles : ["mgr", "cour"];
+}
+
+function stripNoteAudienceTag_(note) {
+  return String(note || "")
+    .replace(/\[TO:[^\]]+\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function noteVisibleForRole_(note, role) {
+  var roles = parseNoteAudience_(note);
+  for (var i = 0; i < roles.length; i++) {
+    if (roles[i] === role) return true;
+  }
+  return false;
+}
+
+function cleanNoteText_(note) {
+  return stripNoteAudienceTag_(stripGeoTagsFromNote_(String(note || "")
+    .replace(/\[ЕВРОПОЧТА\]/gi, "")
+    .replace(/\[БЕЛПОЧТА\]/gi, "")
+    .replace(/\[КУРЬЕР\]/gi, "")
+    .replace(/\[ОТДЕЛЕНИЕ:[^\]]*\]/gi, "")
+  ));
+}
+
+function collectDayRoleNotes_(ss, dayName, role) {
+  var data = getClientsData_(ss, dayName);
+  var out = [];
+  var clients = (data && data.clients) || [];
+  for (var i = 0; i < clients.length; i++) {
+    var raw = clients[i].note || "";
+    if (!noteVisibleForRole_(raw, role)) continue;
+    var text = cleanNoteText_(raw);
+    if (!text) continue;
+    out.push({ client: clients[i].name || "", text: text });
+  }
+  return out;
+}
+
 function parseGeoTagsFromNote_(note) {
   var m = String(note || "").match(/\[GEO:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\]/i);
   if (!m) return null;
@@ -1863,18 +1915,78 @@ function handleRegisterCuttingDeficit(ss, json, callback, fromPost) {
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
+function parseCuttingFlags_(flagsStr) {
+  var out = [];
+  var parts = String(flagsStr || "").split("|");
+  for (var i = 0; i < parts.length; i++) {
+    var p = String(parts[i] || "").trim();
+    if (!p) continue;
+    var bits = p.split(",");
+    var row = Number(bits[0]);
+    if (!(row >= 3 && row <= 48)) continue;
+    out.push({
+      row: row,
+      laid: bits[1] === "1" || bits[1] === "true",
+      done: bits[2] === "1" || bits[2] === "true",
+      outNext: bits[3] === "1" || bits[3] === "true",
+      surplus: Number(bits[4]) || 0
+    });
+  }
+  return out;
+}
+
+function parseMissingParam_(missingStr) {
+  if (Object.prototype.toString.call(missingStr) === "[object Array]") return missingStr;
+  var out = [];
+  var parts = String(missingStr || "").split("|");
+  for (var i = 0; i < parts.length; i++) {
+    var p = String(parts[i] || "").trim();
+    if (!p) continue;
+    var tilde = p.indexOf("~");
+    if (tilde < 0) {
+      var rowOnly = Number(p);
+      if (rowOnly >= 3) out.push({ row: rowOnly, name: "" });
+      continue;
+    }
+    out.push({
+      row: Number(p.slice(0, tilde)) || 0,
+      name: p.slice(tilde + 1)
+    });
+  }
+  return out;
+}
+
+function parseReadyRows_(ready, readyRowsStr) {
+  if (ready && ready.length) return ready;
+  var out = [];
+  var parts = String(readyRowsStr || "").split(",");
+  for (var i = 0; i < parts.length; i++) {
+    var row = Number(String(parts[i] || "").trim());
+    if (row >= 3 && row <= 48) out.push({ row: row });
+  }
+  return out;
+}
+
 function handleFinishCutting(ss, json, callback, fromPost) {
-  // Длинный payload: POST prepareFinishCutting → GET finishCutting?ticket=
+  // ticket (POST cache) — запасной путь; основной — flags в GET
   if (json.ticket) {
     try {
       var cached = CacheService.getScriptCache().get("finish_" + String(json.ticket));
-      if (cached) json = JSON.parse(cached);
+      if (cached) {
+        var cachedObj = JSON.parse(cached);
+        for (var k in cachedObj) {
+          if (json[k] === undefined || json[k] === "" || json[k] === null) json[k] = cachedObj[k];
+        }
+        if (!json.items && cachedObj.items) json.items = cachedObj.items;
+        if (!json.ready && cachedObj.ready) json.ready = cachedObj.ready;
+        if ((!json.missing || !json.missing.length) && cachedObj.missing) json.missing = cachedObj.missing;
+      }
     } catch (eCache) {}
   }
   var day = String(json.day || "").trim();
-  var ready = json.ready || [];
-  var missing = json.missing || [];
-  var snapshot = json.items || [];
+  var ready = parseReadyRows_(json.ready, json.readyRows);
+  var missing = parseMissingParam_(json.missing);
+  var snapshot = json.items && json.items.length ? json.items : parseCuttingFlags_(json.flags);
   var elapsed = Number(json.elapsed) || 0;
   if (!day) {
     var bad = { status: "error", message: "need_day" };
@@ -1907,14 +2019,14 @@ function handleFinishCutting(ss, json, callback, fromPost) {
     }
     recalculateCuttingForDate_(ss, dateText);
 
-    // Полный снимок с клиента — главный источник правды при завершении
+    // Снимок галочек с клиента — главный источник правды (выложено/нарезано)
     var i;
     if (snapshot.length) {
       for (i = 0; i < snapshot.length; i++) {
         var it = snapshot[i] || {};
         var r = Number(it.row);
         if (!(r >= 3 && r <= 48)) continue;
-        if (it.surplus !== undefined && it.surplus !== null) {
+        if (it.surplus !== undefined && it.surplus !== null && it.surplus !== "") {
           cutting.getRange("C" + r).setValue(Number(it.surplus) || 0);
         }
         if (it.laid !== undefined) cutting.getRange("E" + r).setValue(asBool_(it.laid));
@@ -1929,7 +2041,9 @@ function handleFinishCutting(ss, json, callback, fromPost) {
         cutting.getRange("F" + rr).setValue(true);
       }
     }
+    SpreadsheetApp.flush();
     saveCuttingState_(cutting, memory, dateText, tz);
+    SpreadsheetApp.flush();
 
     var names = cutting.getRange("A3:A48").getValues();
     var stateEG = cutting.getRange("C3:G48").getValues();
@@ -1944,6 +2058,7 @@ function handleFinishCutting(ss, json, callback, fromPost) {
         row: rowNum,
         name: names[i][0] == null ? "" : String(names[i][0]).trim(),
         dry: dry,
+        unit: /шт/i.test(String(names[i][0] || "")) ? "шт" : "гр",
         done: asBool_(st[3]),
         laid: asBool_(st[2]),
         outNext: asBool_(st[4]),
@@ -1955,7 +2070,8 @@ function handleFinishCutting(ss, json, callback, fromPost) {
       dateText: dateText,
       elapsedMs: elapsed,
       finishedAt: new Date().toISOString(),
-      items: summaryItems
+      items: summaryItems,
+      count: summaryItems.length
     });
 
     if (missing.length) {
@@ -1970,6 +2086,7 @@ function handleFinishCutting(ss, json, callback, fromPost) {
       status: "success",
       ready: ready.length,
       missing: missing.length,
+      savedFlags: snapshot.length,
       completion: getCuttingCompletion_(dateText),
       session: getCuttingSession_()
     };
