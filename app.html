@@ -404,9 +404,7 @@
       width: 100%; height: 100%;
       object-fit: contain;
       background: transparent;
-      /* чёрный/тёмный фон гифки «растворяется» на тёмном UI */
-      mix-blend-mode: screen;
-      filter: contrast(1.05) saturate(1.1);
+      filter: drop-shadow(0 8px 18px rgba(255, 60, 120, 0.35));
     }
     .load-dance-label {
       font-size: 14px; font-weight: 600; color: #ff9f0a; letter-spacing: 0.2px;
@@ -518,7 +516,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.6</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.7</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -704,7 +702,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4.6";
+    const APP_VERSION = "v7.4.7";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1430,7 +1428,8 @@
     function loadingDanceHtml(label) {
       return '<div class="load-dance" aria-busy="true">' +
         '<div class="load-dance-stage">' +
-          '<img class="load-dance-img" src="assets/loading-dance.gif" alt="" draggable="false">' +
+          '<img class="load-dance-img" src="assets/loading-dance.webp" alt="" draggable="false" ' +
+            'onerror="this.onerror=null;this.src=\'assets/loading-dance.gif\'">' +
         '</div>' +
         '<div class="load-dance-label">' + escapeHtml(label || "Загружаю…") + "</div>" +
         '<div class="load-dance-sub">танцует, пока считаем день</div></div>';
