@@ -66,11 +66,14 @@
     .nav-tabs {
       display: flex; gap: 6px; margin-bottom: 16px; background: #1c1c1e;
       padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); overflow-x: auto;
+      position: sticky; top: 0; z-index: 300;
     }
     .tab-link {
       flex: 1 0 auto; min-width: 72px; text-align: center; background: none; border: none;
       color: var(--text-muted); padding: 10px 8px; font-size: 12px; font-weight: 600;
       cursor: pointer; border-radius: 8px;
+      position: relative; z-index: 301; -webkit-user-select: none; user-select: none;
+      touch-action: manipulation;
     }
     .tab-link.active { background: var(--accent-color); color: #fff; }
     .section-title {
@@ -470,13 +473,13 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.3</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.3.1</div>
 
-    <div class="nav-tabs">
-      <button class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
-      <button class="tab-link" data-screen="clientsScreen" onclick="switchTab('clientsScreen')">Неделя</button>
-      <button class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
-      <button class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
+    <div class="nav-tabs" id="navTabs">
+      <button type="button" class="tab-link active" data-screen="orderScreen">Заказ</button>
+      <button type="button" class="tab-link" data-screen="clientsScreen">Неделя</button>
+      <button type="button" class="tab-link" data-screen="cuttingScreen">Нарезка</button>
+      <button type="button" class="tab-link" data-screen="courierScreen">Курьер</button>
     </div>
 
     <!-- МЕНЕДЖЕР: ПРИЁМ -->
@@ -656,7 +659,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.3";
+    const APP_VERSION = "v7.3.1";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1064,10 +1067,25 @@
       if (first) switchTab(first);
     }
 
+    function clearBlockingOverlays() {
+      try {
+        var yr = document.getElementById("yandexRouteOverlay");
+        if (yr) yr.remove();
+        var tyan = document.getElementById("fxTyanOverlay");
+        if (tyan) tyan.remove();
+        document.querySelectorAll(".fx-burst").forEach(function (el) { el.remove(); });
+        var modal = document.getElementById("modalOverlay");
+        if (modal) modal.classList.remove("open");
+      } catch (e) {}
+      recoverUiFocus();
+    }
+
     function switchTab(screenId) {
+      clearBlockingOverlays();
       document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
       document.querySelectorAll(".tab-link").forEach(el => el.classList.toggle("active", el.dataset.screen === screenId));
-      document.getElementById(screenId).classList.add("active");
+      var screen = document.getElementById(screenId);
+      if (screen) screen.classList.add("active");
       if (screenId === "orderScreen" && document.getElementById("isEditMode").value === "false") {
         document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
         document.getElementById("btnMainSave").innerText = "Сохранить заказ";
@@ -1078,6 +1096,16 @@
         stopCuttingPoll();
       }
     }
+
+    // Надёжная привязка вкладок (на случай если inline onclick залип в WebView)
+    document.querySelectorAll(".tab-link").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var id = btn.getAttribute("data-screen");
+        if (id) switchTab(id);
+      }, { passive: false });
+    });
 
     function unitForItem(cat, main) {
       if (cat === "chew") return "шт";
@@ -3402,25 +3430,35 @@
       document.body.appendChild(wrap);
       dismissKeyboard();
 
-      document.getElementById("yrClose").onclick = function () { wrap.remove(); };
-      document.getElementById("yrOpenApp").onclick = function () {
-        // Сначала приложение Карт с тем же порядком, запасной — веб
-        const appUrl = buildYandexMapsAppUrl(pts);
-        const webUrl = buildYandexRouteUrl(pts);
-        openExternalLink(appUrl);
-        setTimeout(function () { openExternalLink(webUrl); }, 600);
-        showToast("Порядок как в мини-аппе");
-      };
-      document.getElementById("yrOpenNavi").onclick = function () {
-        const navi = buildYandexNaviUrl(pts);
-        if (!navi) {
-          showToast("Нужны координаты всех точек — соберите маршрут ещё раз");
-          openExternalLink(buildYandexRouteUrl(pts));
-          return;
-        }
-        openExternalLink(navi);
-        showToast("Навигатор · порядок зафиксирован");
-      };
+      function closeYr() {
+        try { wrap.remove(); } catch (e) {}
+        recoverUiFocus();
+      }
+      var btnClose = document.getElementById("yrClose");
+      var btnApp = document.getElementById("yrOpenApp");
+      var btnNavi = document.getElementById("yrOpenNavi");
+      if (btnClose) btnClose.onclick = closeYr;
+      if (btnApp) {
+        btnApp.onclick = function () {
+          const appUrl = buildYandexMapsAppUrl(pts);
+          const webUrl = buildYandexRouteUrl(pts);
+          openExternalLink(appUrl);
+          setTimeout(function () { openExternalLink(webUrl); }, 600);
+          showToast("Порядок как в мини-аппе");
+        };
+      }
+      if (btnNavi) {
+        btnNavi.onclick = function () {
+          const navi = buildYandexNaviUrl(pts);
+          if (!navi) {
+            showToast("Нужны координаты всех точек — соберите маршрут ещё раз");
+            openExternalLink(buildYandexRouteUrl(pts));
+            return;
+          }
+          openExternalLink(navi);
+          showToast("Навигатор · порядок зафиксирован");
+        };
+      }
     }
 
     async function openRouteInYandex(routeIndex) {
@@ -3803,13 +3841,13 @@
       openAllInYandex(points);
     }
 
-    loadDepotAddress();
-    registerMeAsCourier();
-    buildTimeWheels();
-    renderBasket();
-    applyRoleTabs();
-    applyTelegramSafeArea();
-    recoverUiFocus();
+    try { loadDepotAddress(); } catch (e) {}
+    try { registerMeAsCourier(); } catch (e) {}
+    try { buildTimeWheels(); } catch (e) {}
+    try { renderBasket(); } catch (e) {}
+    try { applyRoleTabs(); } catch (e) {}
+    try { applyTelegramSafeArea(); } catch (e) {}
+    clearBlockingOverlays();
   </script>
 </body>
 </html>
