@@ -571,8 +571,19 @@ function doGet(e) {
   if (action === "ensureDayMaterialized") {
     return handleEnsureDayMaterialized({
       date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
-      deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : ""
+      deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : "",
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
+      onlyMissing: e.parameter.onlyMissing
     }, callback, false);
+  }
+  if (action === "materializeWeek") {
+    return handleMaterializeWeek({
+      onlyMissing: e.parameter.onlyMissing,
+      includeFuture: e.parameter.includeFuture
+    }, callback, false);
+  }
+  if (action === "weekPullStatus") {
+    return handleWeekPullStatus({}, callback, false);
   }
   if (action === "setupBookingTriggers") {
     return handleSetupBookingTriggers(callback, false);
@@ -660,6 +671,12 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "ensureDayMaterialized") {
     return handleEnsureDayMaterialized(json, callback, fromPost);
+  }
+  if (action === "materializeWeek") {
+    return handleMaterializeWeek(json, callback, fromPost);
+  }
+  if (action === "weekPullStatus") {
+    return handleWeekPullStatus(json, callback, fromPost);
   }
   if (action === "setupBookingTriggers") {
     return handleSetupBookingTriggers(callback, fromPost);
@@ -3047,6 +3064,17 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
   var done = 0;
   var updated = 0;
   var forceClient = opts.forceClient ? String(opts.forceClient).trim().toUpperCase() : "";
+  var onlyMissing = !!(opts.onlyMissing === true || opts.onlyMissing === "1" || opts.onlyMissing === 1 || opts.onlyMissing === "true");
+  var alreadyInWeek = {};
+  if (onlyMissing) {
+    try {
+      var weekData = getClientsData_(ss, dayName);
+      (weekData.clients || []).forEach(function (cl) {
+        var n = String(cl.name || "").trim().toUpperCase();
+        if (n) alreadyInWeek[n] = true;
+      });
+    } catch (eMiss) {}
+  }
 
   for (var i = 0; i < all.length; i++) {
     var b = all[i];
@@ -3054,6 +3082,7 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
     var bd = parseFlexibleDate_(b.date, tz);
     if (!bd || dateKey_(bd, tz) !== dateStr) continue;
     if (forceClient && String(b.client).trim().toUpperCase() !== forceClient) continue;
+    if (onlyMissing && alreadyInWeek[String(b.client).trim().toUpperCase()]) continue;
 
     var res = writeBasketToDayColumn_(ss, dayName, b.client, b.address, b.note, b.basket);
     if (res.ok) {
@@ -3062,21 +3091,134 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
       sh.getRange(b.rowIndex, 9).setValue("pulled");
       sh.getRange(b.rowIndex, 10).setValue(dayName);
       sh.getRange(b.rowIndex, 12).setValue(new Date());
+      alreadyInWeek[String(b.client).trim().toUpperCase()] = true;
     }
   }
-  return { ok: true, dayName: dayName, date: dateStr, count: done, updated: updated, crm: crmSync };
+  return { ok: true, dayName: dayName, date: dateStr, count: done, updated: updated, onlyMissing: onlyMissing, crm: crmSync };
 }
 
 function handleEnsureDayMaterialized(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var deliveryDate = parseFlexibleDate_(json.deliveryDate || json.date, ss.getSpreadsheetTimeZone());
+  var tz = ss.getSpreadsheetTimeZone();
+  var deliveryDate = parseFlexibleDate_(json.deliveryDate || json.date, tz);
+  if (!deliveryDate && json.day) {
+    deliveryDate = getDayDate_(ss, json.day);
+    if (deliveryDate && !(deliveryDate instanceof Date)) {
+      deliveryDate = parseFlexibleDate_(deliveryDate, tz);
+    }
+  }
   if (!deliveryDate) {
     var now = new Date();
     deliveryDate = addDaysDate_(new Date(now.getFullYear(), now.getMonth(), now.getDate()), 1);
   }
-  var result = materializeDeliveryDate_(ss, deliveryDate, {});
+  var onlyMissing = !(json.onlyMissing === false || json.onlyMissing === "0" || json.onlyMissing === 0 || json.onlyMissing === "false");
+  var result = materializeDeliveryDate_(ss, deliveryDate, { onlyMissing: onlyMissing });
   var out = { status: result.ok ? "success" : "error", result: result };
   return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
+}
+
+/** Даты Пн–Пт текущей операционной недели из «Прием заказов». */
+function getWeekDayDates_(ss) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var manager = ss.getSheetByName("Прием заказов");
+  var names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
+  var out = [];
+  if (!manager) return out;
+  for (var i = 0; i < 5; i++) {
+    var raw = manager.getRange(MANAGER_DATE_CELLS[i]).getValue();
+    var d = parseFlexibleDate_(raw, tz);
+    out.push({
+      day: names[i],
+      date: d ? dateKey_(d, tz) : "",
+      dateObj: d || null
+    });
+  }
+  return out;
+}
+
+function materializeCurrentWeek_(ss, opts) {
+  opts = opts || {};
+  var onlyMissing = !(opts.onlyMissing === false || opts.onlyMissing === "0" || opts.onlyMissing === 0 || opts.onlyMissing === "false");
+  var days = getWeekDayDates_(ss);
+  var results = [];
+  var total = 0;
+  var weekKey = "";
+  for (var i = 0; i < days.length; i++) {
+    if (!weekKey && days[i].date) weekKey = days[i].date;
+    if (!days[i].dateObj) {
+      results.push({ day: days[i].day, ok: false, message: "no_date" });
+      continue;
+    }
+    var r = materializeDeliveryDate_(ss, days[i].dateObj, { onlyMissing: onlyMissing });
+    total += Number(r.count) || 0;
+    results.push(r);
+  }
+  if (opts.includeFuture === true || opts.includeFuture === "1" || opts.includeFuture === "true") {
+    var future = ss.getSheetByName("Будущая неделя");
+    if (future) {
+      var tz = ss.getSpreadsheetTimeZone();
+      var fd = parseFlexibleDate_(future.getRange("A1").getValue(), tz);
+      if (fd) {
+        var fr = materializeDeliveryDate_(ss, fd, { onlyMissing: onlyMissing });
+        total += Number(fr.count) || 0;
+        results.push(fr);
+      }
+    }
+  }
+  return { ok: true, weekKey: weekKey, totalAdded: total, onlyMissing: onlyMissing, days: results };
+}
+
+function handleMaterializeWeek(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var result = materializeCurrentWeek_(ss, json || {});
+  var out = { status: "success", result: result };
+  return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
+}
+
+function handleWeekPullStatus(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var days = getWeekDayDates_(ss);
+  var crmSs = null;
+  try { crmSs = getCrmSpreadsheet_(); } catch (e) {}
+  var weekKey = "";
+  var list = [];
+  var monthPeople = 0;
+  var weekPeople = 0;
+  var missingEstimate = 0;
+  for (var i = 0; i < days.length; i++) {
+    if (!weekKey && days[i].date) weekKey = days[i].date;
+    var inWeek = 0;
+    try {
+      var wd = getClientsData_(ss, days[i].day);
+      inWeek = (wd.clients || []).length;
+    } catch (e2) {}
+    weekPeople += inWeek;
+    var inMonth = 0;
+    if (crmSs && days[i].dateObj) {
+      try { inMonth = readCrmClientsForDate_(crmSs, days[i].dateObj).length; } catch (e3) {}
+    }
+    monthPeople += inMonth;
+    var miss = Math.max(0, inMonth - inWeek);
+    missingEstimate += miss;
+    list.push({
+      day: days[i].day,
+      date: days[i].date,
+      inWeek: inWeek,
+      inMonth: inMonth,
+      maybeMissing: miss
+    });
+  }
+  var ok = {
+    status: "success",
+    weekKey: weekKey,
+    days: list,
+    weekPeople: weekPeople,
+    monthPeople: monthPeople,
+    maybeMissing: missingEstimate,
+    suggestPull: !!(weekKey && monthPeople > 0 && (weekPeople === 0 || missingEstimate > 0))
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
 function notifyCuttersVolumeIncrease_(deliveryDate, client, lines) {

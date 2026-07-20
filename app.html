@@ -589,7 +589,7 @@
     <div class="load-dance-label" id="saveLoadLabel">Сохраняю заказ…</div>
   </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.7</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.8</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -727,6 +727,11 @@
           </select>
         </div>
         <button type="button" class="btn-action btn-orange" onclick="loadClientsForDay()">Показать</button>
+        <div class="batch-bar-row" style="margin-top:10px;">
+          <button type="button" class="btn-action btn-blue" style="flex:1;margin:0;padding:10px;" onclick="pullWeekFromMonth()">Подтянуть неделю из месяца</button>
+          <button type="button" class="btn-action btn-purple" style="flex:1;margin:0;padding:10px;" onclick="topUpDayFromMonth()">Доукомплектовать день</button>
+        </div>
+        <div class="field-hint" style="margin-top:8px;">Из листов месяцев (Июль…) + составы ПП/АФК/БП. Уже стоящих в неделе не затирает — только дописывает новых.</div>
       </div>
       <div id="totalDaySummaryContainer"></div>
       <div class="section-title">Клиенты</div>
@@ -879,7 +884,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.6.7";
+    const APP_VERSION = "v7.6.8";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -4659,6 +4664,7 @@
           APP_ROLE = "all";
           weekTabUnlocked = true;
           applyRoleTabs();
+          maybeAskWeekPullFromMonth();
           return;
         }
         var res = await apiGet({
@@ -4671,6 +4677,7 @@
           APP_ROLE = "all";
           weekTabUnlocked = true;
           applyRoleTabs();
+          maybeAskWeekPullFromMonth();
           return;
         }
         APP_ROLE = res.role || "none";
@@ -4695,12 +4702,89 @@
         }
         hideAccessGate();
         applyRoleTabs();
+        maybeAskWeekPullFromMonth();
       } catch (e) {
         APP_ROLE = "all";
         weekTabUnlocked = true;
         applyRoleTabs();
+        maybeAskWeekPullFromMonth();
       }
     }
+
+    const WEEK_PULL_LS = "superboyna_week_pull_";
+
+    async function maybeAskWeekPullFromMonth() {
+      if (!(APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all")) return;
+      try {
+        const st = await apiGet({ action: "weekPullStatus" });
+        if (!st || st.status !== "success" || !st.weekKey) return;
+        const key = WEEK_PULL_LS + st.weekKey;
+        if (localStorage.getItem(key)) return;
+        if (!st.suggestPull && !(st.monthPeople > 0 && st.weekPeople === 0)) return;
+        const msg =
+          "На эту неделю в листах месяцев есть записи (" + (st.monthPeople || 0) +
+          "), в «Прием заказов» сейчас " + (st.weekPeople || 0) +
+          ".\n\nПодтянуть заказы из месяца на Пн–Пт? Уже стоящих клиентов не затрём — только допишем недостающих.";
+        const ok = await uiConfirmAsync(msg);
+        localStorage.setItem(key, ok ? "pulled" : "skipped");
+        if (!ok) {
+          showToast("Ок — позже можно в Просмотре");
+          return;
+        }
+        await runMaterializeWeek(true);
+      } catch (e) {}
+    }
+
+    async function runMaterializeWeek(quiet) {
+      try {
+        if (!quiet) showToast("Подтягиваю неделю из месяца…");
+        const res = await apiGet({ action: "materializeWeek", onlyMissing: "1" });
+        const added = res && res.result ? (res.result.totalAdded || 0) : 0;
+        const wk = res && res.result ? res.result.weekKey : "";
+        if (wk) localStorage.setItem(WEEK_PULL_LS + wk, "pulled");
+        showToast(added ? ("Добавлено позиций/клиентов: " + added) : "Новых не нашлось (уже всё на месте?)");
+        const day = document.getElementById("viewDaySelect") && document.getElementById("viewDaySelect").value;
+        if (day) await loadClientsForDay();
+        return res;
+      } catch (err) {
+        await uiAlertAsync(err.message || String(err));
+      }
+    }
+
+    async function pullWeekFromMonth() {
+      const ok = await uiConfirmAsync(
+        "Подтянуть из листов месяцев всех, кого ещё нет в текущей неделе (Пн–Пт)?\nУже стоящих не затираем."
+      );
+      if (!ok) return;
+      await runMaterializeWeek(false);
+    }
+    window.pullWeekFromMonth = pullWeekFromMonth;
+
+    async function topUpDayFromMonth() {
+      const day = document.getElementById("viewDaySelect").value;
+      const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
+      if (!day && !dateStr) {
+        await uiAlertAsync("Сначала укажите день или дату");
+        return;
+      }
+      const ok = await uiConfirmAsync(
+        "Доукомплектовать " + (day || dateStr) + " из месяца?\nДобавим только тех, кого ещё нет в этом дне."
+      );
+      if (!ok) return;
+      try {
+        showToast("Доукомплектовываю…");
+        const params = { action: "ensureDayMaterialized", onlyMissing: "1" };
+        if (dateStr) params.date = dateStr;
+        if (day) params.day = day;
+        const res = await apiGet(params);
+        const n = res && res.result ? (res.result.count || 0) : 0;
+        showToast(n ? ("Добавлено: " + n) : "Новых нет");
+        await loadClientsForDay();
+      } catch (err) {
+        await uiAlertAsync(err.message || String(err));
+      }
+    }
+    window.topUpDayFromMonth = topUpDayFromMonth;
 
     async function doRequestAccess() {
       var u = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
