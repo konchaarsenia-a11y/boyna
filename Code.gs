@@ -543,6 +543,22 @@ function doGet(e) {
   if (action === "telegramStatus") {
     return handleTelegramStatus(callback, false);
   }
+  if (action === "listBookings") {
+    return handleListBookings({
+      date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
+      from: e.parameter.from ? decodeURIComponent(e.parameter.from) : "",
+      to: e.parameter.to ? decodeURIComponent(e.parameter.to) : ""
+    }, callback, false);
+  }
+  if (action === "ensureDayMaterialized") {
+    return handleEnsureDayMaterialized({
+      date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
+      deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : ""
+    }, callback, false);
+  }
+  if (action === "setupBookingTriggers") {
+    return handleSetupBookingTriggers(callback, false);
+  }
 
   // delete / move доступны и через GET (JSONP из mini-app)
   if (action === "deleteClient" || action === "moveClient") {
@@ -566,6 +582,18 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "saveOrder") {
     return handleSaveOrder(ss, json, callback);
+  }
+  if (action === "saveBooking") {
+    return handleSaveBooking(ss, json, callback, fromPost);
+  }
+  if (action === "listBookings") {
+    return handleListBookings(json, callback, fromPost);
+  }
+  if (action === "ensureDayMaterialized") {
+    return handleEnsureDayMaterialized(json, callback, fromPost);
+  }
+  if (action === "setupBookingTriggers") {
+    return handleSetupBookingTriggers(callback, fromPost);
   }
   if (action === "updateCutting") {
     return handleUpdateCutting(ss, json, callback, fromPost);
@@ -2449,3 +2477,686 @@ function handleDeficitCallback_(cq) {
   telegramAnswerCallback_(cq.id, "Уже закрыто или не найдено");
 }
 
+
+
+/* ========== Брони заказов (дата) + материализация D-1 ========== */
+
+var BOOKINGS_HEADERS_ = [
+  "id", "date", "client", "subId", "address", "note", "basketJson",
+  "source", "status", "dayName", "updatedAt", "pulledAt"
+];
+
+function getBookingsSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Брони_Заказов");
+  if (!sh) {
+    sh = ss.insertSheet("Брони_Заказов");
+    sh.getRange(1, 1, 1, BOOKINGS_HEADERS_.length).setValues([BOOKINGS_HEADERS_]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function parseFlexibleDate_(val, tz) {
+  if (!val) return null;
+  if (Object.prototype.toString.call(val) === "[object Date]" && !isNaN(val.getTime())) {
+    return new Date(val.getFullYear(), val.getMonth(), val.getDate());
+  }
+  var s = String(val).trim();
+  var m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  var m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m2) return new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return null;
+}
+
+function dateKey_(d, tz) {
+  if (!d) return "";
+  return Utilities.formatDate(d, tz || SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), "dd.MM.yyyy");
+}
+
+function isoDateKey_(d, tz) {
+  if (!d) return "";
+  return Utilities.formatDate(d, tz || SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+}
+
+function findDayNameForDate_(ss, deliveryDate) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var want = dateKey_(deliveryDate, tz);
+  var manager = ss.getSheetByName("Прием заказов");
+  if (!manager) return null;
+  var names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
+  for (var i = 0; i < 5; i++) {
+    var cell = manager.getRange(MANAGER_DATE_CELLS[i]).getValue();
+    if (formatSheetDate(cell, tz) === want) return names[i];
+  }
+  var future = ss.getSheetByName("Будущая неделя");
+  if (future && formatSheetDate(future.getRange("A1").getValue(), tz) === want) {
+    return "Будущая неделя";
+  }
+  return null;
+}
+
+function addDaysDate_(d, n) {
+  var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+/** Окно «поздно»: меньше 12ч до конца дня подготовки D−1 (= с 12:00 D−1 и далее). */
+function isLateChangeForDelivery_(deliveryDate, now) {
+  // конец дня подготовки = полночь начала дня доставки D
+  var prepDayEnd = addDaysDate_(deliveryDate, 0);
+  var windowStart = new Date(prepDayEnd.getTime() - 12 * 60 * 60 * 1000);
+  return now.getTime() >= windowStart.getTime();
+}
+
+function basketTotalsMap_(basket) {
+  var map = {};
+  (basket || []).forEach(function (it) {
+    var name = String(it.name || it.main || "").trim();
+    var sub = String(it.sub || "").trim();
+    var val = Number(it.val != null ? it.val : it.value) || 0;
+    if (!name || val <= 0) return;
+    var key = name + (sub ? " / " + sub : "");
+    map[key] = (map[key] || 0) + val;
+  });
+  return map;
+}
+
+function diffBasketIncrease_(oldBasket, newBasket) {
+  var a = basketTotalsMap_(oldBasket);
+  var b = basketTotalsMap_(newBasket);
+  var lines = [];
+  for (var k in b) {
+    if (!b.hasOwnProperty(k)) continue;
+    var prev = a[k] || 0;
+    var next = b[k] || 0;
+    if (next > prev) {
+      var unit = /шт/i.test(k) ? "шт" : "г";
+      lines.push("+" + (next - prev) + " " + unit + " · " + k);
+    }
+  }
+  return lines;
+}
+
+function readAllBookings_() {
+  var sh = getBookingsSheet_();
+  var data = sh.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (!row[0] && !row[1] && !row[2]) continue;
+    var basket = [];
+    try { basket = JSON.parse(String(row[6] || "[]")); } catch (e) { basket = []; }
+    out.push({
+      rowIndex: i + 1,
+      id: String(row[0] || ""),
+      date: row[1],
+      client: String(row[2] || ""),
+      subId: String(row[3] || ""),
+      address: String(row[4] || ""),
+      note: String(row[5] || ""),
+      basket: basket,
+      source: String(row[7] || "retail"),
+      status: String(row[8] || "planned"),
+      dayName: String(row[9] || ""),
+      updatedAt: row[10],
+      pulledAt: row[11]
+    });
+  }
+  return out;
+}
+
+function handleListBookings(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var fromD = parseFlexibleDate_(json.from || json.date, tz);
+  var toD = parseFlexibleDate_(json.to || json.date, tz);
+  var all = readAllBookings_();
+  var list = all.filter(function (b) {
+    var bd = parseFlexibleDate_(b.date, tz);
+    if (!bd) return false;
+    if (fromD && bd < fromD) return false;
+    if (toD && bd > toD) return false;
+    return true;
+  }).map(function (b) {
+    return {
+      id: b.id,
+      date: dateKey_(parseFlexibleDate_(b.date, tz), tz),
+      dateIso: isoDateKey_(parseFlexibleDate_(b.date, tz), tz),
+      client: b.client,
+      subId: b.subId,
+      address: b.address,
+      note: b.note,
+      basket: b.basket,
+      source: b.source,
+      status: b.status,
+      dayName: b.dayName
+    };
+  });
+  var ok = { status: "success", bookings: list };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleSaveBooking(ss, json, callback, fromPost) {
+  if (fromPost === undefined) fromPost = true;
+  var tz = ss.getSpreadsheetTimeZone();
+  var deliveryDate = parseFlexibleDate_(json.date || json.deliveryDate, tz);
+  var client = String(json.client || "").trim();
+  if (!deliveryDate || !client) {
+    var bad = { status: "error", message: "need_date_and_client" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var basket = json.basket || [];
+  var note = stripGeoTagsFromNote_(json.note || "");
+  if (json.subId) note = ("[SUB:" + String(json.subId).trim() + "] " + note).trim();
+  var dayName = findDayNameForDate_(ss, deliveryDate) || "";
+  var sh = getBookingsSheet_();
+  var all = readAllBookings_();
+  var dateStr = dateKey_(deliveryDate, tz);
+  var existing = null;
+  for (var i = 0; i < all.length; i++) {
+    var bd = parseFlexibleDate_(all[i].date, tz);
+    if (bd && dateKey_(bd, tz) === dateStr &&
+        String(all[i].client).trim().toUpperCase() === client.toUpperCase() &&
+        String(all[i].status) !== "cancelled") {
+      existing = all[i];
+      break;
+    }
+  }
+
+  var oldBasket = existing ? existing.basket : [];
+  var wasPulled = existing && String(existing.status) === "pulled";
+  var id = existing ? existing.id : ("b" + Date.now() + "_" + Math.floor(Math.random() * 1e5));
+  var now = new Date();
+  var rowVals = [
+    id, dateStr, client,
+    String(json.subId || (existing && existing.subId) || ""),
+    String(json.address != null ? json.address : (existing && existing.address) || ""),
+    note, JSON.stringify(basket),
+    String(json.source || (existing && existing.source) || "retail"),
+    wasPulled ? "pulled" : "planned",
+    dayName, now,
+    wasPulled ? (existing.pulledAt || "") : ""
+  ];
+
+  if (existing) {
+    sh.getRange(existing.rowIndex, 1, 1, BOOKINGS_HEADERS_.length).setValues([rowVals]);
+  } else {
+    sh.appendRow(rowVals);
+  }
+
+  var materializeResult = null;
+  var notifyLines = [];
+  var prepDay = addDaysDate_(deliveryDate, -1);
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (today.getTime() >= prepDay.getTime()) {
+    materializeResult = materializeDeliveryDate_(ss, deliveryDate, { forceClient: client, skipCrm: true });
+    notifyLines = diffBasketIncrease_(oldBasket, basket);
+    if (notifyLines.length && isLateChangeForDelivery_(deliveryDate, now)) {
+      notifyCuttersVolumeIncrease_(deliveryDate, client, notifyLines);
+    }
+    if (json.geo && json.geo.lat != null && dayName) {
+      try {
+        upsertClientGeo_(ss, dayName, client, json.geo.lat, json.geo.lon, json.geo.yandexUrl || "");
+      } catch (eGeo) {}
+    }
+  }
+
+  if (json.alsoSaveOrder && (json.day || dayName)) {
+    try {
+      handleSaveOrder(ss, {
+        day: json.day || dayName, client: client, address: json.address,
+        note: note, basket: basket, geo: json.geo || null
+      }, "cb");
+    } catch (eSave) {}
+  }
+
+  var ok = {
+    status: "success",
+    bookingId: id,
+    date: dateStr,
+    dayName: dayName,
+    materialized: !!(materializeResult && materializeResult.ok),
+    lateNotify: notifyLines.length > 0 && isLateChangeForDelivery_(deliveryDate, now),
+    delta: notifyLines
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function writeBasketToDayColumn_(ss, dayName, client, address, note, basket) {
+  var block = getDayBlock(dayName);
+  if (!block) return { ok: false, message: "bad_day" };
+  var targetSheet = getTargetSheet(ss, block);
+  if (!targetSheet) return { ok: false, message: "no_sheet" };
+  var want = String(client || "").trim().toUpperCase();
+  if (!want) return { ok: false, message: "no_client" };
+
+  var clientCol = -1;
+  var mgrNicks = targetSheet.getRange(block.nick, 3, 1, 15).getValues()[0];
+  for (var i = 0; i < 15; i++) {
+    var mNick = mgrNicks[i] ? mgrNicks[i].toString().trim().toUpperCase() : "";
+    if (mNick === want) { clientCol = i + 3; break; }
+  }
+  if (clientCol === -1) {
+    for (var colIdx = 3; colIdx <= 17; colIdx++) {
+      if (String(targetSheet.getRange(block.nick, colIdx).getValue() || "").trim() === "") {
+        clientCol = colIdx;
+        targetSheet.getRange(block.nick, clientCol).setValue(client);
+        break;
+      }
+    }
+  }
+  if (clientCol === -1) return { ok: false, message: "no_free_columns" };
+
+  targetSheet.getRange(block.start, clientCol, block.note - block.start + 1, 1).clearContent();
+  if (address) targetSheet.getRange(block.addr, clientCol).setValue(address);
+  var cleanNote = stripGeoTagsFromNote_(note || "");
+  if (cleanNote) targetSheet.getRange(block.note, clientCol).setValue(cleanNote);
+
+  var itemsInSheet = targetSheet.getRange(block.start, 1, block.end - block.start + 1, 1).getValues();
+  (basket || []).forEach(function (orderItem) {
+    var rawName = String(orderItem.name || orderItem.main || "").trim();
+    var rawSub = String(orderItem.sub || "").trim();
+    var inputVal = Number(orderItem.val != null ? orderItem.val : orderItem.value) || 0;
+    if (!rawName || inputVal <= 0) return;
+    var targetRowOffset = findSheetRowForItem(itemsInSheet, rawName, rawSub);
+    if (targetRowOffset >= 0) {
+      targetSheet.getRange(block.start + targetRowOffset, clientCol).setValue(inputVal);
+    }
+  });
+  return { ok: true, col: clientCol };
+}
+
+function materializeDeliveryDate_(ss, deliveryDate, opts) {
+  opts = opts || {};
+  var tz = ss.getSpreadsheetTimeZone();
+  var crmSync = null;
+  if (!opts.skipCrm) {
+    try { crmSync = syncCrmIntoBookings_(ss, deliveryDate); } catch (eCrm) {
+      crmSync = { ok: false, message: String(eCrm) };
+    }
+  }
+  var dayName = findDayNameForDate_(ss, deliveryDate);
+  if (!dayName) {
+    return { ok: false, message: "date_not_in_week", date: dateKey_(deliveryDate, tz), crm: crmSync };
+  }
+  var dateStr = dateKey_(deliveryDate, tz);
+  var all = readAllBookings_();
+  var sh = getBookingsSheet_();
+  var done = 0;
+  var updated = 0;
+  var forceClient = opts.forceClient ? String(opts.forceClient).trim().toUpperCase() : "";
+
+  for (var i = 0; i < all.length; i++) {
+    var b = all[i];
+    if (String(b.status) === "cancelled") continue;
+    var bd = parseFlexibleDate_(b.date, tz);
+    if (!bd || dateKey_(bd, tz) !== dateStr) continue;
+    if (forceClient && String(b.client).trim().toUpperCase() !== forceClient) continue;
+
+    var res = writeBasketToDayColumn_(ss, dayName, b.client, b.address, b.note, b.basket);
+    if (res.ok) {
+      done++;
+      if (String(b.status) === "pulled") updated++;
+      sh.getRange(b.rowIndex, 9).setValue("pulled");
+      sh.getRange(b.rowIndex, 10).setValue(dayName);
+      sh.getRange(b.rowIndex, 12).setValue(new Date());
+    }
+  }
+  return { ok: true, dayName: dayName, date: dateStr, count: done, updated: updated, crm: crmSync };
+}
+
+function handleEnsureDayMaterialized(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var deliveryDate = parseFlexibleDate_(json.deliveryDate || json.date, ss.getSpreadsheetTimeZone());
+  if (!deliveryDate) {
+    var now = new Date();
+    deliveryDate = addDaysDate_(new Date(now.getFullYear(), now.getMonth(), now.getDate()), 1);
+  }
+  var result = materializeDeliveryDate_(ss, deliveryDate, {});
+  var out = { status: result.ok ? "success" : "error", result: result };
+  return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
+}
+
+function notifyCuttersVolumeIncrease_(deliveryDate, client, lines) {
+  if (!lines || !lines.length) return;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var text =
+    "WARNING late cut volume increase\n" +
+    "Delivery: " + dateKey_(deliveryDate, tz) + "\n" +
+    "Client: " + client + "\n\n" +
+    lines.join("\n") +
+    "\n\nChange within 12h before prep-day end.";
+  // Russian header for cutters:
+  text =
+    "Срочно: увеличение объёма нарезки\n" +
+    "Доставка: " + dateKey_(deliveryDate, tz) + "\n" +
+    "Клиент: " + client + "\n\n" +
+    lines.join("\n") +
+    "\n\nПравка менее чем за 12ч до конца дня подготовки.";
+  var ids = getCutterNotifyChatIds_();
+  for (var i = 0; i < ids.length; i++) {
+    try { telegramSendText_(ids[i], text); } catch (e) {}
+  }
+  var chat = PropertiesService.getScriptProperties().getProperty("TELEGRAM_CHAT_ID");
+  if (chat) {
+    try { telegramSendText_(chat, text); } catch (e2) {}
+  }
+}
+
+function getCutterNotifyChatIds_() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty("CUTTER_TELEGRAM_IDS") || "";
+  var ids = raw.split(/[,;\s]+/).map(function (s) { return String(s || "").trim(); }).filter(Boolean);
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Доступы");
+    if (sh && sh.getLastRow() > 1) {
+      var data = sh.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        var role = String(data[i][3] || "").toLowerCase();
+        var status = String(data[i][4] || "").toLowerCase();
+        if ((role === "cutter" || role === "owner") && (status === "active" || !status)) {
+          var id = String(data[i][0] || "").trim();
+          if (id && ids.indexOf(id) < 0) ids.push(id);
+        }
+      }
+    }
+  } catch (e) {}
+  return ids;
+}
+
+function morningMaterializeTomorrow() {
+  var now = new Date();
+  var tomorrow = addDaysDate_(new Date(now.getFullYear(), now.getMonth(), now.getDate()), 1);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var result = materializeDeliveryDate_(ss, tomorrow, {});
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function handleSetupBookingTriggers(callback, fromPost) {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "morningMaterializeTomorrow") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger("morningMaterializeTomorrow").timeBased().atHour(7).everyDays(1).create();
+  var ok = { status: "success", trigger: "morningMaterializeTomorrow@07:00" };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function setupBookingTriggersManual() {
+  handleSetupBookingTriggers("cb", true);
+}
+
+/* ========== CRM календарь месяца → Брони_Заказов ========== */
+
+var CRM_SPREADSHEET_ID_DEFAULT_ = "12caHgzEa2f8DkpQilwKCddxrLXVmI0-CBX1Qa-9fWng";
+var CRM_MONTH_NAMES_RU_ = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+];
+
+function getCrmSpreadsheetId_() {
+  var props = PropertiesService.getScriptProperties();
+  return props.getProperty("CRM_SPREADSHEET_ID") || CRM_SPREADSHEET_ID_DEFAULT_;
+}
+
+function getCrmSpreadsheet_() {
+  return SpreadsheetApp.openById(getCrmSpreadsheetId_());
+}
+
+function extractInstagramNick_(raw) {
+  var s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  var m = s.match(/@([A-Za-z0-9._]+)/);
+  if (m) return m[1];
+  var parts = s.split(/\s+/);
+  for (var i = parts.length - 1; i >= 0; i--) {
+    if (/^[A-Za-z0-9._]{3,}$/.test(parts[i]) && /[A-Za-z]/.test(parts[i])) return parts[i];
+  }
+  return s;
+}
+
+function parseCrmCalendarCell_(text) {
+  var lines = String(text || "").split(/\r?\n/).map(function (x) {
+    return String(x || "").trim();
+  }).filter(function (x) { return x; });
+  if (!lines.length) return null;
+  if (/^\d+$/.test(lines[0]) && lines.length === 1) return null;
+  var nickLine = lines[0];
+  if (/^(варка|только|написать)/i.test(nickLine) && lines.length < 2) return null;
+  var nick = extractInstagramNick_(nickLine);
+  if (!nick || nick.length < 2) return null;
+  var segment = "";
+  var address = "";
+  var phone = "";
+  var noteBits = [];
+  for (var i = 1; i < lines.length; i++) {
+    var ln = lines[i];
+    var segM = ln.match(/\b(АФК|ПП|БП|Р)\b/i);
+    if (segM && !segment) {
+      segment = segM[1].toUpperCase();
+      var rest = ln.replace(/\b(АФК|ПП|БП|Р)\b/i, "").trim();
+      if (rest) noteBits.push(rest);
+      continue;
+    }
+    if (/^\+?\d[\d\s\-()]{6,}/.test(ln) || /^\d{9,}$/.test(ln.replace(/\D/g, "")) && ln.replace(/\D/g, "").length >= 9) {
+      phone = ln;
+      continue;
+    }
+    if (!address && /[а-яА-Яa-zA-Z]/.test(ln) && !/^\d+\s*$/.test(ln)) {
+      address = ln;
+      continue;
+    }
+    noteBits.push(ln);
+  }
+  return {
+    client: nick,
+    address: address,
+    phone: phone,
+    segment: segment || "ПП",
+    note: noteBits.join("; ")
+  };
+}
+
+function readCrmClientsForDate_(crmSs, deliveryDate) {
+  var monthName = CRM_MONTH_NAMES_RU_[deliveryDate.getMonth()];
+  var sh = crmSs.getSheetByName(monthName);
+  if (!sh) return [];
+  var dayNum = deliveryDate.getDate();
+  var lastCol = Math.max(1, sh.getLastColumn());
+  var lastRow = Math.max(1, sh.getLastRow());
+  if (lastRow < 2) return [];
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var col = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var hv = headers[c];
+    var n = (hv instanceof Date) ? hv.getDate() : Number(hv);
+    if (n === dayNum) { col = c + 1; break; }
+  }
+  if (col < 0) return [];
+  var values = sh.getRange(2, col, lastRow - 1, 1).getValues();
+  var out = [];
+  var seen = {};
+  for (var r = 0; r < values.length; r++) {
+    var parsed = parseCrmCalendarCell_(values[r][0]);
+    if (!parsed) continue;
+    var key = String(parsed.client).toUpperCase();
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(parsed);
+  }
+  return out;
+}
+
+function mapCrmHeaderToItem_(header) {
+  var h = String(header || "").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!h || h.indexOf("ЛЮДИ") === 0 || h.indexOf("ID") === 0 || h.indexOf("КОЛИЧ") === 0) return null;
+  if (/СТАТУС|ПОЖЕЛАН|ЗАМЕТК|СЕБЕСТОИМ|СУММА|ЦЕНА|ИТОГО/.test(h)) return null;
+
+  var sub = "";
+  if (/МЕЛК/.test(h)) sub = "Мелкое";
+  else if (/СРЕДН/.test(h)) sub = "Среднее";
+  else if (/БОЛЬШ|КРУПН/.test(h)) sub = /РУБЕЦ/.test(h) ? "Крупное" : "Большое";
+  else if (/ЦЕЛ/.test(h)) sub = "Целое";
+
+  var name = "";
+  if (/БАРАНЬ?Е?\s*Л[ЕЁ]ГК/.test(h)) name = "БАРАНЬЕ ЛЁГКОЕ";
+  else if (/Л[ЕЁ]ГК/.test(h)) name = "ЛЁГКОЕ";
+  else if (/СЕРДЦ/.test(h)) name = "СЕРДЦЕ";
+  else if (/ПОЧК/.test(h)) name = "ПОЧКИ";
+  else if (/РУБЕЦ/.test(h)) name = "РУБЕЦ Т";
+  else if (/ШЕЯ|ТРАХЕ|УХО|УШИ|НОС|ХВОСТ|СУСТАВ|КОЛЕНО|КОПЫТ|РОГ|СУХОЖИЛ|ПОЗВОН|РЁБР|РЕБР|МОРД|ГУБА|ПЕЧЕН|СЕЛЕЗ|ВЫМЯ|ПЕНИС|БЫЧ/.test(h)) {
+    // жевалки / шт — берём исходный заголовок укороченно
+    name = String(header || "").replace(/\s+/g, " ").trim();
+    sub = "";
+    return { name: name, sub: "", cat: "chews", grams: false };
+  } else {
+    return null;
+  }
+  return { name: name, sub: sub, cat: "dressura", grams: true };
+}
+
+function basketFromSubscriberRow_(headers, row) {
+  var basket = [];
+  for (var c = 6; c < headers.length && c < row.length; c++) {
+    var map = mapCrmHeaderToItem_(headers[c]);
+    if (!map) continue;
+    var raw = row[c];
+    if (raw === "" || raw == null) continue;
+    var num = Number(String(raw).replace(",", "."));
+    if (!num || num <= 0) continue;
+    var val = map.grams ? Math.round(num * 1000) : Math.round(num);
+    if (val <= 0) continue;
+    basket.push({
+      cat: map.cat,
+      main: map.name,
+      name: map.name,
+      sub: map.sub,
+      value: val,
+      val: val
+    });
+  }
+  return basket;
+}
+
+function findSubscriberBasket_(crmSs, nick, preferredSegment) {
+  var sheets = [];
+  var seg = String(preferredSegment || "").toUpperCase();
+  if (seg === "АФК" || seg === "AFK") sheets = ["АФК", "ПП", "БП"];
+  else if (seg === "БП" || seg === "BP") sheets = ["БП", "ПП", "АФК"];
+  else sheets = ["ПП", "АФК", "БП"];
+
+  var want = extractInstagramNick_(nick).toUpperCase();
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = crmSs.getSheetByName(sheets[s]);
+    if (!sh || sh.getLastRow() < 3) continue;
+    var data = sh.getDataRange().getValues();
+    var headers = data[0];
+    for (var r = 2; r < data.length; r++) {
+      var cell = String(data[r][0] || "");
+      if (!cell.trim()) continue;
+      var nickCell = extractInstagramNick_(cell).toUpperCase();
+      if (!nickCell) continue;
+      if (nickCell === want || cell.toUpperCase().indexOf(want) >= 0 || want.indexOf(nickCell) >= 0) {
+        var basket = basketFromSubscriberRow_(headers, data[r]);
+        var subId = String(data[r][1] || "").trim();
+        var wishes = String(data[r][4] || "").trim();
+        return { basket: basket, subId: subId, wishes: wishes, sheet: sheets[s] };
+      }
+    }
+  }
+  return { basket: [], subId: "", wishes: "", sheet: "" };
+}
+
+function lookupContactAddress_(crmSs, nick) {
+  var sh = crmSs.getSheetByName("Контакты");
+  if (!sh || sh.getLastRow() < 2) return { address: "", note: "" };
+  var want = extractInstagramNick_(nick).toUpperCase();
+  var data = sh.getDataRange().getValues();
+  for (var r = 1; r < data.length; r++) {
+    var cell = String(data[r][0] || "");
+    var nickCell = extractInstagramNick_(cell).toUpperCase();
+    if (nickCell === want || cell.toUpperCase().indexOf(want) >= 0) {
+      return {
+        address: String(data[r][3] || "").trim(),
+        note: String(data[r][6] || "").trim()
+      };
+    }
+  }
+  return { address: "", note: "" };
+}
+
+/**
+ * Подтягивает клиентов из CRM-календаря месяца в Брони_Заказов.
+ * Не затирает розничные брони (source=retail) и не пустые правки менеджера.
+ */
+function syncCrmIntoBookings_(ss, deliveryDate) {
+  var crmSs;
+  try { crmSs = getCrmSpreadsheet_(); } catch (eOpen) {
+    return { ok: false, message: "crm_open_failed", detail: String(eOpen) };
+  }
+  var tz = ss.getSpreadsheetTimeZone();
+  var dateStr = dateKey_(deliveryDate, tz);
+  var clients = readCrmClientsForDate_(crmSs, deliveryDate);
+  var sh = getBookingsSheet_();
+  var all = readAllBookings_();
+  var added = 0;
+  var skipped = 0;
+
+  for (var i = 0; i < clients.length; i++) {
+    var c = clients[i];
+    var existing = null;
+    for (var j = 0; j < all.length; j++) {
+      var bd = parseFlexibleDate_(all[j].date, tz);
+      if (bd && dateKey_(bd, tz) === dateStr &&
+          String(all[j].client).trim().toUpperCase() === String(c.client).trim().toUpperCase() &&
+          String(all[j].status) !== "cancelled") {
+        existing = all[j];
+        break;
+      }
+    }
+    if (existing && String(existing.source) === "retail") {
+      skipped++;
+      continue;
+    }
+    if (existing && existing.basket && existing.basket.length) {
+      skipped++;
+      continue;
+    }
+
+    var sub = findSubscriberBasket_(crmSs, c.client, c.segment);
+    var contact = lookupContactAddress_(crmSs, c.client);
+    var address = c.address || contact.address || "";
+    var noteParts = [];
+    if (sub.subId) noteParts.push("[SUB:" + sub.subId + "]");
+    if (c.note) noteParts.push(c.note);
+    if (sub.wishes) noteParts.push(sub.wishes);
+    if (contact.note) noteParts.push(contact.note);
+    var note = noteParts.join(" ").trim();
+    var basket = sub.basket || [];
+    var now = new Date();
+    var id = existing ? existing.id : ("crm" + Date.now() + "_" + Math.floor(Math.random() * 1e5));
+    var rowVals = [
+      id, dateStr, c.client, sub.subId || "", address, note,
+      JSON.stringify(basket), "subscription",
+      existing && String(existing.status) === "pulled" ? "pulled" : "planned",
+      existing ? existing.dayName : "", now,
+      existing ? (existing.pulledAt || "") : ""
+    ];
+    if (existing) {
+      sh.getRange(existing.rowIndex, 1, 1, BOOKINGS_HEADERS_.length).setValues([rowVals]);
+    } else {
+      sh.appendRow(rowVals);
+      added++;
+    }
+  }
+  return { ok: true, date: dateStr, fromCalendar: clients.length, added: added, skipped: skipped };
+}

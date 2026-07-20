@@ -10,9 +10,9 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg-color: #121212; --card-bg: #1c1c1e; --text-color: #f5f5f7;
-      --text-muted: #8e8e93; --accent-color: #248bf2; --accent-active: #1472df;
-      --danger-color: #ff453a; --success-color: #30d158; --border-color: #2c2c2e;
+      --bg-color: #0a0a0a; --card-bg: #141414; --text-color: #f5f5f7;
+      --text-muted: #9a9a9a; --accent-color: #ff7a00; --accent-active: #e56b00;
+      --danger-color: #ff453a; --success-color: #30d158; --border-color: #2a2a2a;
       --safe-top: max(12px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
       --safe-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
     }
@@ -516,7 +516,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.7</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.5.0</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -530,11 +530,17 @@
       <div class="card">
         <input type="hidden" id="isEditMode" value="false">
         <div class="form-group">
-          <label>День отгрузки</label>
+          <label>Дата доставки</label>
+          <input type="date" id="deliveryDate" onchange="onDeliveryDateChange()">
+          <div class="field-hint">Заказ бронируется на дату. В «Прием заказов» попадёт утром предыдущего дня (для нарезки).</div>
+        </div>
+        <div class="form-group">
+          <label>День недели (авто)</label>
           <select id="day">
             <option>Понедельник</option><option>Вторник</option><option>Среда</option>
             <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
+          <div class="field-hint">Подставляется по дате, если она уже стоит в таблице недели. Можно поправить вручную.</div>
         </div>
         <div class="form-group">
           <label>Ник / Имя клиента</label>
@@ -702,7 +708,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4.7";
+    const APP_VERSION = "v7.5.0";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -786,8 +792,8 @@
         tg.expand();
         try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
         try {
-          if (tg.setHeaderColor) tg.setHeaderColor("#121212");
-          if (tg.setBackgroundColor) tg.setBackgroundColor("#121212");
+          if (tg.setHeaderColor) tg.setHeaderColor("#0a0a0a");
+          if (tg.setBackgroundColor) tg.setBackgroundColor("#0a0a0a");
         } catch (e) {}
         // Если открыли из списка чатов на весь экран — выходим из fullscreen,
         // чтобы системные кнопки не наезжали (Bot API 8+). Иначе увеличим отступы.
@@ -1298,13 +1304,33 @@
       });
     }
 
+    function onDeliveryDateChange() {
+      const el = document.getElementById("deliveryDate");
+      if (!el || !el.value) return;
+      const d = new Date(el.value + "T12:00:00");
+      if (isNaN(d.getTime())) return;
+      const names = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
+      const wd = names[d.getDay()];
+      const daySel = document.getElementById("day");
+      if (!daySel) return;
+      for (let i = 0; i < daySel.options.length; i++) {
+        if (daySel.options[i].text === wd || daySel.options[i].value === wd) {
+          daySel.selectedIndex = i;
+          break;
+        }
+      }
+    }
+    window.onDeliveryDateChange = onDeliveryDateChange;
+
     async function sendEntireOrder() {
       const clientName = document.getElementById("client").value.trim();
       let clientAddress = document.getElementById("addressInput").value.trim();
       let clientNote = document.getElementById("noteInput").value.trim();
       const day = document.getElementById("day").value;
+      const deliveryDate = (document.getElementById("deliveryDate") && document.getElementById("deliveryDate").value) || "";
       const isEdit = document.getElementById("isEditMode").value === "true";
       if (!clientName) { await uiAlertAsync("Введите имя клиента"); return; }
+      if (!deliveryDate) { await uiAlertAsync("Укажите дату доставки"); return; }
       if (!basket.length) { await uiAlertAsync("Корзина пуста"); return; }
       if (clientNote && !getSelectedNoteRoles().length) {
         await uiAlertAsync("Выберите, кому показать примечание (менеджер / нарезчик / курьер).");
@@ -1380,24 +1406,40 @@
         }))
       };
 
+      const bookingPayload = {
+        action: "saveBooking",
+        date: deliveryDate,
+        day: day,
+        alsoSaveOrder: false,
+        client: clientName,
+        address: clientAddress,
+        note: clientNote,
+        source: "retail",
+        basket: payload.basket,
+        geo: payload.geo
+      };
+
       try {
-        await apiPost(payload);
-        await new Promise(r => setTimeout(r, 400));
-        const check = await apiGet({ action: "getClients", day: day });
-        const found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
-        const okPositions = found && found.basket && found.basket.length > 0;
-        if (!okPositions) {
-          await uiAlertAsync("Имя/адрес могли записаться, но позиции не нашлись в таблице. Проверьте Deploy Code.gs.");
-          return;
+        await apiPost(bookingPayload);
+        await new Promise(r => setTimeout(r, 500));
+        let found = null;
+        try {
+          const check = await apiGet({ action: "getClients", day: day });
+          found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
+        } catch (eCheck) {}
+        const inWeek = found && found.basket && found.basket.length > 0;
+        if (inWeek) {
+          celebrateSuccess("save");
+          showToast((isEdit ? "Заказ обновлён" : "Заказ сохранён") + " (" + found.basket.length + " поз.)");
+        } else {
+          showToast("Бронь на " + deliveryDate + " сохранена · в неделю — утром накануне");
         }
-        celebrateSuccess("save");
         const card = document.querySelector("#orderScreen .card");
         if (card) {
           card.classList.remove("fx-success");
           void card.offsetWidth;
           card.classList.add("fx-success");
         }
-        showToast(isEdit ? ("Заказ обновлён (" + found.basket.length + " поз.)") : ("Заказ сохранён (" + found.basket.length + " поз.)"));
         document.getElementById("isEditMode").value = "false";
         document.getElementById("client").readOnly = false;
         document.getElementById("client").value = "";

@@ -92,7 +92,23 @@
 4. Не вызывать `finishFullWeekProduction` без явного ОК от владельца.
 5. Фронт: открыть `app.html` локально / через хостинг mini-app; Telegram SDK: `https://telegram.org/js/telegram-web-app.js`.
 
-## Секреты
+## API webhook (дополнение v7.5)
 
-В `Code.gs` токен Telegram читается из `PropertiesService` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).  
-Локально для заметок: `secrets.local.md` (в `.gitignore`), не коммитить.
+| action | Назначение |
+|--------|------------|
+| `saveBooking` | Бронь на календарную дату → лист `Брони_Заказов` |
+| `listBookings` | Список броней (`date` / `from`+`to`) |
+| `ensureDayMaterialized` | CRM-календарь → брони → «Прием заказов» на дату D |
+| `setupBookingTriggers` | Триггер 07:00 → материализация **завтрашних** доставок (утро D−1) |
+
+### Автоматика дней
+
+1. Менеджер / CRM бронируют **дату доставки D**.
+2. Утром **D−1** (~07:00) `morningMaterializeTomorrow` тянет CRM-календарь месяца + составы АФК/ПП/БП в брони и пишет в блок дня «Прием заказов».
+3. Поздняя правка с **ростом** объёма после ~12:00 дня D−1 → Telegram нарезчикам (`CUTTER_TELEGRAM_IDS` / роль cutter в `Доступы` / общий `TELEGRAM_CHAT_ID`) со списком позиций `+N г · ЛЁГКОЕ / Среднее`.
+4. Розничные брони (`source=retail`) CRM не затирает.
+
+Один раз в Script Editor: `setupBookingTriggersManual()`.  
+Опционально Script Property: `CRM_SPREADSHEET_ID` (по умолчанию CRM-бот таблица).
+
+
