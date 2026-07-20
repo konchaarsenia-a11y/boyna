@@ -485,7 +485,7 @@
 </head>
 <body>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.4.2</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -671,7 +671,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.4.1";
+    const APP_VERSION = "v7.4.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1067,9 +1067,11 @@
 
     const DEPOT_LS_KEY = "superboyna_depot";
     const DEPART_LS_KEY = "superboyna_depart";
-    const ROAD_FACTOR = 1.35;
-    const AVG_SPEED_KMH = 24;
+    const ROAD_FACTOR = 1.4;
+    const AVG_SPEED_KMH = 18; // город: светофоры, дворы
     const STOP_MINUTES = 4;
+    /** OSRM/формула без пробок; 1.45 ≈ ближе к Яндексу по Минску днём */
+    const TRAFFIC_FACTOR = 1.45;
     const TIME_ITEM_H = 40;
     let departHour = 14;
     let departMinute = 0;
@@ -2949,18 +2951,18 @@
     }
 
     function driveMinutesBetween(a, b) {
-      if (!a || !b || a.lat == null || b.lat == null) return 12;
+      if (!a || !b || a.lat == null || b.lat == null) return 12 * TRAFFIC_FACTOR;
       const m = routePlanState.matrix;
       if (m && m.index && m.durations) {
         const ia = m.index[geoKey(a)];
         const ib = m.index[geoKey(b)];
         if (ia != null && ib != null && m.durations[ia] && m.durations[ia][ib] != null) {
           const sec = Number(m.durations[ia][ib]);
-          if (isFinite(sec) && sec >= 0) return Math.max(1, sec / 60);
+          if (isFinite(sec) && sec >= 0) return Math.max(1, (sec / 60) * TRAFFIC_FACTOR);
         }
       }
       const km = haversineKm(a, b) * ROAD_FACTOR;
-      return (km / AVG_SPEED_KMH) * 60;
+      return (km / AVG_SPEED_KMH) * 60 * TRAFFIC_FACTOR;
     }
 
     async function refreshDriveMatrix(depot, stops) {
@@ -3294,7 +3296,7 @@
       const t0 = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[0]);
       const t1 = estimateRouteMinutes(routePlanState.depot, routePlanState.routes[1]);
       const wall = routePlanState.courierCount === 2 ? Math.max(t0, t1) : t0;
-      showToast("Готово · до конца маршрута " + formatMinutes(wall));
+      showToast("Готово · ≈" + formatMinutes(wall) + " с запасом на пробки");
     }
 
     function moveStopBetweenRoutes(fromRoute, stopIndex, toRoute) {
@@ -3747,11 +3749,11 @@
       }
 
       if (count === 2) {
-        html = '<div class="total-summary-badge">До конца смены (параллельно) ' + formatMinutes(totalMin) +
-          " · порядок по оптимальному времени · «→» перекинуть</div>" + html;
+        html = '<div class="total-summary-badge">До конца смены (параллельно) ≈' + formatMinutes(totalMin) +
+          " · с запасом на пробки · «→» перекинуть</div>" + html;
       } else {
-        html = '<div class="total-summary-badge">Время до последнего клиента ' + formatMinutes(totalMin) +
-          " · порядок оптимальный</div>" + html;
+        html = '<div class="total-summary-badge">До последнего клиента ≈' + formatMinutes(totalMin) +
+          " · с запасом на пробки (Яндекс может чуть отличаться)</div>" + html;
       }
       box.innerHTML = html;
     }
