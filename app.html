@@ -530,6 +530,32 @@
     .pack-line { font-size:13px; color:#ddd; padding:4px 0; border-bottom:1px solid #222; }
     .ig-paste { width:100%; min-height:90px; background:#111; color:#fff; border:1px solid var(--border-color);
       border-radius:10px; padding:10px; font-size:13px; resize:vertical; }
+    .order-flyout {
+      display:none; gap:6px; margin:0 0 12px; padding:6px;
+      background:#141414; border:1px solid var(--border-color); border-radius:10px; flex-wrap:wrap;
+    }
+    .order-flyout.open { display:flex; }
+    .order-flyout-btn {
+      flex:1 1 30%; min-width:90px; height:40px; border-radius:8px;
+      border:1px solid var(--border-color); background:#1c1c1e; color:#fff;
+      font-size:13px; font-weight:600; cursor:pointer;
+    }
+    .order-flyout-btn:active { background:var(--accent-color); }
+    .pack-type-row { display:flex; gap:6px; margin:10px 0; flex-wrap:wrap; }
+    .pack-type-cell {
+      flex:1 1 18%; min-width:56px; text-align:center; padding:10px 4px;
+      border-radius:10px; border:1px solid var(--border-color); background:#1a1a1a;
+      cursor:pointer; user-select:none;
+    }
+    .pack-type-cell.off { opacity:0.35; text-decoration:line-through; }
+    .pack-type-cell .n { display:block; font-size:20px; font-weight:700; color:var(--accent-color); }
+    .pack-type-cell .l { display:block; font-size:10px; color:var(--text-muted); margin-top:2px; }
+    .tel-link { color:var(--accent-color); text-decoration:none; font-weight:600; }
+    .save-load-overlay {
+      display:none; position:fixed; inset:0; z-index:10002; background:rgba(0,0,0,.82);
+      align-items:center; justify-content:center; flex-direction:column;
+    }
+    .save-load-overlay.open { display:flex; }
   </style>
 </head>
 <body>
@@ -540,18 +566,27 @@
       <div class="modal-actions" id="accessActions"></div>
     </div>
   </div>
+  <div class="save-load-overlay" id="saveLoadOverlay">
+    <div class="load-dance-stage">
+      <img class="load-dance-img" src="assets/loading-dance.webp" alt="" draggable="false"
+        onerror="this.onerror=null;this.src='assets/loading-dance.gif'">
+    </div>
+    <div class="load-dance-label" id="saveLoadLabel">Сохраняю заказ…</div>
+  </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.0</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.1</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
-      <button type="button" class="tab-link" data-screen="clientsScreen" onclick="switchTab('clientsScreen')" id="tabWeek" style="display:none;">Неделя</button>
       <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
       <button type="button" class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
       <button type="button" class="tab-link" data-screen="warehouseScreen" onclick="switchTab('warehouseScreen')">Склад</button>
       <button type="button" class="tab-link" data-screen="subsScreen" onclick="switchTab('subsScreen')">Подписки</button>
-      <button type="button" class="tab-link" data-screen="priceScreen" onclick="switchTab('priceScreen')">Цена</button>
-      <button type="button" class="tab-link" data-screen="peopleScreen" onclick="switchTab('peopleScreen')">Люди</button>
+    </div>
+    <div class="order-flyout" id="orderFlyout">
+      <button type="button" class="order-flyout-btn" data-fly="clientsScreen">Неделя</button>
+      <button type="button" class="order-flyout-btn" data-fly="priceScreen">Цена</button>
+      <button type="button" class="order-flyout-btn" data-fly="peopleScreen">Люди</button>
     </div>
 
     <!-- МЕНЕДЖЕР: ПРИЁМ -->
@@ -574,6 +609,8 @@
         <div class="form-group">
           <label>Ник / Имя клиента</label>
           <input type="text" id="client" placeholder="Например: Мария" autocomplete="off">
+          <button type="button" class="btn-action btn-orange" style="margin-top:8px;" onclick="prepareSecondDog()">2 собаки</button>
+          <div class="field-hint">Вторая собака = отдельный заказ рядом (`Имя · 2`), для сборки видно оба набора.</div>
         </div>
                 <div class="form-group">
           <label>Адрес доставки</label>
@@ -703,13 +740,12 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Точка выезда в Минске</label>
+          <label>Точка выезда</label>
           <div class="depot-presets">
-            <button type="button" class="seg-btn" id="depotPreset0" onclick="applyDepotPreset('Шаранговича 36')">Шаранговича 36</button>
-            <button type="button" class="seg-btn" id="depotPreset1" onclick="applyDepotPreset('Белецкого 10к2')">Белецкого 10к2</button>
+            <button type="button" class="seg-btn" id="depotPresetWh" onclick="applyDepotPreset('Белецкого 10к2')">Склад (Белецкого 10к2)</button>
           </div>
           <input type="text" id="depotAddress" placeholder="или свой адрес: улица и дом" autocomplete="street-address" onchange="saveDepotAddress()" onblur="saveDepotAddress()">
-          <div class="field-hint">Базовые адреса сверху или свой — «Минск» подставится сам</div>
+          <div class="field-hint">Склад одной кнопкой или свой адрес — «Минск» подставится сам</div>
         </div>
         <div class="form-group">
           <label>Курьеров сегодня</label>
@@ -731,7 +767,6 @@
           <div class="field-hint" id="departTimeHint">Листайте как будильник на iPhone</div>
         </div>
         <button class="btn-action btn-green" type="button" onclick="buildRoutePlan()">Собрать маршруты</button>
-        <button class="btn-action btn-blue" type="button" onclick="openYandexMaps()" style="margin-top:8px;">Адреса в Яндекс</button>
       </div>
       <div id="routePlanBox"></div>
       <div id="courierSummary"></div>
@@ -814,11 +849,11 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.6.0";
+    const APP_VERSION = "v7.6.1";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
-    const DEPOT_PRESETS = ["Шаранговича 36", "Белецкого 10к2"];
+    const DEPOT_PRESETS = ["Белецкого 10к2"];
     const POST_OFFICES = {
       euro: [
         { address: "Минск, ул. Монтажников, 2", lat: 53.8695, lon: 27.4855 },
@@ -899,6 +934,9 @@
     let priceMode = "subscription";
     let courierSub = "route";
     let weekTabUnlocked = false;
+    let packTypesEnabled = { light: true, bulk: true, chew: true, craft: true, other: true };
+    let assemblyCache = null;
+    const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "peopleScreen"];
 
     let tg = null;
     try {
@@ -998,21 +1036,26 @@
       try { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success"); } catch (e) {}
       opts = opts || {};
 
-      if (kind === "save" || kind === "cut" || kind === "finish") {
+      // на сохранении заказа — без тянки, только лёгкий ✓
+      if (kind === "save") {
+        const wrap = document.createElement("div");
+        wrap.className = "fx-burst";
+        wrap.innerHTML = '<div class="fx-burst-ring"></div><div class="fx-burst-check">✓</div>';
+        document.body.appendChild(wrap);
+        setTimeout(function () { wrap.remove(); }, 800);
+        return;
+      }
+
+      if (kind === "cut" || kind === "finish") {
         const old = document.getElementById("fxTyanOverlay");
         if (old) old.remove();
         const wrap = document.createElement("div");
         wrap.id = "fxTyanOverlay";
-        var img = "assets/celebrate-tyan.png";
-        var banner = "Клиент записан!";
-        var extraClass = "";
+        var img = "assets/celebrate-cut.png";
+        var banner = "Заготовлено!";
+        var extraClass = " fx-tyan--cut";
         var timeHtml = "";
-        if (kind === "cut") {
-          img = "assets/celebrate-cut.png";
-          banner = "Заготовлено!";
-          extraClass = " fx-tyan--cut";
-        } else if (kind === "finish") {
-          img = "assets/celebrate-cut.png";
+        if (kind === "finish") {
           banner = "Нарезка завершена!";
           extraClass = " fx-tyan--finish";
           if (opts.elapsedLabel) {
@@ -1233,49 +1276,93 @@
       const allowed = ROLE_TABS[APP_ROLE] || ROLE_TABS.all;
       document.querySelectorAll(".tab-link").forEach(btn => {
         const screen = btn.dataset.screen;
-        let ok = allowed.indexOf(screen) >= 0;
-        // Неделя: у менеджера/owner — long-press на Заказ; вкладка скрыта по умолчанию
-        if (screen === "clientsScreen" && (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all")) {
-          ok = weekTabUnlocked;
+        // Неделя / Цена / Люди — только через long-press у Заказа
+        if (FLYOUT_SCREENS.indexOf(screen) >= 0) {
+          btn.style.display = "none";
+          return;
         }
+        const ok = allowed.indexOf(screen) >= 0;
         btn.style.display = ok ? "" : "none";
       });
-      const first = allowed.filter(function (s) {
-        if (s === "clientsScreen" && !weekTabUnlocked) return false;
-        return true;
-      })[0];
+      // кнопки flyout по роли
+      document.querySelectorAll("#orderFlyout .order-flyout-btn").forEach(function (b) {
+        const scr = b.getAttribute("data-fly");
+        const ok = allowed.indexOf(scr) >= 0 || (APP_ROLE === "all" || APP_ROLE === "owner");
+        b.style.display = ok ? "" : "none";
+      });
+      const first = allowed.filter(function (s) { return FLYOUT_SCREENS.indexOf(s) < 0; })[0];
       if (first) switchTab(first);
     }
 
-    function unlockWeekTab() {
-      weekTabUnlocked = true;
-      const tab = document.getElementById("tabWeek");
-      if (tab) tab.style.display = "";
-      switchTab("clientsScreen");
-      showToast("Неделя");
+    function toggleOrderFlyout(force) {
+      const fly = document.getElementById("orderFlyout");
+      if (!fly) return;
+      const open = force === true ? true : force === false ? false : !fly.classList.contains("open");
+      fly.classList.toggle("open", open);
     }
 
     function bindOrderLongPress() {
       const btn = document.querySelector('.tab-link[data-screen="orderScreen"]');
       if (!btn) return;
       let timer = null;
+      let longDone = false;
       function clear() { if (timer) { clearTimeout(timer); timer = null; } }
-      btn.addEventListener("touchstart", function () {
+      function start() {
+        longDone = false;
         clear();
         timer = setTimeout(function () {
-          if (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all") unlockWeekTab();
-        }, 550);
-      }, { passive: true });
-      btn.addEventListener("touchend", clear);
-      btn.addEventListener("touchcancel", clear);
-      btn.addEventListener("mousedown", function () {
+          longDone = true;
+          if (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all") {
+            toggleOrderFlyout(true);
+            try { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium"); } catch (e) {}
+          }
+        }, 480);
+      }
+      btn.addEventListener("touchstart", start, { passive: true });
+      btn.addEventListener("touchend", function (e) {
         clear();
-        timer = setTimeout(function () {
-          if (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all") unlockWeekTab();
-        }, 550);
+        if (longDone && e) { e.preventDefault(); e.stopPropagation(); }
       });
+      btn.addEventListener("touchcancel", clear);
+      btn.addEventListener("mousedown", start);
       btn.addEventListener("mouseup", clear);
       btn.addEventListener("mouseleave", clear);
+      document.querySelectorAll("#orderFlyout .order-flyout-btn").forEach(function (b) {
+        b.onclick = function () {
+          const id = b.getAttribute("data-fly");
+          toggleOrderFlyout(false);
+          if (id) switchTab(id);
+        };
+      });
+    }
+
+    function prepareSecondDog() {
+      const el = document.getElementById("client");
+      let name = (el.value || "").trim();
+      if (!name) {
+        showToast("Сначала укажи имя первой собаки / клиента");
+        return;
+      }
+      name = name.replace(/\s*[·•#]\s*2\s*$/i, "").trim();
+      el.value = name + " · 2";
+      el.readOnly = false;
+      document.getElementById("isEditMode").value = "false";
+      basket = [];
+      renderBasket();
+      document.getElementById("btnMainSave").innerText = "Сохранить 2-ю собаку";
+      showToast("Корзина для 2-й собаки. Адрес тот же — наборы разные.");
+    }
+    window.prepareSecondDog = prepareSecondDog;
+
+    function showSaveLoading(label) {
+      const ov = document.getElementById("saveLoadOverlay");
+      const lb = document.getElementById("saveLoadLabel");
+      if (lb) lb.textContent = label || "Сохраняю заказ…";
+      if (ov) ov.classList.add("open");
+    }
+    function hideSaveLoading() {
+      const ov = document.getElementById("saveLoadOverlay");
+      if (ov) ov.classList.remove("open");
     }
 
     function clearBlockingOverlays() {
@@ -1305,10 +1392,16 @@
 
     function switchTab(screenId) {
       clearBlockingOverlays();
+      toggleOrderFlyout(false);
       document.querySelectorAll(".screen").forEach(function (el) { el.classList.remove("active"); });
       document.querySelectorAll(".tab-link").forEach(function (el) {
         el.classList.toggle("active", el.getAttribute("data-screen") === screenId);
       });
+      // flyout-экраны не подсвечивают вкладку Заказ как «чужую»
+      if (FLYOUT_SCREENS.indexOf(screenId) >= 0) {
+        var orderBtn = document.querySelector('.tab-link[data-screen="orderScreen"]');
+        if (orderBtn) orderBtn.classList.add("active");
+      }
       var screen = document.getElementById(screenId);
       if (screen) screen.classList.add("active");
       try {
@@ -1325,6 +1418,7 @@
         if (screenId === "warehouseScreen") loadWarehouse();
         if (screenId === "subsScreen") loadSubscriptions();
         if (screenId === "peopleScreen") loadPeople();
+        if (screenId === "priceScreen") { /* wait user action */ }
         if (screenId === "courierScreen" && courierSub === "assembly") loadAssembly();
       } catch (e3) {}
     }
@@ -1545,6 +1639,7 @@
       const btn = document.getElementById("btnMainSave");
       btn.disabled = true;
       btn.innerText = "Сохраняю...";
+      showSaveLoading("Сохраняю заказ…");
 
       const payload = {
         action: "saveOrder",
@@ -1622,6 +1717,7 @@
       } catch (err) {
         await uiAlertAsync("Ошибка: " + (err.message || err));
       } finally {
+        hideSaveLoading();
         btn.disabled = false;
         btn.innerText = "Сохранить заказ";
         recoverUiFocus();
@@ -1711,7 +1807,7 @@
                 <span class="client-badge">${client.orderCount} поз.</span>
               </div>
             </div>
-            ${(addr || note || deliv) ? `<div class="delivery-info-box">${note}${roleHint}${deliv}${addr}</div>` : ""}
+            ${(addr || note || deliv) ? `<div class="delivery-info-box">${note}${roleHint}${deliv}${addr}${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : (formatTelHtml(client.phone || extractPhone(client.note || "")) ? `<div class="delivery-info-box">${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : "")}
             <div class="client-order-details" id="details_${index}">${lines}</div>
           </div>`;
         }).join("");
@@ -1793,21 +1889,41 @@
       const oldDay = document.getElementById("viewDaySelect").value;
       const newDay = await uiPickMoveDay(client.name);
       if (!newDay) return;
-      const ok = await uiConfirmAsync("Перенести " + client.name + " → " + newDay + "?");
-      if (!ok) return;
+      const cutP = openModal(
+        '<div class="modal-title">Нарезка при переносе</div>' +
+        '<div class="modal-text">Перенос <b>' + escapeHtml(client.name) + '</b> → <b>' + escapeHtml(newDay) + '</b>.<br><br>' +
+        'Нарезать сырьё на этого клиента в новом дне вместе со всеми?</div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn-action btn-orange" type="button" id="modalCutYes">Да, резать</button>' +
+          '<button class="btn-action btn-blue" type="button" id="modalCutNo">Нет — только перенос</button>' +
+          '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Отмена</button>' +
+        '</div>'
+      );
+      setTimeout(function () {
+        const y = document.getElementById("modalCutYes");
+        const n = document.getElementById("modalCutNo");
+        const c = document.getElementById("modalCancel");
+        if (y) y.onclick = function () { closeModal("yes"); };
+        if (n) n.onclick = function () { closeModal("no"); };
+        if (c) c.onclick = function () { closeModal(null); };
+      }, 0);
+      const cutRaw = await cutP;
+      if (!cutRaw) return;
       try {
-        const res = await apiGet({ action: "moveClient", client: client.name, oldDay: oldDay, newDay: newDay });
+        const res = await apiGet({
+          action: "moveClient",
+          client: client.name,
+          oldDay: oldDay,
+          newDay: newDay,
+          cutRaw: cutRaw === "yes" ? "1" : "0"
+        });
         if (res.status !== "success") {
           await uiAlertAsync("Не удалось: " + (res.status || "ошибка"));
           return;
         }
-        showToast("Перенесено");
+        showToast(cutRaw === "yes" ? "Перенесено (резать)" : "Перенесено без резки");
         await refreshDayViews(oldDay);
-        if (newDay !== oldDay) {
-          const vd = document.getElementById("viewDaySelect");
-          if (vd && vd.value === oldDay) { /* stay */ }
-          await refreshDayViews(newDay);
-        }
+        if (newDay !== oldDay) await refreshDayViews(newDay);
       } catch (err) {
         await uiAlertAsync(err.message || String(err));
       } finally {
@@ -1930,7 +2046,8 @@
         sortCuttingItems();
         renderCuttingSummary();
         renderCuttingSessionBox();
-        box.innerHTML = cuttingItemsCache.map(renderCutRowHtml).join("");
+        var transferHtml = renderTransferOnlyHtml(res.transferOnly);
+        box.innerHTML = transferHtml + cuttingItemsCache.map(renderCutRowHtml).join("");
         if (finishBtn) finishBtn.style.display = cuttingSession.active ? "block" : "none";
         startCuttingPoll();
       } catch (err) {
@@ -1939,6 +2056,19 @@
           if (finishBtn) finishBtn.style.display = "none";
         }
       }
+    }
+
+    function renderTransferOnlyHtml(tr) {
+      if (!tr || !(tr.lines || []).length) return "";
+      var who = (tr.clients || []).join(", ");
+      var lines = (tr.lines || []).map(function (l) {
+        return '<div class="pack-line">' + escapeHtml(l.label) + ': <b>' + l.val + '</b> (для переноса)</div>';
+      }).join("");
+      return '<div class="card" style="margin-bottom:10px;border-color:var(--accent-color);">' +
+        '<b>Перенос без резки</b>' +
+        (who ? '<div class="muted" style="font-size:12px;margin-top:4px;">' + escapeHtml(who) + '</div>' : '') +
+        '<div class="muted" style="font-size:12px;margin-top:4px;">Не в общем плане дня — напилено отдельно под перенос</div>' +
+        lines + '</div>';
     }
 
     function renderCutterNotesHtml(notes) {
@@ -2495,6 +2625,7 @@
               <span class="cut-title">${idx + 1}. ${escapeHtml(c.name)}</span>
             </label>
             <div class="cut-meta">${c.address ? ("Адрес: " + escapeHtml(c.address)) : "Адрес не указан"}
+              ${formatTelHtml(c.phone || extractPhone(c.note || ""))}
               ${noteTextForRole(c.note || "", "cour") ? ("<br>Примечание: " + escapeHtml(noteTextForRole(c.note || "", "cour"))) : ""}
             </div>
             <div>${lines || '<span class="muted">Пустой заказ</span>'}</div>
@@ -2797,16 +2928,40 @@
       });
     }
 
+    function extractPhone(text) {
+      const s = String(text || "");
+      const mTel = s.match(/\[TEL:([^\]]+)\]/i);
+      if (mTel) return mTel[1].trim();
+      const m = s.match(/(\+?375[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\+?\d[\d\s\-]{8,}\d)/);
+      return m ? m[1].replace(/\s+/g, "") : "";
+    }
+    function normalizeTelHref(phone) {
+      let d = String(phone || "").replace(/[^\d+]/g, "");
+      if (!d) return "";
+      if (d.indexOf("+") !== 0) {
+        if (d.indexOf("375") === 0) d = "+" + d;
+        else if (d.length === 9) d = "+375" + d;
+        else if (d.length === 11 && d[0] === "8") d = "+375" + d.slice(1);
+        else d = "+" + d.replace(/^\+/, "");
+      }
+      return "tel:" + d;
+    }
+    function formatTelHtml(phone) {
+      const p = String(phone || "").trim();
+      if (!p) return "";
+      const href = normalizeTelHref(p);
+      return '<br>Тел: <a class="tel-link" href="' + href + '">' + escapeHtml(p) + "</a>";
+    }
+
     function applyDepotPreset(addr) {
       const el = document.getElementById("depotAddress");
       if (el) el.value = addr;
       saveDepotAddress();
-      DEPOT_PRESETS.forEach(function (p, i) {
-        const btn = document.getElementById("depotPreset" + i);
-        if (btn) btn.classList.toggle("active", p === addr);
-      });
+      const btn = document.getElementById("depotPresetWh");
+      if (btn) btn.classList.add("active");
       showToast("Выезд: " + addr);
     }
+    window.applyDepotPreset = applyDepotPreset;
 
 
     function parseGeoFromNote(note) {
@@ -4253,29 +4408,95 @@
       var day = document.getElementById("assemblyDaySelect").value || document.getElementById("courierDaySelect").value;
       var box = document.getElementById("assemblyContainer");
       if (!day) { box.innerHTML = '<p class="muted">Выберите день…</p>'; return; }
-      box.innerHTML = '<p class="muted">Считаю пакеты…</p>';
+      box.innerHTML = loadingDanceHtml("Считаю пакеты…");
       try {
         var res = await apiGet({ action: "getAssembly", day: day });
         if (!res || res.status !== "success") {
           box.innerHTML = '<p class="muted">Не удалось загрузить</p>';
           return;
         }
-        if (!(res.clients || []).length) {
-          box.innerHTML = '<p class="muted">Нет клиентов</p>';
-          return;
-        }
-        box.innerHTML = (res.clients || []).map(function (c) {
-          var lines = (c.packs || []).map(function (p) {
-            return '<div class="pack-line">' + p.label + '</div>';
-          }).join("");
-          return '<div class="card" style="margin-bottom:10px;"><b>' + c.name + '</b>' +
-            ' <span class="muted">· ' + (c.totalBags || 0) + ' пак.</span>' +
-            (c.address ? '<div class="muted" style="font-size:12px;margin-top:4px;">' + c.address + '</div>' : '') +
-            lines + '</div>';
-        }).join("");
+        assemblyCache = res;
+        renderAssemblyView();
       } catch (e) {
         box.innerHTML = '<p class="muted">Ошибка сети</p>';
       }
+    }
+
+    function togglePackType(key) {
+      packTypesEnabled[key] = !packTypesEnabled[key];
+      renderAssemblyView();
+    }
+    window.togglePackType = togglePackType;
+
+    function renderAssemblyView() {
+      var box = document.getElementById("assemblyContainer");
+      var res = assemblyCache;
+      if (!res) return;
+      var types = [
+        { key: "light", label: "Лёгкое" },
+        { key: "bulk", label: "Сыпуч." },
+        { key: "chew", label: "Жевал." },
+        { key: "craft", label: "Крафт" },
+        { key: "other", label: "Другое" }
+      ];
+      var totals = { light: 0, bulk: 0, chew: 0, craft: 0, other: 0 };
+      var lightFrac = {};
+      (res.clients || []).forEach(function (c) {
+        (c.packs || []).forEach(function (p) {
+          var t = p.type || "other";
+          totals[t] = (totals[t] || 0) + (Number(p.bags) || 0);
+        });
+        (c.lightByFraction || []).forEach(function (lf) {
+          lightFrac[lf.sub || "без фракции"] = (lightFrac[lf.sub || "без фракции"] || 0) + (Number(lf.val) || 0);
+        });
+      });
+      // если бэкенд отдал сводку дня
+      if (res.typeTotals) {
+        totals = Object.assign(totals, res.typeTotals);
+      }
+      if (res.lightByFraction && res.lightByFraction.length) {
+        lightFrac = {};
+        res.lightByFraction.forEach(function (lf) {
+          lightFrac[lf.sub || "без фракции"] = Number(lf.val) || 0;
+        });
+      }
+
+      var enabledTotal = 0;
+      types.forEach(function (t) {
+        if (packTypesEnabled[t.key]) enabledTotal += totals[t.key] || 0;
+      });
+
+      var cells = types.map(function (t) {
+        var on = packTypesEnabled[t.key];
+        return '<div class="pack-type-cell' + (on ? "" : " off") + '" onclick="togglePackType(\'' + t.key + '\')">' +
+          '<span class="n">' + (totals[t.key] || 0) + '</span>' +
+          '<span class="l">' + t.label + '</span></div>';
+      }).join("");
+
+      var lightLines = Object.keys(lightFrac).map(function (k) {
+        return '<div class="pack-line">Лёгкое / ' + k + ': <b>' + lightFrac[k] + ' г</b></div>';
+      }).join("") || '<div class="muted">Нет лёгкого</div>';
+
+      var clientsHtml = (res.clients || []).map(function (c) {
+        var bags = 0;
+        var lines = (c.packs || []).filter(function (p) {
+          return packTypesEnabled[p.type || "other"];
+        }).map(function (p) {
+          bags += Number(p.bags) || 0;
+          return '<div class="pack-line">' + p.label + '</div>';
+        }).join("");
+        return '<div class="card" style="margin-bottom:10px;"><b>' + escapeHtml(c.name) + '</b>' +
+          ' <span class="muted">· ' + bags + ' пак.</span>' +
+          (c.address ? '<div class="muted" style="font-size:12px;margin-top:4px;">' + escapeHtml(c.address) + '</div>' : '') +
+          lines + '</div>';
+      }).join("") || '<p class="muted">Нет клиентов</p>';
+
+      box.innerHTML =
+        '<div class="card"><b>Пакеты (нажми тип, чтобы выключить)</b>' +
+        '<div class="pack-type-row">' + cells + '</div>' +
+        '<div class="total-summary-badge">Итого пакетов: ' + enabledTotal + '</div>' +
+        '<div style="margin-top:10px;"><b>Лёгкое всего (для нарезки пачкой)</b>' + lightLines + '</div></div>' +
+        clientsHtml;
     }
     window.loadAssembly = loadAssembly;
 
@@ -4284,10 +4505,36 @@
       if (!raw) { showToast("Вставь текст чеклиста"); return; }
       var lines = raw.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
       var added = 0;
+      var noteBits = [];
       var known = {};
       Object.keys(catalog).forEach(function (k) {
-        (catalog[k].items || []).forEach(function (n) { known[n.toUpperCase()] = { cat: k, name: n, fractions: (catalog[k].fractions || {})[n] || [] }; });
+        (catalog[k].items || []).forEach(function (n) {
+          known[n.toUpperCase()] = { cat: k, name: n, fractions: (catalog[k].fractions || {})[n] || [] };
+        });
       });
+
+      function mapChewFrac(token) {
+        var t = String(token || "").toUpperCase();
+        if (/ОЧ\s*МАЛ|ОЧЕНЬ\s*МАЛ/.test(t)) return "ОЧ МАЛ";
+        if (/ПОЛОВИН/.test(t)) return "ПОЛОВИНКА";
+        if (/ПАЛК/.test(t)) return "ПАЛК";
+        if (/ПЛАСТ/.test(t)) return "ПЛАСТ";
+        if (/ОГР|ОГРОМ/.test(t)) return "ОГР";
+        if (/МЕЛК|МАЛ/.test(t)) return "МАЛ";
+        if (/СРЕДН|СРЕД/.test(t)) return "СРЕД";
+        if (/БОЛЬШ|БОЛ|КРУПН/.test(t)) return "БОЛ";
+        return "";
+      }
+      function mapDressFrac(token) {
+        var t = String(token || "").toUpperCase();
+        if (/МЕЛК/.test(t)) return "Мелкое";
+        if (/СРЕДН|СРЕД/.test(t)) return "Среднее";
+        if (/КРУПН/.test(t)) return "Крупное";
+        if (/БОЛЬШ/.test(t)) return "Большое";
+        if (/ЦЕЛ/.test(t)) return "Целое";
+        return "";
+      }
+
       lines.forEach(function (line) {
         var m = line.match(/^(.+?)\s*[—\-–:]\s*(\d+(?:[.,]\d+)?)\s*(г|гр|грамм|шт|кг)?/i) ||
                 line.match(/^(\d+(?:[.,]\d+)?)\s*(г|гр|шт|кг)?\s+(.+)$/i);
@@ -4315,21 +4562,18 @@
         if (/кг/i.test(unit)) val = Math.round(val * 1000);
         var up = namePart.toUpperCase().replace(/\s+/g, " ").trim();
         var frac = "";
-        var fracHit = up.match(/\b(МЕЛК\w*|СРЕДН\w*|БОЛЬШ\w*|КРУПН\w*|ЦЕЛ\w*)\b/);
+        var fracHit = up.match(/\b(ОЧ\s*МАЛ|МЕЛК\w*|СРЕДН\w*|СРЕД\w*|БОЛЬШ\w*|КРУПН\w*|ЦЕЛ\w*|МАЛ|БОЛ|ОГР|ПАЛК|ПЛАСТ|ПОЛОВИН\w*)\b/);
         if (fracHit) {
-          var f = fracHit[1];
-          if (/МЕЛК/.test(f)) frac = "Мелкое";
-          else if (/СРЕДН/.test(f)) frac = "Среднее";
-          else if (/БОЛЬШ|КРУПН/.test(f)) frac = /РУБЕЦ/.test(up) ? "Крупное" : "Большое";
-          else if (/ЦЕЛ/.test(f)) frac = "Целое";
           up = up.replace(fracHit[0], "").replace(/\s+/g, " ").trim();
         }
         var hit = null;
-        Object.keys(known).forEach(function (k) {
-          if (hit) return;
-          if (up.indexOf(k) >= 0 || k.indexOf(up) >= 0) hit = known[k];
-        });
+        var keys = Object.keys(known).sort(function (a, b) { return b.length - a.length; });
+        for (var ki = 0; ki < keys.length; ki++) {
+          var k = keys[ki];
+          if (up.indexOf(k) >= 0 || k.indexOf(up) >= 0) { hit = known[k]; break; }
+        }
         if (!hit) {
+          noteBits.push(namePart.trim() + " " + val + (unit || ""));
           basket.push({
             id: Date.now() + Math.random(),
             cat: "other",
@@ -4337,14 +4581,38 @@
             name: namePart.trim(),
             sub: "",
             value: val,
-            val: val,
-            itemNote: "не распознано из IG"
+            val: val
           });
           added++;
           return;
         }
-        if (hit.fractions && hit.fractions.length && !frac) frac = "Среднее";
-        if (frac === "Большое" && hit.fractions.indexOf("Большое") < 0 && hit.fractions.indexOf("Крупное") >= 0) frac = "Крупное";
+
+        if (fracHit) {
+          frac = hit.cat === "chew" ? mapChewFrac(fracHit[0]) : mapDressFrac(fracHit[0]);
+          if (hit.cat === "chew" && !frac) frac = mapDressFrac(fracHit[0]);
+          if (hit.cat === "dressura" && frac === "Большое" && hit.fractions.indexOf("Большое") < 0 && hit.fractions.indexOf("Крупное") >= 0) {
+            frac = "Крупное";
+          }
+          // СРЕДНЕЕ на жевалке → СРЕД
+          if (hit.cat === "chew" && /СРЕДН/.test(String(fracHit[0]).toUpperCase())) frac = "СРЕД";
+        }
+
+        var fracOk = true;
+        if (hit.fractions && hit.fractions.length) {
+          if (!frac) {
+            fracOk = false;
+            noteBits.push(hit.name + " " + val + " — фракция не указана");
+            frac = "";
+          } else if (hit.fractions.indexOf(frac) < 0) {
+            fracOk = false;
+            noteBits.push(hit.name + " / " + frac + " " + val + " — нет такой фракции в таблице");
+            // не подставляем «Среднее» наугад
+            frac = "";
+          }
+        } else {
+          frac = ""; // жевалки без фракций в каталоге / овощи
+        }
+
         basket.push({
           id: Date.now() + Math.random(),
           cat: hit.cat,
@@ -4355,7 +4623,16 @@
           val: val
         });
         added++;
+        if (!fracOk) { /* already in noteBits */ }
       });
+
+      if (noteBits.length) {
+        var ni = document.getElementById("noteInput");
+        var extra = "Чеклист: " + noteBits.join("; ");
+        ni.value = ((ni.value || "").trim() ? (ni.value.trim() + " · ") : "") + extra;
+        setNoteRoles({ mgr: true, cut: true, cour: true });
+        showToast("Есть позиции без точной фракции — примечание всем");
+      }
       renderBasket();
       showToast("Добавлено позиций: " + added);
     }
@@ -4373,19 +4650,19 @@
         }
         box.innerHTML = (res.items || []).map(function (it) {
           return '<div class="card" style="margin-bottom:8px;">' +
-            '<b>' + it.name + '</b> <span class="muted">' + it.unit + '</span>' +
+            '<b>' + escapeHtml(it.name) + '</b> <span class="muted">' + escapeHtml(it.unit) + '</span>' +
             '<div style="margin-top:6px;font-size:13px;">Остаток: <b>' + it.stock + '</b>' +
-            (it.arrival ? ' · дозакуп B: ' + it.arrival : '') +
-            (it.coef ? ' · коэф D: ' + it.coef : '') +
+            (it.arrival ? ' · дозакуп: ' + it.arrival : '') +
+            (it.coef ? ' · коэф: ' + it.coef : '') +
             (it.buy ? ' · <span style="color:var(--accent-color)">закупить</span>' : '') +
             '</div>' +
             '<div class="seg-row" style="margin-top:8px;">' +
             '<input type="number" id="arr_' + it.row + '" placeholder="дозакуп" inputmode="decimal" style="flex:1;height:40px;border-radius:8px;border:1px solid var(--border-color);background:#111;color:#fff;padding:0 10px;">' +
-            '<button type="button" class="seg-btn" onclick="saveWarehouseArrival(' + it.row + ')">Сохранить B</button>' +
+            '<button type="button" class="seg-btn" onclick="saveWarehouseArrival(' + it.row + ')">Сохранить</button>' +
             '</div></div>';
         }).join("") || '<p class="muted">Пусто</p>';
         led.innerHTML = (res.ledger || []).slice(0, 15).map(function (x) {
-          return '<div class="pack-line">' + (x.type || "") + " · row " + x.skuRow + " · " + x.qty + " " + (x.unit || "") + "</div>";
+          return '<div class="pack-line">' + escapeHtml(String(x.type || "")) + " · " + escapeHtml(String(x.qty)) + " " + escapeHtml(String(x.unit || "")) + "</div>";
         }).join("") || '<p class="muted">Лента пуста</p>';
       } catch (e) {
         box.innerHTML = '<p class="muted">Ошибка</p>';

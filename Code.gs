@@ -142,13 +142,27 @@ function recalculateCuttingForDate_(ss, dateText) {
 
   var matrixRows = sourceSheet === future ? 60 : 310;
   var matrix = sourceSheet ? sourceSheet.getRange(1, 3, matrixRows, 15).getValues() : null;
+  // колонки с [НЕ РЕЗАТЬ] в примечании — не входят в план резки дня
+  var skipCols = {};
+  if (matrix) {
+    var noteRowIdx = (sourceSheet === future ? 61 : (61 + offset)) - 1;
+    if (noteRowIdx >= 0 && noteRowIdx < matrix.length) {
+      for (var sc = 0; sc < 15; sc++) {
+        var nv = String(matrix[noteRowIdx][sc] || "");
+        if (/\[НЕ РЕЗАТЬ\]/i.test(nv)) skipCols[sc] = true;
+      }
+    }
+  }
   for (var cRow = 3; cRow <= 48; cRow++) {
     var total = 0;
     var rows = itemMap[cRow];
     if (matrix && rows) {
       for (var r = 0; r < rows.length; r++) {
         var rowIndex = rows[r] + offset - 1;
-        for (var col = 0; col < 15; col++) total += Number(matrix[rowIndex][col]) || 0;
+        for (var col = 0; col < 15; col++) {
+          if (skipCols[col]) continue;
+          total += Number(matrix[rowIndex][col]) || 0;
+        }
       }
     }
     totals.push([total]);
@@ -600,6 +614,7 @@ function doGet(e) {
 
   // delete / move доступны и через GET (JSONP из mini-app)
   if (action === "deleteClient" || action === "moveClient") {
+    payload.cutRaw = e.parameter.cutRaw;
     return handleApiAction(payload, callback, false);
   }
 
@@ -778,8 +793,34 @@ function handleGetCutting(dayName, callback) {
     items: items,
     session: getCuttingSession_(),
     completion: getCuttingCompletion_(dateText),
-    cutterNotes: collectDayRoleNotes_(ss, dayName, "cut")
+    cutterNotes: collectDayRoleNotes_(ss, dayName, "cut"),
+    transferOnly: collectTransferOnlyCutting_(ss, dayName)
   });
+}
+
+/** Клиенты с [НЕ РЕЗАТЬ] — объёмы для блока «напилено под перенос». */
+function collectTransferOnlyCutting_(ss, dayName) {
+  var data = getClientsData_(ss, dayName);
+  if (data.status !== "success") return { clients: [], lines: [] };
+  var map = {};
+  var clients = [];
+  (data.clients || []).forEach(function (c) {
+    if (!c.noCut) return;
+    clients.push(c.name);
+    (c.basket || []).forEach(function (it) {
+      var name = String(it.name || "").trim();
+      var sub = String(it.sub || "").trim();
+      var val = Number(it.val) || 0;
+      if (!name || val <= 0) return;
+      var key = name + (sub ? " / " + sub : "");
+      map[key] = (map[key] || 0) + val;
+    });
+  });
+  var lines = [];
+  for (var k in map) {
+    if (map.hasOwnProperty(k)) lines.push({ label: k, val: map[k] });
+  }
+  return { clients: clients, lines: lines };
 }
 
 function getCuttingSession_() {
@@ -946,6 +987,7 @@ function handleGetCourier(dayName, callback) {
       name: client.name,
       address: client.address,
       note: client.note,
+      phone: client.phone || "",
       geo: client.geo || null,
       basket: client.basket,
       delivered: delivered,
@@ -1040,6 +1082,11 @@ function handleMoveClient(ss, json, callback) {
   var oldMeatValues = sourceSheet.getRange(srcBlock.start, oldClientCol, srcBlock.end - srcBlock.start + 1, 1).getValues();
   var oldAddressValue = sourceSheet.getRange(srcBlock.addr, oldClientCol).getValue();
   var oldNoteValue = sourceSheet.getRange(srcBlock.note, oldClientCol).getValue();
+  var noteStr = String(oldNoteValue || "");
+  noteStr = noteStr.replace(/\s*\[НЕ РЕЗАТЬ\]/gi, "").replace(/\s*\[РЕЗАТЬ\]/gi, "").trim();
+  var cutRaw = !(json.cutRaw === false || json.cutRaw === "0" || json.cutRaw === 0 || json.cutRaw === "false");
+  if (!cutRaw) noteStr = (noteStr ? noteStr + " " : "") + "[НЕ РЕЗАТЬ]";
+  else noteStr = (noteStr ? noteStr + " " : "") + "[РЕЗАТЬ]";
 
   var newClientCol = -1;
   var tgtNicks = targetSheet.getRange(dstBlock.nick, 3, 1, 15).getValues()[0];
@@ -1063,13 +1110,13 @@ function handleMoveClient(ss, json, callback) {
 
   targetSheet.getRange(dstBlock.start, newClientCol, dstBlock.end - dstBlock.start + 1, 1).setValues(oldMeatValues);
   targetSheet.getRange(dstBlock.addr, newClientCol).setValue(oldAddressValue);
-  targetSheet.getRange(dstBlock.note, newClientCol).setValue(oldNoteValue);
+  targetSheet.getRange(dstBlock.note, newClientCol).setValue(noteStr);
 
   sourceSheet.getRange(srcBlock.nick, oldClientCol).setValue("");
   sourceSheet.getRange(srcBlock.start, oldClientCol, srcBlock.note - srcBlock.start + 1, 1).clearContent();
 
   checkLiveDeficitAndNotify();
-  return jsonp(callback, { status: "success" });
+  return jsonp(callback, { status: "success", cutRaw: cutRaw });
 }
 
 /**
@@ -1341,14 +1388,30 @@ function getClientsData_(ss, dayName) {
         }
         var geoObj = getClientGeo_(ss, dayName, nameClean);
         if (!geoObj && legacyGeo) geoObj = legacyGeo;
+        var phone = "";
+        var telM = noteStr.match(/\[TEL:([^\]]+)\]/i);
+        if (telM) phone = String(telM[1] || "").trim();
+        if (!phone) {
+          var phM = noteStr.match(/(\+?375[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})/);
+          if (phM) phone = phM[1].replace(/\s+/g, "");
+        }
+        try {
+          if (!phone) {
+            var crm = getCrmSpreadsheet_();
+            var contact = lookupContactAddress_(crm, nameClean);
+            if (contact && contact.phone) phone = contact.phone;
+          }
+        } catch (ePhone) {}
         clientsDataList.push({
           name: nameClean,
           orderCount: totalItemsInOrder,
           address: rawAddr != null ? String(rawAddr).trim() : "",
           note: noteStr,
+          phone: phone,
           geo: geoObj || null,
           basket: clientBasket,
-          col: colIdx
+          col: colIdx,
+          noCut: /\[НЕ РЕЗАТЬ\]/i.test(noteStr)
         });
       }
     }
@@ -3152,7 +3215,7 @@ function findSubscriberBasket_(crmSs, nick, preferredSegment) {
 
 function lookupContactAddress_(crmSs, nick) {
   var sh = crmSs.getSheetByName("Контакты");
-  if (!sh || sh.getLastRow() < 2) return { address: "", note: "" };
+  if (!sh || sh.getLastRow() < 2) return { address: "", note: "", phone: "" };
   var want = extractInstagramNick_(nick).toUpperCase();
   var data = sh.getDataRange().getValues();
   for (var r = 1; r < data.length; r++) {
@@ -3161,11 +3224,12 @@ function lookupContactAddress_(crmSs, nick) {
     if (nickCell === want || cell.toUpperCase().indexOf(want) >= 0) {
       return {
         address: String(data[r][3] || "").trim(),
+        phone: String(data[r][4] || "").trim(),
         note: String(data[r][6] || "").trim()
       };
     }
   }
-  return { address: "", note: "" };
+  return { address: "", note: "", phone: "" };
 }
 
 /**
@@ -3842,6 +3906,8 @@ function packCountForBulk_(grams) {
 function buildAssemblyForBasket_(basket) {
   var packs = [];
   var totalBags = 0;
+  var typeCounts = { light: 0, bulk: 0, chew: 0, craft: 0, other: 0 };
+  var lightMap = {};
   (basket || []).forEach(function (it) {
     var name = String(it.name || it.main || "").trim();
     var sub = String(it.sub || "").trim();
@@ -3850,31 +3916,47 @@ function buildAssemblyForBasket_(basket) {
     if (!name || val <= 0) return;
     var bags = 0;
     var rule = "";
-    if (/л[её]гк/i.test(name) || cat === "dressura" && /л[её]гк/i.test(name)) {
+    var type = "other";
+    if (/л[её]гк/i.test(name)) {
       bags = packCountForLight_(val);
       rule = "лёгкое";
-    } else if (cat === "chew" || /шт/i.test(name)) {
+      type = "light";
+      var fk = sub || "без фракции";
+      lightMap[fk] = (lightMap[fk] || 0) + val;
+    } else if (cat === "chew" || /шт/i.test(name) || /быч|трахе|аорт|ухо|нос|станова|колен|копыт|переп|губ|книжк/i.test(name)) {
       bags = Math.max(1, Math.ceil(val / 4));
       rule = "жевалки×4";
-    } else if (cat === "other" || /крафт/i.test(name)) {
-      bags = Math.max(1, Math.ceil(val / 5));
+      type = "chew";
+    } else if (cat === "other" || /крафт|индейк|ломтик|вымя|семен|пикальн|печень|светл/i.test(name)) {
+      bags = Math.max(1, Math.ceil(val / 5)) + 1;
       rule = "крафт×5+запас";
-      bags += 1;
+      type = "craft";
+    } else if (cat === "dressura" || cat === "powder" || cat === "veg") {
+      bags = packCountForBulk_(val);
+      rule = "сыпучее";
+      type = "bulk";
     } else {
       bags = packCountForBulk_(val);
       rule = "сыпучее";
+      type = "bulk";
     }
     totalBags += bags;
+    typeCounts[type] = (typeCounts[type] || 0) + bags;
     packs.push({
       name: name,
       sub: sub,
       val: val,
       bags: bags,
       rule: rule,
+      type: type,
       label: name + (sub ? " / " + sub : "") + " → " + bags + " пак."
     });
   });
-  return { packs: packs, totalBags: totalBags };
+  var lightByFraction = [];
+  for (var k in lightMap) {
+    if (lightMap.hasOwnProperty(k)) lightByFraction.push({ sub: k, val: lightMap[k] });
+  }
+  return { packs: packs, totalBags: totalBags, typeCounts: typeCounts, lightByFraction: lightByFraction };
 }
 
 function handleGetAssembly(json, callback, fromPost) {
@@ -3884,17 +3966,30 @@ function handleGetAssembly(json, callback, fromPost) {
     var bad = { status: "error", message: clientsData.status || "bad_day" };
     return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
   }
+  var typeTotals = { light: 0, bulk: 0, chew: 0, craft: 0, other: 0 };
+  var lightAll = {};
   var out = (clientsData.clients || []).map(function (c) {
     var plan = buildAssemblyForBasket_(c.basket || []);
+    for (var t in plan.typeCounts) {
+      if (plan.typeCounts.hasOwnProperty(t)) typeTotals[t] = (typeTotals[t] || 0) + plan.typeCounts[t];
+    }
+    (plan.lightByFraction || []).forEach(function (lf) {
+      lightAll[lf.sub] = (lightAll[lf.sub] || 0) + lf.val;
+    });
     return {
       name: c.name,
       address: c.address || "",
       note: c.note || "",
       packs: plan.packs,
-      totalBags: plan.totalBags
+      totalBags: plan.totalBags,
+      lightByFraction: plan.lightByFraction
     };
   });
-  var ok = { status: "success", day: day, clients: out };
+  var lightByFraction = [];
+  for (var lk in lightAll) {
+    if (lightAll.hasOwnProperty(lk)) lightByFraction.push({ sub: lk, val: lightAll[lk] });
+  }
+  var ok = { status: "success", day: day, clients: out, typeTotals: typeTotals, lightByFraction: lightByFraction };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
