@@ -226,7 +226,7 @@ function onEdit(e) {
   var range = e.range;
   if (sheet.getName() !== "Нарезка" || range.getA1Notation() !== "A1") return;
 
-  var sheetMemory = getDataSpreadsheet_().getSheetByName("Память_Нарезки");
+  var sheetMemory = getMemoryCuttingSheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var oldDateText = e.oldValue ? formatSheetDate(e.oldValue, tz) : "";
   var newDateText = range.getValue() ? formatSheetDate(range.getValue(), tz) : "";
@@ -275,7 +275,7 @@ function finishFullWeekProduction() {
 
   var weeklyDispatchedItems = {};
   var successClientsCount = 0;
-  var sheetMemCourier = getDataSpreadsheet_().getSheetByName("Память_Доставок");
+  var sheetMemCourier = getMemoryCourierSheet_();
   var rawMap = {
     "3": "4,5,6,7",
     "4": "8,9",
@@ -451,11 +451,11 @@ function finishFullWeekProduction() {
   var newMondayDate = sheetManager.getRange("A1").getValue();
   sheetCutting.getRange("A1").setValue(newMondayDate);
 
-  var sheetMemory = getDataSpreadsheet_().getSheetByName("Память_Нарезки");
+  var sheetMemory = getMemoryCuttingSheet_();
   if (sheetMemory && sheetMemory.getLastRow() > 0) {
     sheetMemory.getRange(1, 1, sheetMemory.getLastRow(), 2).clearContent();
   }
-  var sheetMemCourier2 = getDataSpreadsheet_().getSheetByName("Память_Доставок");
+  var sheetMemCourier2 = getMemoryCourierSheet_();
   if (sheetMemCourier2 && sheetMemCourier2.getLastRow() > 0) {
     sheetMemCourier2.getRange(1, 1, sheetMemCourier2.getLastRow(), 2).clearContent();
   }
@@ -758,7 +758,7 @@ function handleGetCutting(dayName, callback) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var cutting = ss.getSheetByName("Нарезка");
   var warehouse = ss.getSheetByName("Склад");
-  var memory = getDataSpreadsheet_().getSheetByName("Память_Нарезки");
+  var memory = getMemoryCuttingSheet_();
   var dateValue = getDayDate_(ss, dayName);
   var tz = ss.getSpreadsheetTimeZone();
   if (!cutting || !dateValue) return jsonp(callback, { status: "bad_day", items: [], session: getCuttingSession_() });
@@ -913,7 +913,7 @@ function handleUpdateCutting(ss, json, callback, fromPost) {
   }
   try {
     var cutting = ss.getSheetByName("Нарезка");
-    var memory = getDataSpreadsheet_().getSheetByName("Память_Нарезки");
+    var memory = getMemoryCuttingSheet_();
     var tz = ss.getSpreadsheetTimeZone();
     var row = Number(json.row);
     var dateValue = getDayDate_(ss, json.day);
@@ -983,7 +983,7 @@ function findCourierClientCol_(courierSheet, clientName) {
 function handleGetCourier(dayName, callback) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var courier = ss.getSheetByName("Доставки");
-  var memory = getDataSpreadsheet_().getSheetByName("Память_Доставок");
+  var memory = getMemoryCourierSheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var dateValue = getDayDate_(ss, dayName);
   var clientData = getClientsData_(ss, dayName);
@@ -1027,7 +1027,7 @@ function handleSetDelivered(ss, json, callback) {
   var block = getDayBlock(json.day);
   var targetSheet = getTargetSheet(ss, block);
   var courier = ss.getSheetByName("Доставки");
-  var memory = getDataSpreadsheet_().getSheetByName("Память_Доставок");
+  var memory = getMemoryCourierSheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var dateValue = getDayDate_(ss, json.day);
   if (!block || !targetSheet || !dateValue) return jsonpText(callback, { status: "bad_day" });
@@ -2133,7 +2133,7 @@ function getDataSpreadsheet_() {
 
 function getGeoSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = ss.getSheetByName("Гео_Клиентов");
+  var sh = findSheetByBaseName_(ss, "Гео_Клиентов");
   if (!sh) {
     sh = ss.insertSheet("Гео_Клиентов");
     sh.getRange(1, 1, 1, 5).setValues([["day", "client", "lat", "lon", "yandexUrl"]]);
@@ -2197,7 +2197,7 @@ function getClientGeo_(ss, dayName, clientName) {
 
 function getDeficitSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = ss.getSheetByName("Дефицит_Нарезки");
+  var sh = findSheetByBaseName_(ss, "Дефицит_Нарезки");
   if (!sh) {
     sh = ss.insertSheet("Дефицит_Нарезки");
     sh.getRange(1, 1, 1, 8).setValues([[
@@ -2348,7 +2348,7 @@ function handleFinishCutting(ss, json, callback, fromPost) {
 
   try {
     var cutting = ss.getSheetByName("Нарезка");
-    var memory = getDataSpreadsheet_().getSheetByName("Память_Нарезки");
+    var memory = getMemoryCuttingSheet_();
     var tz = ss.getSpreadsheetTimeZone();
     var dateValue = getDayDate_(ss, day);
     if (!cutting || !dateValue) {
@@ -2475,10 +2475,28 @@ function handlePrepareFinishCutting(json, callback, fromPost) {
 
 function getCuttingCompletionSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = ss.getSheetByName("Итоги_Нарезки");
+  var sh = findSheetByBaseName_(ss, "Итоги_Нарезки");
   if (!sh) {
     sh = ss.insertSheet("Итоги_Нарезки");
     sh.getRange(1, 1, 1, 3).setValues([["date", "day", "json"]]);
+  }
+  return sh;
+}
+
+function getMemoryCuttingSheet_() {
+  var ss = getDataSpreadsheet_();
+  var sh = findSheetByBaseName_(ss, "Память_Нарезки");
+  if (!sh) {
+    sh = ss.insertSheet("Память_Нарезки");
+  }
+  return sh;
+}
+
+function getMemoryCourierSheet_() {
+  var ss = getDataSpreadsheet_();
+  var sh = findSheetByBaseName_(ss, "Память_Доставок");
+  if (!sh) {
+    sh = ss.insertSheet("Память_Доставок");
   }
   return sh;
 }
@@ -3142,6 +3160,58 @@ var CRM_MONTH_NAMES_RU_ = [
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
 ];
 
+/**
+ * Лист по каноническому имени или «Имя (копия)» — после Copy-to spreadsheet Google так называет вкладки.
+ */
+function findSheetByBaseName_(ss, baseName) {
+  if (!ss || !baseName) return null;
+  var exact = ss.getSheetByName(baseName);
+  if (exact) return exact;
+  var copyRu = ss.getSheetByName(baseName + " (копия)");
+  if (copyRu) return copyRu;
+  var copyEn = ss.getSheetByName(baseName + " (copy)");
+  if (copyEn) return copyEn;
+  var want = String(baseName).toUpperCase().replace(/ё/g, "Е");
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var n = String(sheets[i].getName() || "").toUpperCase().replace(/ё/g, "Е");
+    if (n === want || n === want + " (КОПИЯ)" || n === want + " (COPY)") return sheets[i];
+  }
+  return null;
+}
+
+function hasLocalCrmSheets_(ss) {
+  return !!(findSheetByBaseName_(ss, "Контакты") || findSheetByBaseName_(ss, "ПП") ||
+    findSheetByBaseName_(ss, "АФК") || findSheetByBaseName_(ss, "БП") ||
+    findSheetByBaseName_(ss, "Июль") || findSheetByBaseName_(ss, "Январь") ||
+    findSheetByBaseName_(ss, "Август"));
+}
+
+/**
+ * Один раз в Script Editor: убрать суффикс « (копия)» у CRM-листов в чистовике
+ * (только если канонического имени ещё нет — ничего не затирает).
+ */
+function renameCrmCopiesToCanonical() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var bases = ["Контакты", "ПП", "АФК", "БП", "Опросник"].concat(CRM_MONTH_NAMES_RU_);
+  var renamed = [];
+  var skipped = [];
+  for (var i = 0; i < bases.length; i++) {
+    var base = bases[i];
+    var copy = ss.getSheetByName(base + " (копия)") || ss.getSheetByName(base + " (copy)");
+    if (!copy) continue;
+    if (ss.getSheetByName(base)) {
+      skipped.push(base + " (копия) — канон уже есть");
+      continue;
+    }
+    copy.setName(base);
+    renamed.push(base);
+  }
+  var msg = "renamed=" + renamed.join(", ") + (skipped.length ? "; skipped=" + skipped.join("; ") : "");
+  Logger.log(msg);
+  return msg;
+}
+
 function getCrmSpreadsheetId_() {
   var props = PropertiesService.getScriptProperties();
   return props.getProperty("CRM_SPREADSHEET_ID") || CRM_SPREADSHEET_ID_DEFAULT_;
@@ -3149,16 +3219,13 @@ function getCrmSpreadsheetId_() {
 
 function getCrmSpreadsheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  // Чистовик: если CRM уже здесь — только локально (после переноса листов)
-  if (ss.getSheetByName("Контакты") || ss.getSheetByName("ПП") || ss.getSheetByName("АФК") ||
-      ss.getSheetByName("Июль") || ss.getSheetByName("Август") || ss.getSheetByName("Январь")) {
-    return ss;
-  }
+  // Чистовик: CRM здесь (в т.ч. листы «… (копия)» после переноса)
+  if (hasLocalCrmSheets_(ss)) return ss;
   var forceExternal = PropertiesService.getScriptProperties().getProperty("CRM_FORCE_EXTERNAL");
   if (forceExternal === "1" || forceExternal === "true") {
     return SpreadsheetApp.openById(getCrmSpreadsheetId_());
   }
-  // fallback: старая отдельная CRM, пока листы не скопированы в Бойню
+  // старая книга — только если в чистовике CRM нет
   try {
     return SpreadsheetApp.openById(getCrmSpreadsheetId_());
   } catch (e) {
@@ -3284,7 +3351,7 @@ function handleFindClientMatch(json, callback, fromPost) {
   // 2) Контакты CRM (локально или внешняя)
   try {
     var crm = getCrmSpreadsheet_();
-    var contacts = crm.getSheetByName("Контакты");
+    var contacts = findSheetByBaseName_(crm, "Контакты");
     if (contacts && contacts.getLastRow() > 1) {
       var cdata = contacts.getDataRange().getValues();
       for (var c = 1; c < cdata.length; c++) {
@@ -3391,7 +3458,7 @@ function parseCrmCalendarCell_(text) {
   };
 }
 
-/** Лист месяца: «Июль», «Июль 2026», «июль_2026» — без переименования существующих. */
+/** Лист месяца: «Июль», «Июль 2026», «Июль (копия)» — без переименования существующих. */
 function resolveCrmMonthSheet_(crmSs, deliveryDate) {
   if (!crmSs || !deliveryDate) return null;
   var monthName = CRM_MONTH_NAMES_RU_[deliveryDate.getMonth()];
@@ -3403,20 +3470,19 @@ function resolveCrmMonthSheet_(crmSs, deliveryDate) {
     monthName
   ];
   for (var i = 0; i < candidates.length; i++) {
-    var sh = crmSs.getSheetByName(candidates[i]);
+    var sh = findSheetByBaseName_(crmSs, candidates[i]);
     if (sh) return sh;
   }
   // регистронезависимый / «Июль 26»
   var sheets = crmSs.getSheets();
-  var wantBase = monthName.toUpperCase();
+  var wantBase = monthName.toUpperCase().replace(/ё/g, "Е");
   var yearShort = String(year).slice(-2);
   var bestPlain = null;
   for (var s = 0; s < sheets.length; s++) {
     var title = String(sheets[s].getName() || "").trim();
-    var tU = title.toUpperCase().replace(/ё/g, "Е");
-    var baseU = wantBase.replace(/ё/g, "Е");
-    if (tU === baseU) { bestPlain = sheets[s]; continue; }
-    if (tU.indexOf(baseU) !== 0) continue;
+    var tU = title.toUpperCase().replace(/ё/g, "Е").replace(/\s*\(КОПИЯ\)\s*$/, "").replace(/\s*\(COPY\)\s*$/, "");
+    if (tU === wantBase) { bestPlain = sheets[s]; continue; }
+    if (tU.indexOf(wantBase) !== 0) continue;
     if (tU.indexOf(String(year)) >= 0 || tU.indexOf(yearShort) >= 0) return sheets[s];
   }
   return bestPlain;
@@ -3510,7 +3576,7 @@ function handleCrmInventory(json, callback, fromPost) {
     });
   }
   function countSheet(name, startRow) {
-    var sh = crmSs.getSheetByName(name);
+    var sh = findSheetByBaseName_(crmSs, name);
     if (!sh || sh.getLastRow() < startRow) return 0;
     var data = sh.getDataRange().getValues();
     var n = 0;
@@ -3523,17 +3589,17 @@ function handleCrmInventory(json, callback, fromPost) {
     status: "success",
     local: local,
     spreadsheetId: crmSs.getId(),
-    hasContacts: !!crmSs.getSheetByName("Контакты"),
-    hasPP: !!crmSs.getSheetByName("ПП"),
-    hasAFK: !!crmSs.getSheetByName("АФК"),
-    hasBP: !!crmSs.getSheetByName("БП"),
+    hasContacts: !!findSheetByBaseName_(crmSs, "Контакты"),
+    hasPP: !!findSheetByBaseName_(crmSs, "ПП"),
+    hasAFK: !!findSheetByBaseName_(crmSs, "АФК"),
+    hasBP: !!findSheetByBaseName_(crmSs, "БП"),
     contactsRows: countSheet("Контакты", 2),
     ppRows: countSheet("ПП", 3),
     afkRows: countSheet("АФК", 3),
     bpRows: countSheet("БП", 3),
     clientsProfiles: Math.max(0, getClientsProfilesSheet_().getLastRow() - 1),
     months: months,
-    note: "Даты в месяцах: заголовок колонки = число дня; год = из даты доставки. Переупаковка не нужна."
+    note: "Даты в месяцах: заголовок колонки = число дня; год = из даты доставки. Листы «… (копия)» тоже читаются."
   };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
@@ -3552,7 +3618,7 @@ function seedCrmClientsIntoProfiles_() {
     profilesAfter: 0
   };
 
-  var contacts = crmSs.getSheetByName("Контакты");
+  var contacts = findSheetByBaseName_(crmSs, "Контакты");
   if (contacts && contacts.getLastRow() > 1) {
     var cdata = contacts.getDataRange().getValues();
     for (var c = 1; c < cdata.length; c++) {
@@ -3564,7 +3630,7 @@ function seedCrmClientsIntoProfiles_() {
   }
 
   ["ПП", "АФК", "БП"].forEach(function (sheetName) {
-    var sh = crmSs.getSheetByName(sheetName);
+    var sh = findSheetByBaseName_(crmSs, sheetName);
     if (!sh || sh.getLastRow() < 3) return;
     var data = sh.getDataRange().getValues();
     for (var r = 2; r < data.length; r++) {
@@ -3687,7 +3753,7 @@ function findSubscriberBasket_(crmSs, nick, preferredSegment) {
 
   var want = extractInstagramNick_(nick).toUpperCase();
   for (var s = 0; s < sheets.length; s++) {
-    var sh = crmSs.getSheetByName(sheets[s]);
+    var sh = findSheetByBaseName_(crmSs, sheets[s]);
     if (!sh || sh.getLastRow() < 3) continue;
     var data = sh.getDataRange().getValues();
     var headers = data[0];
@@ -3708,7 +3774,7 @@ function findSubscriberBasket_(crmSs, nick, preferredSegment) {
 }
 
 function lookupContactAddress_(crmSs, nick) {
-  var sh = crmSs.getSheetByName("Контакты");
+  var sh = findSheetByBaseName_(crmSs, "Контакты");
   if (!sh || sh.getLastRow() < 2) return { address: "", note: "", phone: "" };
   var want = extractInstagramNick_(nick).toUpperCase();
   var data = sh.getDataRange().getValues();
@@ -4224,7 +4290,7 @@ function handleListSubscriptions(json, callback, fromPost) {
   var list = [];
   var seen = {};
   for (var s = 0; s < sheets.length; s++) {
-    var sh = crmSs.getSheetByName(sheets[s]);
+    var sh = findSheetByBaseName_(crmSs, sheets[s]);
     if (!sh || sh.getLastRow() < 3) continue;
     var data = sh.getDataRange().getValues();
     for (var r = 2; r < data.length; r++) {
@@ -4506,8 +4572,7 @@ function setupOpsEcosystem() {
     sku.getRange(1, 1, 1, 5).setValues([["cutRow", "warehouseRow", "name", "unit", "notes"]]);
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var crmLocal = !!(ss.getSheetByName("Контакты") || ss.getSheetByName("ПП") || ss.getSheetByName("АФК") ||
-    ss.getSheetByName("Июль") || ss.getSheetByName("Январь"));
+  var crmLocal = hasLocalCrmSheets_(ss);
   var dataId = PropertiesService.getScriptProperties().getProperty("DATA_SPREADSHEET_ID") || "";
   var seed = { profilesAfter: 0 };
   if (crmLocal) {

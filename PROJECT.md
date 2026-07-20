@@ -135,3 +135,6 @@ Script Properties: `OWNER_TELEGRAM_IDS`, `CUTTER_TELEGRAM_IDS`, опционал
 В `Code.gs` токен Telegram читается из `PropertiesService` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `OWNER_TELEGRAM_IDS`).  
 Локально для заметок: `secrets.local.md` (в `.gitignore`), не коммитить.
 
+## CRM sheet names (v7.6.6)
+
+After copy/migrate cleanup, CRM sheets may be named «Имя (копия)». Code accepts that via findSheetByBaseName_; optional renameCrmCopiesToCanonical().
