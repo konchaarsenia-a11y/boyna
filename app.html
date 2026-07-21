@@ -5350,8 +5350,8 @@
         "other": "другое"
       };
 
-      var totals = {};
-      COUNTER_ORDER.forEach(function (k) { totals[k] = 0; });
+      var rawTotals = {};
+      COUNTER_ORDER.forEach(function (k) { rawTotals[k] = 0; });
       var lightFracGrams = {};
       var lightGramsTotal = 0;
 
@@ -5359,8 +5359,7 @@
         (c.packs || []).forEach(function (p) {
           var key = packCounterKey(p);
           if (!packTypesEnabled.hasOwnProperty(key)) packTypesEnabled[key] = true;
-          if (!packTypesEnabled[key]) return;
-          totals[key] = (totals[key] || 0) + (Number(p.bags) || 0);
+          rawTotals[key] = (rawTotals[key] || 0) + (Number(p.bags) || 0);
         });
         (c.lightByFraction || []).forEach(function (lf) {
           var sub = lf.sub || "Среднее";
@@ -5377,29 +5376,25 @@
         });
       }
 
+      // фраза всегда полная; «Итого» — только включённые типы (сневелировать отсутствие пакета)
       var enabledTotal = 0;
-      COUNTER_ORDER.forEach(function (k) { enabledTotal += totals[k] || 0; });
+      COUNTER_ORDER.forEach(function (k) {
+        if (packTypesEnabled[k] !== false) enabledTotal += rawTotals[k] || 0;
+      });
 
       var phraseParts = COUNTER_ORDER.filter(function (k) {
-        return (totals[k] || 0) > 0 && packTypesEnabled[k] !== false;
+        return (rawTotals[k] || 0) > 0;
       }).map(function (k) {
-        return (totals[k] || 0) + " " + COUNTER_LABEL[k];
+        return (rawTotals[k] || 0) + " " + COUNTER_LABEL[k];
       });
-      var phrase = phraseParts.length ? phraseParts.join(" · ") : "нет пакетов (всё выключено?)";
+      var phrase = phraseParts.length ? phraseParts.join(" · ") : "нет пакетов";
 
       var cells = COUNTER_ORDER.filter(function (k) {
-        var raw = 0;
-        (res.clients || []).forEach(function (c) {
-          (c.packs || []).forEach(function (p) {
-            if (packCounterKey(p) === k) raw += Number(p.bags) || 0;
-          });
-        });
-        return raw > 0 || packTypesEnabled[k] === false;
+        return (rawTotals[k] || 0) > 0;
       }).map(function (k) {
         var on = packTypesEnabled[k] !== false;
-        var n = on ? (totals[k] || 0) : 0;
         return '<div class="pack-type-cell' + (on ? "" : " off") + '" onclick="togglePackType(\'' + k + '\')">' +
-          '<span class="n">' + n + '</span>' +
+          '<span class="n">' + (rawTotals[k] || 0) + '</span>' +
           '<span class="l">' + COUNTER_LABEL[k] + '</span></div>';
       }).join("");
 
@@ -5446,7 +5441,7 @@
 
       box.innerHTML =
         '<div class="card"><b>Счётчики пакетов</b>' +
-        '<div class="field-hint">Нажми тип, чтобы выключить — итог пересчитается</div>' +
+        '<div class="field-hint">Нажми тип, чтобы выключить — фраза та же, «Итого пакетов» уменьшится (нет такого пакета)</div>' +
         '<div class="pack-type-row">' + cells + "</div>" +
         '<div class="total-summary-badge">' + escapeHtml(phrase) + "</div>" +
         '<div class="total-summary-badge" style="margin-top:6px;">Итого пакетов: ' + enabledTotal + "</div>" +
