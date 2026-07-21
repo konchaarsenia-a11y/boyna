@@ -405,30 +405,31 @@
     }
     .cut-note-hint b { color: #fff; font-weight: 700; }
     .cut-note-hint .muted { color: rgba(255,255,255,0.55); font-size: 11.5px; }
-    .load-dance {
+    .load-simple {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 20px 12px 28px; min-height: 260px; text-align: center;
+      padding: 28px 12px; min-height: 120px; text-align: center; gap: 12px;
     }
-    .load-dance-stage {
-      width: min(72vw, 280px); height: min(72vw, 280px);
-      display: flex; align-items: center; justify-content: center;
-      margin-bottom: 8px;
-      background: transparent;
+    .load-spinner {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 3px solid rgba(255,159,10,0.25);
+      border-top-color: #ff9f0a;
+      animation: loadSpin 0.7s linear infinite;
     }
-    .load-dance-img {
-      width: 100%; height: 100%;
-      object-fit: contain;
-      background: transparent;
-      filter: drop-shadow(0 8px 18px rgba(255, 60, 120, 0.35));
-    }
-    .load-dance-label {
+    .load-simple-label {
       font-size: 14px; font-weight: 600; color: #ff9f0a; letter-spacing: 0.2px;
     }
-    .load-dance-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-    @keyframes loadDance {
-      0% { transform: translateY(4px) rotate(-7deg) scale(0.98); }
-      100% { transform: translateY(-10px) rotate(7deg) scale(1.05); }
+    @keyframes loadSpin { to { transform: rotate(360deg); } }
+    .note-block {
+      border: 1px solid var(--border-color); border-radius: 10px;
+      padding: 10px; margin-bottom: 8px; background: rgba(255,255,255,0.03);
     }
+    .note-block .note-text { width: 100%; margin-bottom: 8px; }
+    .note-block .note-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .note-perm-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .courier-flyout {
+      display: none; gap: 8px; padding: 8px 10px 0; flex-wrap: wrap;
+    }
+    .courier-flyout.open { display: flex; }
     .fx-tyan-banner {
       position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
       font-size: clamp(22px, 7vw, 34px); font-weight: 800; color: #fff;
@@ -582,14 +583,13 @@
     </div>
   </div>
   <div class="save-load-overlay" id="saveLoadOverlay">
-    <div class="load-dance-stage">
-      <img class="load-dance-img" src="assets/loading-dance.webp" alt="" draggable="false"
-        onerror="this.onerror=null;this.src='assets/loading-dance.gif'">
+    <div class="load-simple">
+      <div class="load-spinner" aria-hidden="true"></div>
+      <div class="load-simple-label" id="saveLoadLabel">Сохраняю заказ…</div>
     </div>
-    <div class="load-dance-label" id="saveLoadLabel">Сохраняю заказ…</div>
   </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.6.8</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.7.0</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -660,14 +660,11 @@
           <div class="field-hint">Введите адрес отделения, куда повезут заказ (не адрес клиента)</div>
         </div>
         <div class="form-group">
-          <label>Примечание</label>
-          <input type="text" id="noteInput" placeholder="Текст примечания" autocomplete="off">
-          <div class="field-hint" style="margin-top:8px;">Кому показать</div>
-          <div class="seg-row" id="noteRoleRow">
-            <button type="button" class="seg-btn" id="noteRoleMgr" onclick="toggleNoteRole('mgr')">Менеджеру</button>
-            <button type="button" class="seg-btn" id="noteRoleCut" onclick="toggleNoteRole('cut')">Нарезчику</button>
-            <button type="button" class="seg-btn active" id="noteRoleCour" onclick="toggleNoteRole('cour')">Курьеру</button>
-          </div>
+          <label>Примечания</label>
+          <div id="notesList"></div>
+          <button type="button" class="btn-action btn-orange" style="margin-top:6px;" onclick="addOrderNote()">Добавить ещё</button>
+          <div class="field-hint">У каждого — роли и постоянное/разовое. Телефон — только в поле выше (нарезчику не показываем).</div>
+          <input type="hidden" id="noteInput" value="">
         </div>
       </div>
 
@@ -772,7 +769,11 @@
 
     <!-- КУРЬЕР -->
     <div id="courierScreen" class="screen">
-      <div class="sub-tabs">
+      <div class="courier-flyout" id="courierFlyout">
+        <button type="button" class="order-flyout-btn" data-cfly="route">Маршрут</button>
+        <button type="button" class="order-flyout-btn" data-cfly="assembly">Сборка</button>
+      </div>
+      <div class="sub-tabs" style="display:none;" aria-hidden="true">
         <button type="button" class="sub-tab active" id="courierSubRoute" onclick="setCourierSub('route')">Маршрут</button>
         <button type="button" class="sub-tab" id="courierSubAsm" onclick="setCourierSub('assembly')">Сборка</button>
       </div>
@@ -854,12 +855,19 @@
         <div class="form-group">
           <label>Режим</label>
           <div class="seg-row">
-            <button type="button" class="seg-btn active" id="priceModeSub" onclick="setPriceMode('subscription')">Подписка</button>
+            <button type="button" class="seg-btn active" id="priceModePp" onclick="setPriceMode('pp')">ПП</button>
+            <button type="button" class="seg-btn" id="priceModeBp" onclick="setPriceMode('bp')">БП</button>
             <button type="button" class="seg-btn" id="priceModeRet" onclick="setPriceMode('retail')">Розница</button>
           </div>
         </div>
-        <div class="field-hint">Считает по текущей корзине заказа (вкладка Заказ) или вставьте чеклист ниже.</div>
+        <div class="field-hint">ПП/БП — себест.×коэф; розница — готовые цены (без 2.3). Прайс уточняется.</div>
         <button class="btn-action btn-orange" type="button" onclick="calcPriceFromBasket()">Считать корзину заказа</button>
+      </div>
+      <div class="section-title">Чеклист Instagram</div>
+      <div class="card">
+        <textarea class="ig-paste" id="igPriceChecklistPaste" placeholder="Вставь чеклист — разберём в корзину цены…"></textarea>
+        <button class="btn-action btn-orange" type="button" style="margin-top:8px;" onclick="parseIgChecklistIntoPrice()">Разобрать и считать</button>
+        <div class="field-hint">Тот же разбор, что в Заказе. Дрессура без фракции → «Среднее».</div>
       </div>
       <div id="priceResult"><p class="muted">—</p></div>
     </div>
@@ -884,7 +892,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.6.8";
+    const APP_VERSION = "v7.7.0";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -924,6 +932,9 @@
     let selectedAddressGeo = null; // {lat, lon, address, yandexUrl}
     let selectedPostOfficeGeo = null;
     let noteRoles = { mgr: false, cut: false, cour: true };
+    let orderNotes = [{ text: "", roles: { mgr: false, cut: false, cour: true }, permanent: false }];
+    let priceBasket = [];
+    let priceMode = "pp";
     let postOfficeSuggestTimer = null;
     let postOfficeSuggestSeq = 0;
     let addressSuggestTimer = null;
@@ -966,7 +977,7 @@
       pending: [],
       denied: []
     };
-    let priceMode = "subscription";
+    /* priceMode set above */
     let courierSub = "route";
     let weekTabUnlocked = false;
     let packTypesEnabled = { light: true, bulk: true, chew: true, craft: true, other: true };
@@ -1340,6 +1351,67 @@
     let orderFlyoutJustOpened = false;
     let suppressOrderClick = false;
 
+
+    function toggleCourierFlyout(force) {
+      var fly = document.getElementById("courierFlyout");
+      if (!fly) return;
+      var open = force === true ? true : force === false ? false : !fly.classList.contains("open");
+      fly.classList.toggle("open", open);
+    }
+    let courierFlyoutJustOpened = false;
+    let suppressCourierClick = false;
+    function bindCourierLongPress() {
+      const btn = document.querySelector('.tab-link[data-screen="courierScreen"]');
+      if (!btn || btn._cFlyBound) return;
+      btn._cFlyBound = true;
+      let timer = null;
+      function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+      function startPress() {
+        clearTimer();
+        timer = setTimeout(function () {
+          courierFlyoutJustOpened = true;
+          suppressCourierClick = true;
+          toggleCourierFlyout(true);
+          try { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium"); } catch (e) {}
+        }, 480);
+      }
+      function endPress(e) {
+        clearTimer();
+        if (suppressCourierClick && e) { e.preventDefault(); e.stopPropagation(); }
+      }
+      btn.addEventListener("touchstart", startPress, { passive: true });
+      btn.addEventListener("touchend", endPress);
+      btn.addEventListener("touchcancel", clearTimer);
+      btn.addEventListener("mousedown", startPress);
+      btn.addEventListener("mouseup", endPress);
+      btn.addEventListener("mouseleave", clearTimer);
+      btn.addEventListener("click", function (e) {
+        if (suppressCourierClick) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          suppressCourierClick = false;
+          return;
+        }
+        var fly = document.getElementById("courierFlyout");
+        if (fly && fly.classList.contains("open") && !courierFlyoutJustOpened) {
+          toggleCourierFlyout(false);
+        }
+        courierFlyoutJustOpened = false;
+      }, true);
+      document.querySelectorAll("#courierFlyout .order-flyout-btn").forEach(function (b) {
+        b.onclick = function () {
+          const which = b.getAttribute("data-cfly");
+          courierFlyoutJustOpened = false;
+          toggleCourierFlyout(false);
+          if (which) {
+            window._courierOpenAssembly = (which === "assembly");
+            switchTab("courierScreen");
+            setCourierSub(which);
+          }
+        };
+      });
+    }
+
     function bindOrderLongPress() {
       const btn = document.querySelector('.tab-link[data-screen="orderScreen"]');
       if (!btn) return;
@@ -1447,8 +1519,8 @@
       if (m.address) document.getElementById("addressInput").value = m.address;
       if (m.phone) document.getElementById("phoneInput").value = m.phone;
       if (m.note) {
-        const ni = document.getElementById("noteInput");
-        if (!(ni.value || "").trim()) ni.value = m.note;
+        var hasAny = (orderNotes || []).some(function (n) { return String(n.text || "").trim(); });
+        if (!hasAny) loadOrderNotesFromRaw(m.note);
       }
       hideClientMatchBtn();
       showToast("Данные подставлены (состав не трогали)");
@@ -1513,6 +1585,13 @@
         // только что открыли long-press — не закрывать
         orderFlyoutJustOpened = false;
       }
+      try {
+        var cfly = document.getElementById("courierFlyout");
+        if (cfly && screenId !== "courierScreen") {
+          cfly.classList.remove("open");
+          courierFlyoutJustOpened = false;
+        }
+      } catch (eCfly) {}
       document.querySelectorAll(".screen").forEach(function (el) { el.classList.remove("active"); });
       document.querySelectorAll(".tab-link").forEach(function (el) {
         el.classList.toggle("active", el.getAttribute("data-screen") === screenId);
@@ -1541,7 +1620,11 @@
         if (screenId === "warehouseScreen") loadWarehouse();
         if (screenId === "subsScreen") loadSubscriptions();
         if (screenId === "peopleScreen") loadPeople();
-        if (screenId === "courierScreen" && courierSub === "assembly") loadAssembly();
+        if (screenId === "courierScreen") {
+          // короткий тап = маршрут; сборку открывает long-press → setCourierSub после switchTab
+          if (!window._courierOpenAssembly) setCourierSub("route");
+          window._courierOpenAssembly = false;
+        }
       } catch (e3) {}
     }
     // доступно для inline onclick даже при странностях WebView
@@ -1702,16 +1785,26 @@
     async function sendEntireOrder() {
       const clientName = document.getElementById("client").value.trim();
       let clientAddress = document.getElementById("addressInput").value.trim();
-      let clientNote = document.getElementById("noteInput").value.trim();
+      let clientNote = serializeOrderNotes(orderNotes).trim();
       const day = document.getElementById("day").value;
       const deliveryDate = (document.getElementById("deliveryDate") && document.getElementById("deliveryDate").value) || "";
       const isEdit = document.getElementById("isEditMode").value === "true";
       if (!clientName) { await uiAlertAsync("Введите имя клиента"); return; }
       if (!deliveryDate) { await uiAlertAsync("Укажите дату доставки"); return; }
       if (!basket.length) { await uiAlertAsync("Корзина пуста"); return; }
-      if (clientNote && !getSelectedNoteRoles().length) {
-        await uiAlertAsync("Выберите, кому показать примечание (менеджер / нарезчик / курьер).");
-        return;
+      {
+        var hasText = (orderNotes || []).some(function (n) { return String(n.text || "").trim(); });
+        if (hasText) {
+          var bad = (orderNotes || []).some(function (n) {
+            if (!String(n.text || "").trim()) return false;
+            var r = n.roles || {};
+            return !(r.mgr || r.cut || r.cour);
+          });
+          if (bad) {
+            await uiAlertAsync("У каждого примечания выберите роли (менеджер / нарезчик / курьер).");
+            return;
+          }
+        }
       }
 
       const outside = await isOutsideMinskDelivery(clientAddress);
@@ -1751,14 +1844,17 @@
         document.getElementById("postOfficeGroup").style.display = "none";
       }
 
-      // GEO не кладём в примечание — только отдельным полем
+      // GEO/TEL не кладём в примечание — телефон только отдельным полем (нарезчику не светить)
       clientNote = stripGeoTags(clientNote);
+      clientNote = String(clientNote || "").replace(/\[TEL:[^\]]+\]/gi, "").trim();
       const phone = (document.getElementById("phoneInput") && document.getElementById("phoneInput").value || "").trim();
-      if (phone) {
-        clientNote = String(clientNote || "").replace(/\[TEL:[^\]]+\]/gi, "").trim();
-        clientNote = (clientNote ? clientNote + " " : "") + "[TEL:" + phone + "]";
-      }
-      clientNote = applyNoteAudience(clientNote, getSelectedNoteRoles());
+      // delivery tags already applied above onto clientNote body; re-merge NOTE blocks if tags-only path emptied body
+      var noteBody = serializeOrderNotes(orderNotes);
+      // keep delivery/office tags from clientNote prefix
+      var tagBits = [];
+      String(clientNote || "").replace(/\[(ЕВРОПОЧТА|БЕЛПОЧТА|КУРЬЕР|ОТДЕЛЕНИЕ:[^\]]*)\]/gi, function (x) { tagBits.push(x); return ""; });
+      clientNote = (tagBits.join(" ") + (tagBits.length && noteBody ? " " : "") + noteBody).trim();
+      var permanentNote = collectPermanentNotesText();
 
       const okConfirm = await uiConfirmAsync(isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?"));
       if (!okConfirm) return;
@@ -1775,6 +1871,7 @@
         address: clientAddress,
         phone: phone,
         note: clientNote,
+        permanentNote: permanentNote,
         geo: selectedAddressGeo ? {
           lat: selectedAddressGeo.lat,
           lon: selectedAddressGeo.lon,
@@ -1829,7 +1926,7 @@
         document.getElementById("client").readOnly = false;
         document.getElementById("client").value = "";
         document.getElementById("addressInput").value = "";
-        document.getElementById("noteInput").value = "";
+        clearOrderNotes();
         const phoneEl = document.getElementById("phoneInput");
         if (phoneEl) phoneEl.value = "";
         hideClientMatchBtn();
@@ -1857,13 +1954,12 @@
     }
 
     function loadingDanceHtml(label) {
-      return '<div class="load-dance" aria-busy="true">' +
-        '<div class="load-dance-stage">' +
-          '<img class="load-dance-img" src="assets/loading-dance.webp" alt="" draggable="false" ' +
-            'onerror="this.onerror=null;this.src=\'assets/loading-dance.gif\'">' +
-        '</div>' +
-        '<div class="load-dance-label">' + escapeHtml(label || "Загружаю…") + "</div>" +
-        '<div class="load-dance-sub">танцует, пока считаем день</div></div>';
+      return simpleLoadingHtml(label);
+    }
+    function simpleLoadingHtml(label) {
+      return '<div class="load-simple" aria-busy="true">' +
+        '<div class="load-spinner" aria-hidden="true"></div>' +
+        '<div class="load-simple-label">' + escapeHtml(label || "Загружаю…") + "</div></div>";
     }
 
     function renderCutNoteHint(item) {
@@ -2184,8 +2280,7 @@
         yandexUrl: geo.yandexUrl || parseYandexUrlFromNote(rawNote) || ("https://yandex.ru/maps/?pt=" + geo.lon + "," + geo.lat + "&z=17&l=map")
       } : null;
       setAddressPickedHint(!!selectedAddressGeo);
-      document.getElementById("noteInput").value = stripMetaFromNote(rawNote);
-      setNoteRolesFromNote(rawNote);
+      loadOrderNotesFromRaw(rawNote);
       const dm = parseDeliveryMethod(rawNote);
       selectedDeliveryMethod = dm;
       const office = parseOfficeAddress(rawNote);
@@ -2982,7 +3077,27 @@
       const day = document.getElementById("courierDaySelect").value;
       const client = courierClientsCache[index];
       if (!client) return;
+      var paidAnswer = null;
+      if (delivered && client.askPaid) {
+        var picked = await uiChoiceAsync(
+          "Оплата",
+          "Клиент " + client.name + " (ПП, N=2). Оплачено?",
+          [
+            { label: "Да, оплачено", value: "yes", cls: "btn-green" },
+            { label: "Нет", value: "no", cls: "btn-orange" },
+            { label: "Отмена", value: "", cls: "" }
+          ]
+        );
+        if (!picked) {
+          // revert checkbox
+          var rows0 = document.querySelectorAll("#courierContainer .courier-row input[type=checkbox]");
+          if (rows0[index]) rows0[index].checked = false;
+          return;
+        }
+        paidAnswer = picked;
+      }
       client.delivered = delivered;
+      if (paidAnswer) client.paid = paidAnswer;
       refreshCourierSummary();
       const rows = document.querySelectorAll("#courierContainer .courier-row");
       const row = rows[index];
@@ -2998,7 +3113,9 @@
         }
       }
       try {
-        await apiPost({ action: "setDelivered", day: day, client: client.name, delivered: delivered });
+        var body = { action: "setDelivered", day: day, client: client.name, delivered: delivered };
+        if (paidAnswer) body.paid = paidAnswer;
+        await apiPost(body);
       } catch (e) {
         client.delivered = !delivered;
         refreshCourierSummary();
@@ -3007,6 +3124,123 @@
       }
     }
 
+
+    /* === BATCH_C_NOTES_HELPERS === */
+    function defaultOrderNote() {
+      return { text: "", roles: { mgr: false, cut: false, cour: true }, permanent: false };
+    }
+    function renderOrderNotes() {
+      var box = document.getElementById("notesList");
+      if (!box) return;
+      if (!orderNotes.length) orderNotes = [defaultOrderNote()];
+      box.innerHTML = orderNotes.map(function (n, i) {
+        var r = n.roles || {};
+        return '<div class="note-block" data-ni="' + i + '">' +
+          '<input type="text" class="note-text" placeholder="Текст примечания" value="' + String(n.text || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;") + '" ' +
+          'oninput="onOrderNoteText(' + i + ', this.value)">' +
+          '<div class="note-meta">' +
+          '<button type="button" class="seg-btn' + (r.mgr ? " active" : "") + '" onclick="toggleOrderNoteRole(' + i + ',\'mgr\')">Менеджеру</button>' +
+          '<button type="button" class="seg-btn' + (r.cut ? " active" : "") + '" onclick="toggleOrderNoteRole(' + i + ',\'cut\')">Нарезчику</button>' +
+          '<button type="button" class="seg-btn' + (r.cour ? " active" : "") + '" onclick="toggleOrderNoteRole(' + i + ',\'cour\')">Курьеру</button>' +
+          (orderNotes.length > 1 ? '<button type="button" class="seg-btn" onclick="removeOrderNote(' + i + ')">✕</button>' : "") +
+          '</div>' +
+          '<div class="note-perm-row">' +
+          '<button type="button" class="seg-btn' + (!n.permanent ? " active" : "") + '" onclick="setOrderNotePerm(' + i + ',false)">Разовое</button>' +
+          '<button type="button" class="seg-btn' + (n.permanent ? " active" : "") + '" onclick="setOrderNotePerm(' + i + ',true)">Постоянное → Контакты</button>' +
+          '</div></div>';
+      }).join("");
+      syncLegacyNoteInput();
+    }
+    function onOrderNoteText(i, v) {
+      if (!orderNotes[i]) return;
+      orderNotes[i].text = v;
+      syncLegacyNoteInput();
+    }
+    function toggleOrderNoteRole(i, role) {
+      if (!orderNotes[i]) return;
+      orderNotes[i].roles[role] = !orderNotes[i].roles[role];
+      renderOrderNotes();
+    }
+    function setOrderNotePerm(i, perm) {
+      if (!orderNotes[i]) return;
+      orderNotes[i].permanent = !!perm;
+      renderOrderNotes();
+    }
+    function addOrderNote() {
+      orderNotes.push(defaultOrderNote());
+      renderOrderNotes();
+    }
+    function removeOrderNote(i) {
+      orderNotes.splice(i, 1);
+      if (!orderNotes.length) orderNotes = [defaultOrderNote()];
+      renderOrderNotes();
+    }
+    function syncLegacyNoteInput() {
+      var ni = document.getElementById("noteInput");
+      if (ni) ni.value = serializeOrderNotes(orderNotes);
+    }
+    function serializeOrderNotes(list) {
+      var parts = [];
+      (list || []).forEach(function (n) {
+        var t = String(n.text || "").trim();
+        if (!t) return;
+        var roles = [];
+        if (n.roles && n.roles.mgr) roles.push("mgr");
+        if (n.roles && n.roles.cut) roles.push("cut");
+        if (n.roles && n.roles.cour) roles.push("cour");
+        if (!roles.length) roles = ["cour"];
+        var kind = n.permanent ? "perm" : "once";
+        parts.push("[NOTE:" + roles.join(",") + "|" + kind + "] " + t);
+      });
+      return parts.join(" || ");
+    }
+    function parseOrderNotesFromRaw(raw) {
+      var s = String(raw || "").trim();
+      if (!s) return [defaultOrderNote()];
+      var blocks = [];
+      var re = /\[NOTE:([^\|\]]+)\|(perm|once)\]\s*([^]*?)(?=\s*\|\|\s*\[NOTE:|$)/gi;
+      var m;
+      while ((m = re.exec(s))) {
+        var rolesArr = String(m[1] || "").toLowerCase().split(/[,;\s]+/).filter(Boolean);
+        var roles = { mgr: rolesArr.indexOf("mgr") >= 0, cut: rolesArr.indexOf("cut") >= 0, cour: rolesArr.indexOf("cour") >= 0 };
+        blocks.push({ text: String(m[3] || "").trim(), roles: roles, permanent: m[2] === "perm" });
+      }
+      if (blocks.length) return blocks;
+      // legacy single note
+      var rolesL = parseNoteAudience(s);
+      var text = stripMetaFromNote(s).replace(/\[TEL:[^\]]+\]/gi, "").replace(/\s{2,}/g, " ").trim();
+      // keep delivery tags out of editable text — stripMeta already drops TO/GEO; also strip NOTE leftovers
+      text = text.replace(/\[NOTE:[^\]]+\]/gi, "").trim();
+      return [{
+        text: text,
+        roles: { mgr: rolesL.indexOf("mgr") >= 0, cut: rolesL.indexOf("cut") >= 0, cour: rolesL.indexOf("cour") >= 0 },
+        permanent: false
+      }];
+    }
+    function loadOrderNotesFromRaw(raw) {
+      orderNotes = parseOrderNotesFromRaw(raw);
+      renderOrderNotes();
+    }
+    function clearOrderNotes() {
+      orderNotes = [defaultOrderNote()];
+      renderOrderNotes();
+    }
+    function collectPermanentNotesText() {
+      return (orderNotes || []).filter(function (n) {
+        return n.permanent && String(n.text || "").trim();
+      }).map(function (n) { return String(n.text).trim(); }).join(" · ");
+    }
+    function assembleNoteForSave(extraTags) {
+      var body = serializeOrderNotes(orderNotes);
+      var tags = String(extraTags || "").trim();
+      return (tags + (tags && body ? " " : "") + body).trim();
+    }
+    window.addOrderNote = addOrderNote;
+    window.removeOrderNote = removeOrderNote;
+    window.toggleOrderNoteRole = toggleOrderNoteRole;
+    window.setOrderNotePerm = setOrderNotePerm;
+    window.onOrderNoteText = onOrderNoteText;
+
     function stripDeliveryTags(note) {
       return String(note || "")
         .replace(/\[ЕВРОПОЧТА\]/gi, "")
@@ -3014,6 +3248,9 @@
         .replace(/\[КУРЬЕР\]/gi, "")
         .replace(/\[ОТДЕЛЕНИЕ:[^\]]*\]/gi, "")
         .replace(/\[TO:[^\]]+\]/gi, "")
+        .replace(/\[NOTE:[^\]]+\]/gi, "")
+        .replace(/\[TEL:[^\]]+\]/gi, "")
+        .replace(/\[PAID:[^\]]+\]/gi, "")
         .replace(/\[GEO:[^\]]+\]/gi, "")
         .replace(/\[YMAPS:[^\]]+\]/gi, "")
         .replace(/\s{2,}/g, " ")
@@ -3039,9 +3276,24 @@
     }
 
     function noteTextForRole(note, role) {
-      const roles = parseNoteAudience(note);
+      const raw = String(note || "");
+      const bits = [];
+      const re = /\[NOTE:([^|\]]+)\|(perm|once)\]\s*([^]*?)(?=\s*\|\|\s*\[NOTE:|$)/gi;
+      let m;
+      let any = false;
+      while ((m = re.exec(raw))) {
+        any = true;
+        const rolesArr = String(m[1] || "").toLowerCase().split(/[,;\s]+/).filter(Boolean);
+        if (rolesArr.indexOf(role) < 0) continue;
+        const t = String(m[3] || "").replace(/\[TEL:[^\]]+\]/gi, "").trim();
+        if (t) bits.push(t);
+      }
+      if (any) return bits.join(" · ");
+      const roles = parseNoteAudience(raw);
       if (roles.indexOf(role) < 0) return "";
-      return stripMetaFromNote(note);
+      let t = stripMetaFromNote(raw);
+      if (role === "cut") t = t.replace(/\[TEL:[^\]]+\]/gi, "").replace(/\+?375[\d\s\-]{9,}/g, "").replace(/\s{2,}/g, " ").trim();
+      return t;
     }
 
     function applyNoteAudience(note, roles) {
@@ -4887,12 +5139,18 @@
       }).join("") || '<div class="muted">Нет лёгкого</div>';
 
       var clientsHtml = (res.clients || []).map(function (c) {
+        var byType = { light: 0, bulk: 0, chew: 0, craft: 0, other: 0 };
         var bags = 0;
-        var lines = (c.packs || []).filter(function (p) {
-          return packTypesEnabled[p.type || "other"];
-        }).map(function (p) {
-          bags += Number(p.bags) || 0;
-          return '<div class="pack-line">' + p.label + '</div>';
+        (c.packs || []).forEach(function (p) {
+          var t = p.type || "other";
+          if (!packTypesEnabled[t]) return;
+          var n = Number(p.bags) || 0;
+          byType[t] = (byType[t] || 0) + n;
+          bags += n;
+        });
+        var typeLabels = { light: "Лёгкое", bulk: "Сыпуч.", chew: "Жевал.", craft: "Крафт", other: "Другое" };
+        var lines = Object.keys(byType).filter(function (k) { return byType[k] > 0; }).map(function (k) {
+          return '<div class="pack-line">' + typeLabels[k] + ': <b>' + byType[k] + '</b></div>';
         }).join("");
         return '<div class="card" style="margin-bottom:10px;"><b>' + escapeHtml(c.name) + '</b>' +
           ' <span class="muted">· ' + bags + ' пак.</span>' +
@@ -4909,19 +5167,38 @@
     }
     window.loadAssembly = loadAssembly;
 
-    function parseIgChecklistIntoBasket() {
-      var raw = (document.getElementById("igChecklistPaste").value || "").trim();
-      if (!raw) { showToast("Вставь текст чеклиста"); return; }
-      var lines = raw.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
-      var added = 0;
-      var noteBits = [];
+    function buildIgKnownMap() {
       var known = {};
       Object.keys(catalog).forEach(function (k) {
         (catalog[k].items || []).forEach(function (n) {
           known[n.toUpperCase()] = { cat: k, name: n, fractions: (catalog[k].fractions || {})[n] || [] };
         });
       });
-
+      return known;
+    }
+    function igAliasResolve(up) {
+      var aliases = {
+        "РУБЕЦ": "РУБЕЦ Т",
+        "РУБЕЦ ТЁРПЫЙ": "РУБЕЦ Т",
+        "РУБЕЦ ТЕРПЫЙ": "РУБЕЦ Т",
+        "ТЁРПЫЙ РУБЕЦ": "РУБЕЦ Т",
+        "СВЕТЛЫЙ РУБЕЦ": "СВЕТЛЫЙ РУБЕЦ",
+        "КРОШКА РУБЦА": "КРОШКА РУБЕЦ",
+        "КОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
+        "БЫЧИЙКОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
+        "БЫЧИЙ КОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
+        "ЛЕГКОЕ": "ЛЁГКОЕ",
+        "ЛЁГКОЕ": "ЛЁГКОЕ",
+        "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО"
+      };
+      if (aliases[up]) return aliases[up];
+      return up;
+    }
+    function parseIgLinesToItems(raw) {
+      var lines = String(raw || "").split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+      var added = [];
+      var noteBits = [];
+      var known = buildIgKnownMap();
       function mapChewFrac(token) {
         var t = String(token || "").toUpperCase();
         if (/ОЧ\s*МАЛ|ОЧЕНЬ\s*МАЛ/.test(t)) return "ОЧ МАЛ";
@@ -4929,7 +5206,7 @@
         if (/ПАЛК/.test(t)) return "ПАЛК";
         if (/ПЛАСТ/.test(t)) return "ПЛАСТ";
         if (/ОГР|ОГРОМ/.test(t)) return "ОГР";
-        if (/МЕЛК|МАЛ/.test(t)) return "МАЛ";
+        if (/\bМЕЛК|\bМАЛ\b/.test(t) && !/ОЧ/.test(t)) return "МАЛ";
         if (/СРЕДН|СРЕД/.test(t)) return "СРЕД";
         if (/БОЛЬШ|БОЛ|КРУПН/.test(t)) return "БОЛ";
         return "";
@@ -4943,109 +5220,110 @@
         if (/ЦЕЛ/.test(t)) return "Целое";
         return "";
       }
-
+      function matchKnown(upRaw) {
+        var up = igAliasResolve(upRaw);
+        var keys = Object.keys(known).sort(function (a, b) { return b.length - a.length; });
+        // exact
+        for (var i = 0; i < keys.length; i++) {
+          if (up === keys[i]) return known[keys[i]];
+        }
+        // longest key contained in up OR up contained in key (only if up length >= 5)
+        var best = null, bestLen = 0;
+        for (var j = 0; j < keys.length; j++) {
+          var k = keys[j];
+          if (up.indexOf(k) >= 0 && k.length > bestLen) { best = known[k]; bestLen = k.length; }
+          else if (up.length >= 5 && k.indexOf(up) >= 0 && up.length > bestLen) { best = known[k]; bestLen = up.length; }
+        }
+        return best;
+      }
       lines.forEach(function (line) {
         var m = line.match(/^(.+?)\s*[—\-–:]\s*(\d+(?:[.,]\d+)?)\s*(г|гр|грамм|шт|кг)?/i) ||
                 line.match(/^(\d+(?:[.,]\d+)?)\s*(г|гр|шт|кг)?\s+(.+)$/i);
-        var namePart = "";
-        var val = 0;
-        var unit = "";
+        var namePart = "", val = 0, unit = "";
         if (m) {
           if (m[3] && /г|шт|кг/i.test(String(m[2] || ""))) {
-            val = parseFloat(String(m[1]).replace(",", "."));
-            unit = m[2] || "";
-            namePart = m[3];
+            val = parseFloat(String(m[1]).replace(",", ".")); unit = m[2] || ""; namePart = m[3];
           } else {
-            namePart = m[1];
-            val = parseFloat(String(m[2]).replace(",", "."));
-            unit = m[3] || "";
+            namePart = m[1]; val = parseFloat(String(m[2]).replace(",", ".")); unit = m[3] || "";
           }
         } else {
-          var m2 = line.match(/(.+?)\s+(\d+(?:[.,]\d+)?)\s*(г|гр|шт)?$/i);
+          var m2 = line.match(/(.+?)\s+(\d+(?:[.,]\d+)?)\s*(г|гр|шт|кг)?$/i);
           if (!m2) return;
-          namePart = m2[1];
-          val = parseFloat(String(m2[2]).replace(",", "."));
-          unit = m2[3] || "";
+          namePart = m2[1]; val = parseFloat(String(m2[2]).replace(",", ".")); unit = m2[3] || "";
         }
         if (!namePart || !(val > 0)) return;
         if (/кг/i.test(unit)) val = Math.round(val * 1000);
         var up = namePart.toUpperCase().replace(/\s+/g, " ").trim();
         var frac = "";
         var fracHit = up.match(/\b(ОЧ\s*МАЛ|МЕЛК\w*|СРЕДН\w*|СРЕД\w*|БОЛЬШ\w*|КРУПН\w*|ЦЕЛ\w*|МАЛ|БОЛ|ОГР|ПАЛК|ПЛАСТ|ПОЛОВИН\w*)\b/);
-        if (fracHit) {
-          up = up.replace(fracHit[0], "").replace(/\s+/g, " ").trim();
-        }
-        var hit = null;
-        var keys = Object.keys(known).sort(function (a, b) { return b.length - a.length; });
-        for (var ki = 0; ki < keys.length; ki++) {
-          var k = keys[ki];
-          if (up.indexOf(k) >= 0 || k.indexOf(up) >= 0) { hit = known[k]; break; }
-        }
+        if (fracHit) up = up.replace(fracHit[0], "").replace(/\s+/g, " ").trim();
+        up = igAliasResolve(up);
+        var hit = matchKnown(up);
         if (!hit) {
           noteBits.push(namePart.trim() + " " + val + (unit || ""));
-          basket.push({
-            id: Date.now() + Math.random(),
-            cat: "other",
-            main: namePart.trim(),
-            name: namePart.trim(),
-            sub: "",
-            value: val,
-            val: val
-          });
-          added++;
+          added.push({ cat: "other", main: namePart.trim(), name: namePart.trim(), sub: "", value: val, val: val });
           return;
         }
-
         if (fracHit) {
           frac = hit.cat === "chew" ? mapChewFrac(fracHit[0]) : mapDressFrac(fracHit[0]);
           if (hit.cat === "chew" && !frac) frac = mapDressFrac(fracHit[0]);
-          if (hit.cat === "dressura" && frac === "Большое" && hit.fractions.indexOf("Большое") < 0 && hit.fractions.indexOf("Крупное") >= 0) {
-            frac = "Крупное";
-          }
-          // СРЕДНЕЕ на жевалке → СРЕД
+          if (hit.cat === "dressura" && frac === "Большое" && hit.fractions.indexOf("Большое") < 0 && hit.fractions.indexOf("Крупное") >= 0) frac = "Крупное";
           if (hit.cat === "chew" && /СРЕДН/.test(String(fracHit[0]).toUpperCase())) frac = "СРЕД";
         }
-
-        var fracOk = true;
         if (hit.fractions && hit.fractions.length) {
           if (!frac) {
-            fracOk = false;
-            noteBits.push(hit.name + " " + val + " — фракция не указана");
-            frac = "";
+            if (hit.cat === "dressura" && hit.fractions.indexOf("Среднее") >= 0) {
+              frac = "Среднее";
+            } else if (hit.name === "БЫЧИЙ КОРЕНЬ") {
+              noteBits.push(hit.name + " " + val + " — нужна фракция (ОЧ МАЛ/МАЛ/СРЕД/БОЛ/ОГР)");
+              frac = "";
+            } else {
+              noteBits.push(hit.name + " " + val + " — фракция не указана");
+              frac = "";
+            }
           } else if (hit.fractions.indexOf(frac) < 0) {
-            fracOk = false;
-            noteBits.push(hit.name + " / " + frac + " " + val + " — нет такой фракции в таблице");
-            // не подставляем «Среднее» наугад
+            noteBits.push(hit.name + " / " + frac + " " + val + " — нет такой фракции");
             frac = "";
           }
         } else {
-          frac = ""; // жевалки без фракций в каталоге / овощи
+          frac = "";
         }
-
-        basket.push({
-          id: Date.now() + Math.random(),
-          cat: hit.cat,
-          main: hit.name,
-          name: hit.name,
-          sub: frac,
-          value: val,
-          val: val
-        });
-        added++;
-        if (!fracOk) { /* already in noteBits */ }
+        added.push({ cat: hit.cat, main: hit.name, name: hit.name, sub: frac, value: val, val: val });
       });
-
-      if (noteBits.length) {
-        var ni = document.getElementById("noteInput");
-        var extra = "Чеклист: " + noteBits.join("; ");
-        ni.value = ((ni.value || "").trim() ? (ni.value.trim() + " · ") : "") + extra;
-        setNoteRoles({ mgr: true, cut: true, cour: true });
-        showToast("Есть позиции без точной фракции — примечание всем");
+      return { items: added, noteBits: noteBits };
+    }
+    function parseIgChecklistIntoBasket() {
+      var raw = (document.getElementById("igChecklistPaste").value || "").trim();
+      if (!raw) { showToast("Вставь текст чеклиста"); return; }
+      var parsed = parseIgLinesToItems(raw);
+      parsed.items.forEach(function (it) {
+        basket.push({ id: Date.now() + Math.random(), cat: it.cat, main: it.main, name: it.name, sub: it.sub, value: it.val, val: it.val });
+      });
+      if (parsed.noteBits.length) {
+        orderNotes.push({
+          text: "Чеклист: " + parsed.noteBits.join("; "),
+          roles: { mgr: true, cut: true, cour: true },
+          permanent: false
+        });
+        renderOrderNotes();
+        showToast("Есть позиции без точной фракции — в примечании");
       }
       renderBasket();
-      showToast("Добавлено позиций: " + added);
+      showToast("Добавлено позиций: " + parsed.items.length);
     }
     window.parseIgChecklistIntoBasket = parseIgChecklistIntoBasket;
+    function parseIgChecklistIntoPrice() {
+      var raw = (document.getElementById("igPriceChecklistPaste").value || "").trim();
+      if (!raw) { showToast("Вставь текст чеклиста"); return; }
+      var parsed = parseIgLinesToItems(raw);
+      priceBasket = parsed.items.map(function (it) {
+        return { id: Date.now() + Math.random(), cat: it.cat, main: it.main, name: it.name, sub: it.sub, value: it.val, val: it.val };
+      });
+      if (parsed.noteBits.length) showToast("Часть позиций без фракции — проверь");
+      calcPriceFromBasket(true);
+    }
+    window.parseIgChecklistIntoPrice = parseIgChecklistIntoPrice;
+
 
     async function loadWarehouse() {
       var box = document.getElementById("warehouseContainer");
@@ -5145,7 +5423,7 @@
         var res = await apiGet({ action: "getSubscription", nick: nick });
         document.getElementById("client").value = nick;
         if (res.address) document.getElementById("addressInput").value = res.address;
-        if (res.wishes || res.note) document.getElementById("noteInput").value = [res.wishes, res.note].filter(Boolean).join(" ");
+        if (res.wishes || res.note) loadOrderNotesFromRaw([res.wishes, res.note].filter(Boolean).join(" "));
         basket = (res.basket || []).map(function (x) {
           return {
             id: Date.now() + Math.random(),
@@ -5168,26 +5446,27 @@
 
     function setPriceMode(mode) {
       priceMode = mode;
-      document.getElementById("priceModeSub").classList.toggle("active", mode === "subscription");
-      document.getElementById("priceModeRet").classList.toggle("active", mode === "retail");
+      var pp = document.getElementById("priceModePp");
+      var bp = document.getElementById("priceModeBp");
+      var ret = document.getElementById("priceModeRet");
+      if (pp) pp.classList.toggle("active", mode === "pp" || mode === "subscription");
+      if (bp) bp.classList.toggle("active", mode === "bp");
+      if (ret) ret.classList.toggle("active", mode === "retail");
     }
     window.setPriceMode = setPriceMode;
 
-    async function calcPriceFromBasket() {
+    async function calcPriceFromBasket(usePriceBasket) {
       var box = document.getElementById("priceResult");
-      if (!basket.length) {
-        box.innerHTML = '<p class="muted">Корзина заказа пуста — сначала соберите на вкладке Заказ</p>';
+      var src = (usePriceBasket && priceBasket.length) ? priceBasket : basket;
+      if (!src.length) {
+        box.innerHTML = '<p class="muted">Корзина пуста — соберите на Заказе или вставьте чеклист выше</p>';
         return;
       }
-      box.innerHTML = '<p class="muted">Считаю…</p>';
+      box.innerHTML = simpleLoadingHtml("Считаю цену…");
       try {
-        // через GET с JSON в query может быть длинно — используем list + локальный fallback через apiGet calcPrice
-        var payloadBasket = basket.map(function (x) {
+        var payloadBasket = src.map(function (x) {
           return { name: x.name || x.main, sub: x.sub || "", val: x.val || x.value, cat: x.cat };
         });
-        await apiPost({ action: "calcPrice", mode: priceMode, basket: payloadBasket });
-        // POST opaque — пересчитаем упрощённо на клиенте если нет ответа; попробуем GET без basket (не сработает)
-        // Локальный ориентир: покажем что ушло на сервер + попросим смотреть Telegram? Better: use JSONP with short basket
         var res = await apiGet({
           action: "calcPrice",
           mode: priceMode,
@@ -5197,11 +5476,14 @@
           box.innerHTML = '<p class="muted">Прайс-таблица недоступна (нужен доступ Apps Script)</p>';
           return;
         }
-        box.innerHTML = '<div class="card"><b>Итого: ' + res.total + ' BYN</b>' +
-          '<div class="muted" style="margin-top:4px;">себест. ' + res.cost + ' × ' + res.markup + ' (' + (res.sheet || "") + ')</div>' +
+        var modeLabel = priceMode === "retail" ? "Розница" : (priceMode === "bp" ? "БП" : "ПП");
+        box.innerHTML = '<div class="card"><b>Итого: ' + res.total + ' BYN</b> <span class="muted">(' + modeLabel + ')</span>' +
+          '<div class="muted" style="margin-top:4px;">' +
+          (res.markup === 1 ? ("готовые цены · " + (res.sheet || "")) : ("себест. " + res.cost + " × " + res.markup + " (" + (res.sheet || "") + ")")) +
+          "</div>" +
           (res.lines || []).map(function (l) {
-            return '<div class="pack-line">' + l.name + (l.sub ? " / " + l.sub : "") +
-              " · " + l.val + " → " + l.cost + "</div>";
+            return '<div class="pack-line">' + escapeHtml(l.name) + (l.sub ? " / " + escapeHtml(l.sub) : "") +
+              " · " + l.val + " → " + l.cost + " BYN</div>";
           }).join("") + "</div>";
       } catch (e) {
         box.innerHTML = '<p class="muted">Ошибка расчёта</p>';
@@ -5256,6 +5538,8 @@
     try { if (document.getElementById("departHourCol")) buildTimeWheels(); } catch (e) {}
     try { renderBasket(); } catch (e) {}
     try { bindOrderLongPress(); } catch (e) {}
+    try { bindCourierLongPress(); } catch (e) {}
+    try { renderOrderNotes(); } catch (e) {}
     try { bootstrapAccess(); } catch (e) { try { applyRoleTabs(); } catch (e2) {} }
     try { applyTelegramSafeArea(); } catch (e) {}
     clearBlockingOverlays();
