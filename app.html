@@ -938,7 +938,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.8.1";
+    const APP_VERSION = "v7.8.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1032,10 +1032,7 @@
       "средний": true,
       "большой": true,
       "целое": true,
-      "крафт": true,
-      "жевалки": true,
-      "сыпучее": true,
-      "other": true
+      "крафт": true
     };
     let assemblyCache = null;
     const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "subsScreen", "statsScreen", "peopleScreen"];
@@ -5311,9 +5308,13 @@
 
 
     function packCounterKey(p) {
-      if (p && p.counterKey) return p.counterKey;
-      if (!p) return "other";
-      if (p.type === "light") {
+      // только форматы пакетов: маленький/средний/большой/целое/крафт
+      if (!p) return "";
+      if (p.counterKey === "маленький" || p.counterKey === "средний" || p.counterKey === "большой" ||
+          p.counterKey === "целое" || p.counterKey === "крафт") {
+        return p.counterKey;
+      }
+      if (p.type === "light" || /л[её]гк/i.test(String(p.name || ""))) {
         var u = String(p.sub || "").toUpperCase();
         if (/МЕЛК|МАЛ/.test(u) && !/ОЧ/.test(u)) return "маленький";
         if (/СРЕД/.test(u)) return "средний";
@@ -5321,10 +5322,8 @@
         if (/ЦЕЛ/.test(u)) return "целое";
         return "средний";
       }
-      if (p.type === "craft") return "крафт";
-      if (p.type === "chew") return "жевалки";
-      if (p.type === "bulk") return "сыпучее";
-      return "other";
+      if (p.type === "craft" || p.counterKey === "крафт") return "крафт";
+      return ""; // жевалки/сыпучее — не форматы пакетов
     }
 
     function togglePackType(key) {
@@ -5338,16 +5337,13 @@
       var res = assemblyCache;
       if (!res) return;
 
-      var COUNTER_ORDER = ["маленький", "средний", "большой", "целое", "крафт", "жевалки", "сыпучее", "other"];
+      var COUNTER_ORDER = ["маленький", "средний", "большой", "целое", "крафт"];
       var COUNTER_LABEL = {
         "маленький": "маленький",
         "средний": "средний",
         "большой": "большой",
         "целое": "целое",
-        "крафт": "крафт",
-        "жевалки": "жевалки",
-        "сыпучее": "сыпучее",
-        "other": "другое"
+        "крафт": "крафт"
       };
 
       var rawTotals = {};
@@ -5358,6 +5354,7 @@
       (res.clients || []).forEach(function (c) {
         (c.packs || []).forEach(function (p) {
           var key = packCounterKey(p);
+          if (!key) return;
           if (!packTypesEnabled.hasOwnProperty(key)) packTypesEnabled[key] = true;
           rawTotals[key] = (rawTotals[key] || 0) + (Number(p.bags) || 0);
         });
@@ -5376,7 +5373,7 @@
         });
       }
 
-      // фраза всегда полная; «Итого» — только включённые типы (сневелировать отсутствие пакета)
+      // фраза всегда полная; «Итого» — только включённые форматы
       var enabledTotal = 0;
       COUNTER_ORDER.forEach(function (k) {
         if (packTypesEnabled[k] !== false) enabledTotal += rawTotals[k] || 0;
@@ -5412,6 +5409,7 @@
         var byCounter = {};
         (c.packs || []).forEach(function (p) {
           var key = packCounterKey(p);
+          if (!key) return;
           if (packTypesEnabled[key] === false) return;
           var n = Number(p.bags) || 0;
           byCounter[key] = (byCounter[key] || 0) + n;
@@ -5440,13 +5438,13 @@
       }).join("") || '<p class="muted">Нет клиентов</p>';
 
       box.innerHTML =
-        '<div class="card"><b>Счётчики пакетов</b>' +
-        '<div class="field-hint">Нажми тип, чтобы выключить — фраза та же, «Итого пакетов» уменьшится (нет такого пакета)</div>' +
+        '<div class="card"><b>Форматы пакетов на день</b>' +
+        '<div class="field-hint">Нажми формат, чтобы выключить — фраза та же, «Итого» уменьшится</div>' +
         '<div class="pack-type-row">' + cells + "</div>" +
         '<div class="total-summary-badge">' + escapeHtml(phrase) + "</div>" +
         '<div class="total-summary-badge" style="margin-top:6px;">Итого пакетов: ' + enabledTotal + "</div>" +
         '<div style="margin-top:12px;"><b>Лёгкое для нарезки</b>' +
-        '<div class="field-hint">Полная картина по дню (все клиенты, граммы по фракциям)</div>' +
+        '<div class="field-hint">Полная картина по дню (граммы по фракциям)</div>' +
         lightLines +
         (lightGramsTotal ? '<div class="pack-line" style="margin-top:4px;">Всего лёгкого: <b>' + lightGramsTotal + " г</b></div>" : "") +
         "</div></div>" +
