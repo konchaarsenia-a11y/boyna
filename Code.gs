@@ -4839,7 +4839,7 @@ function buildAssemblyForBasket_(basket) {
       bags = Math.max(1, Math.ceil(val / 4));
       rule = 'жевалки×4';
       type = 'chew';
-      counterKey = 'жевалки';
+      counterKey = '';
     } else if (cat === 'other' || /крафт|индейк|ломтик|вымя|семен|пикальн|печень|светл/i.test(name)) {
       bags = Math.max(1, Math.ceil(val / 5)) + 1;
       rule = 'крафт×5+запас';
@@ -4849,12 +4849,12 @@ function buildAssemblyForBasket_(basket) {
       bags = packCountForBulk_(val);
       rule = 'сыпучее';
       type = 'bulk';
-      counterKey = 'сыпучее';
+      counterKey = '';
     } else {
       bags = packCountForBulk_(val);
       rule = 'сыпучее';
       type = 'bulk';
-      counterKey = 'сыпучее';
+      counterKey = '';
     }
     totalBags += bags;
     typeCounts[type] = (typeCounts[type] || 0) + bags;
@@ -4904,7 +4904,7 @@ function handleGetAssembly(json, callback, fromPost) {
     }
     (plan.packs || []).forEach(function (p) {
       if (p.type === 'light') return;
-      var key = p.counterKey || p.type;
+      var key = p.counterKey || '';
       if (!key) return;
       counterTotals[key] = (counterTotals[key] || 0) + (Number(p.bags) || 0);
     });
