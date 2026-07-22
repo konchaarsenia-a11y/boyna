@@ -661,7 +661,7 @@
   <div class="app">
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
-        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.6</div>
+        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.7</div>
         <div class="nav-tabs" id="navTabs">
           <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
           <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
@@ -1055,7 +1055,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.6";
+    const APP_VERSION = "v7.10.7";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1236,18 +1236,18 @@
     }, true);
 
 
-// Клавиатура: убираем только при явном свайпе вниз по странице, не при наборе
+// Клавиатура: только тап вне поля или явный свайп вниз по фону (не при наборе)
     let _kbTouchY = null;
+    let _kbTouchOnField = false;
     document.addEventListener("touchstart", function (e) {
       _kbTouchY = e.touches && e.touches[0] ? e.touches[0].clientY : null;
+      var t = e.target;
+      _kbTouchOnField = !!(t && t.closest && t.closest("input, textarea, select, .addr-suggest, .modal-overlay"));
     }, { passive: true });
     document.addEventListener("touchmove", function (e) {
-      if (!isEditableFocus() || _kbTouchY == null) return;
-      var t = e.target;
-      if (t && t.closest && t.closest("#addressSuggest, .addr-suggest, .modal-overlay, input, textarea, select")) return;
+      if (!isEditableFocus() || _kbTouchY == null || _kbTouchOnField) return;
       var y = e.touches && e.touches[0] ? e.touches[0].clientY : _kbTouchY;
-      // только заметный свайп вниз
-      if ((y - _kbTouchY) > 40) dismissKeyboard();
+      if ((y - _kbTouchY) > 80) dismissKeyboard();
     }, { passive: true });
     var SCREEN_HELP = {
       orderScreen:
@@ -2143,21 +2143,28 @@
       var qu = String(q || "").toUpperCase().replace(/\s+/g, " ").trim();
       if (!n || !qu) return 0;
       if (n === qu) return 100;
+      // «варка» — общее слово у партнёров: не матчить всех по одному «варка»
+      var nCore = n.replace(/\bВАРКА\b/g, "").replace(/\s+/g, " ").trim();
+      var qCore = qu.replace(/\bВАРКА\b/g, "").replace(/\s+/g, " ").trim();
+      if (/\bВАРКА\b/.test(n) || /\bВАРКА\b/.test(qu)) {
+        if (!qCore) {
+          // ищут просто «варка» — слабый матч только точных/префиксных
+          if (n.indexOf(qu) === 0) return 60;
+          return n === qu ? 100 : 0;
+        }
+        if (nCore === qCore) return 98;
+        if (nCore.indexOf(qCore) === 0) return 90;
+        if (nCore.indexOf(qCore) >= 0) return 80;
+        if (qCore.indexOf(nCore) >= 0 && nCore.length >= 3) return 75;
+        return 0;
+      }
       if (n.indexOf(qu) === 0) return 92;
       if (n.indexOf(qu) >= 0) return 78;
-      // слова ника начинаются с запроса
       var words = n.split(/[\s._\-@]+/).filter(Boolean);
       for (var i = 0; i < words.length; i++) {
         if (words[i].indexOf(qu) === 0) return 85;
         if (words[i].indexOf(qu) >= 0) return 70;
       }
-      // подпоследовательность: мр → мария
-      var qi = 0;
-      for (var j = 0; j < n.length && qi < qu.length; j++) {
-        if (n.charAt(j) === qu.charAt(qi)) qi++;
-      }
-      if (qi === qu.length && qu.length >= 2) return 55;
-      // запрос содержится «почти»: без пробелов/точек
       var n2 = n.replace(/[\s._\-@]/g, "");
       var q2 = qu.replace(/[\s._\-@]/g, "");
       if (n2.indexOf(q2) === 0) return 88;
@@ -2603,6 +2610,8 @@
       var keepSecondDogOffer = !!opts.keepSecondDogOffer;
 
       document.getElementById("isEditMode").value = "false";
+      editOriginalClient = "";
+      editOriginalDay = "";
       var clientEl = document.getElementById("client");
       if (clientEl) {
         clientEl.readOnly = false;
@@ -2804,6 +2813,17 @@
       btn.disabled = true;
       btn.innerText = "Сохраняю...";
       showSaveLoading("Сохраняю заказ…");
+
+      // при смене ника/дня — сначала убрать старую колонку, чтобы не плодить/не затирать чужие
+      if (isEdit && editOriginalClient) {
+        var nickChanged = String(editOriginalClient).trim().toUpperCase() !== clientName.toUpperCase();
+        var dayChanged = String(editOriginalDay || "") !== String(day || "");
+        if (nickChanged || dayChanged) {
+          try {
+            await apiGet(deleteClientParams(editOriginalClient, editOriginalDay || day));
+          } catch (eDelOld) {}
+        }
+      }
 
       const payload = {
         action: "saveOrder",
@@ -3231,16 +3251,25 @@
     }
     window.crmBatchDelete = crmBatchDelete;
 
+    let editOriginalClient = "";
+    let editOriginalDay = "";
+
     function crmEditClient(index, event) {
       event.stopPropagation();
       const client = loadedClientsRawData[index];
       const day = document.getElementById("viewDaySelect").value;
+      const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
       document.getElementById("isEditMode").value = "true";
+      editOriginalClient = client.name || "";
+      editOriginalDay = day || "";
       document.getElementById("appHeaderTitle").innerText = "Изменение: " + client.name;
       document.getElementById("btnMainSave").innerText = "Обновить заказ";
       document.getElementById("day").value = day;
+      if (dateStr && document.getElementById("deliveryDate")) {
+        document.getElementById("deliveryDate").value = dateStr;
+      }
       document.getElementById("client").value = client.name;
-      document.getElementById("client").readOnly = true;
+      document.getElementById("client").readOnly = false;
       document.getElementById("addressInput").value = client.address || "";
       const rawNote = client.note || "";
       const phoneEl = document.getElementById("phoneInput");
@@ -3268,6 +3297,20 @@
       } else {
         document.getElementById("deliveryMethodGroup").style.display = "none";
         document.getElementById("postOfficeGroup").style.display = "none";
+      }
+      // тип заказа + цена из примечания / источника
+      var ot = "retail";
+      var noteU = String(rawNote || "").toUpperCase();
+      if (client.source === "bp" || /\[SEG:БП\]/i.test(rawNote) || /\bБП\b/.test(noteU)) ot = "bp";
+      else if (client.source === "pp" || client.source === "subscription" || /\[SEG:ПП\]/i.test(rawNote)) ot = "pp";
+      else if (client.source === "partner" || /\bВАРКА\b/i.test(client.name || "") || /партн/i.test(rawNote)) ot = "partner";
+      else if (extractOrderPrice(rawNote) != null) ot = "retail";
+      try { setOrderType(ot); } catch (eOt) {}
+      var priceVal = extractOrderPrice(rawNote);
+      var priceInp = document.getElementById("orderPriceInput");
+      if (priceInp && priceVal != null && ot !== "bp") {
+        priceInp.value = String(priceVal);
+        if (ot === "retail") retailPriceManual = true;
       }
       basket = (client.basket || []).map(g => ({
         id: Date.now() + Math.random(),
@@ -4680,8 +4723,8 @@
         clearAddressSuggest();
         return;
       }
-      // сеть только Photon (быстро), без webhook/nominatim
-      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 100);
+      // сеть: Photon в браузере + webhook (Photon/Nominatim на сервере) — карта всегда
+      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 180);
     }
 
     function onAddressBlurDelayed() {
@@ -4720,7 +4763,7 @@
       var box = document.getElementById("addressSuggest");
       if (!box) return;
       var local = searchAddrMemory(q);
-      var cacheKey = "asuggest:v3:" + q.toLowerCase();
+      var cacheKey = "asuggest:v4:" + q.toLowerCase();
       var cachedList = [];
       try {
         var cached = localStorage.getItem(cacheKey);
@@ -4729,22 +4772,32 @@
       var first = mergeSuggestLists(local, cachedList);
       if (first.length && seq === addressSuggestSeq) {
         renderAddressSuggestList(box, first);
-      } else if (seq === addressSuggestSeq && !local.length) {
-        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу…</div>';
+      } else if (seq === addressSuggestSeq) {
+        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу на карте…</div>';
         box.classList.add("open");
       }
       var photonList = [];
-      try { photonList = await photonSuggestClient(q); } catch (e1) {}
+      var serverList = [];
+      try {
+        var settled = await Promise.all([
+          photonSuggestClient(q).catch(function () { return []; }),
+          apiGet({ action: "suggestAddress", text: q }).then(function (res) {
+            return (res && res.results) ? res.results : [];
+          }).catch(function () { return []; })
+        ]);
+        photonList = settled[0] || [];
+        serverList = settled[1] || [];
+      } catch (e1) {}
       if (seq !== addressSuggestSeq) return;
-      var list = mergeSuggestLists(local, photonList, cachedList);
+      var list = mergeSuggestLists(local, photonList, serverList, cachedList);
       if (!list.length) {
-        if (!local.length) {
-          box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — «улица дом»</div>';
-          box.classList.add("open");
-        }
+        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — можно ввести адрес вручную</div>';
+        box.classList.add("open");
         return;
       }
-      try { localStorage.setItem(cacheKey, JSON.stringify(list.filter(function (x) { return !x.local; }).slice(0, 8))); } catch (e3) {}
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(list.filter(function (x) { return !x.local; }).slice(0, 8)));
+      } catch (e3) {}
       renderAddressSuggestList(box, list);
     }
 
@@ -7068,34 +7121,6 @@
       loadPeople();
     }
     window.assignRole = assignRole;
-
-    function dismissKeyboardOnScroll() {
-      try {
-        var ae = document.activeElement;
-        if (!ae) return;
-        var tag = (ae.tagName || "").toUpperCase();
-        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return;
-        if (ae.closest && ae.closest("#modalOverlay, #notesModalBody, .modal-sheet")) return;
-        ae.blur();
-      } catch (e) {}
-    }
-    var _kbScrollTimer = null;
-    function onPageScrollDismissKb() {
-      if (_kbScrollTimer) return;
-      _kbScrollTimer = setTimeout(function () {
-        _kbScrollTimer = null;
-        dismissKeyboardOnScroll();
-      }, 80);
-    }
-    try {
-      window.addEventListener("scroll", onPageScrollDismissKb, { passive: true });
-      window.addEventListener("touchmove", function (e) {
-        try {
-          if (e.target && e.target.closest && e.target.closest("#modalOverlay, .modal-sheet, #notesModalBody")) return;
-        } catch (e2) {}
-        onPageScrollDismissKb();
-      }, { passive: true });
-    } catch (eKb) {}
 
     function syncAppTopSpacer() {
       var top = document.getElementById("appTopBar");

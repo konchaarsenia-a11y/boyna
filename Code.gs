@@ -1340,23 +1340,23 @@ function handleSaveOrder(ss, json, callback) {
   var targetSheet = getTargetSheet(ss, block);
   if (!targetSheet) return jsonpText(callback, { status: "error" });
 
-  var want = String(json.client || "").trim().toUpperCase();
+  var want = normalizeClientKey_(json.client);
   if (!want) return jsonpText(callback, { status: "no_client" });
 
   var clientCol = -1;
   var mgrNicks = targetSheet.getRange(block.nick, 3, 1, 15).getValues()[0];
   for (var i = 0; i < 15; i++) {
-    var mNick = mgrNicks[i] ? mgrNicks[i].toString().trim().toUpperCase() : "";
-    if (mNick === want) {
+    var mNick = normalizeClientKey_(mgrNicks[i]);
+    if (mNick && mNick === want) {
       clientCol = i + 3;
       break;
     }
   }
   if (clientCol === -1) {
     for (var colIdx = 3; colIdx <= 17; colIdx++) {
-      if (targetSheet.getRange(block.nick, colIdx).getValue().toString().trim() === "") {
+      if (String(targetSheet.getRange(block.nick, colIdx).getValue() || "").trim() === "") {
         clientCol = colIdx;
-        targetSheet.getRange(block.nick, clientCol).setValue(json.client);
+        targetSheet.getRange(block.nick, clientCol).setValue(String(json.client || "").trim());
         break;
       }
     }
@@ -3158,10 +3158,11 @@ function handleSaveBooking(ss, json, callback, fromPost) {
   var all = readAllBookings_();
   var dateStr = dateKey_(deliveryDate, tz);
   var existing = null;
+  var wantClient = normalizeClientKey_(client);
   for (var i = 0; i < all.length; i++) {
     var bd = parseFlexibleDate_(all[i].date, tz);
     if (bd && dateKey_(bd, tz) === dateStr &&
-        String(all[i].client).trim().toUpperCase() === client.toUpperCase() &&
+        normalizeClientKey_(all[i].client) === wantClient &&
         String(all[i].status) !== "cancelled") {
       existing = all[i];
       break;
@@ -3236,13 +3237,13 @@ function writeBasketToDayColumn_(ss, dayName, client, address, note, basket) {
   if (!block) return { ok: false, message: "bad_day" };
   var targetSheet = getTargetSheet(ss, block);
   if (!targetSheet) return { ok: false, message: "no_sheet" };
-  var want = String(client || "").trim().toUpperCase();
+  var want = normalizeClientKey_(client);
   if (!want) return { ok: false, message: "no_client" };
 
   var clientCol = -1;
   var mgrNicks = targetSheet.getRange(block.nick, 3, 1, 15).getValues()[0];
   for (var i = 0; i < 15; i++) {
-    var mNick = mgrNicks[i] ? mgrNicks[i].toString().trim().toUpperCase() : "";
+    var mNick = normalizeClientKey_(mgrNicks[i]);
     if (mNick === want) { clientCol = i + 3; break; }
   }
   if (clientCol === -1) {
@@ -3805,15 +3806,32 @@ function parseCrmCalendarCell_(text) {
   }).filter(function (x) { return x; });
   if (!lines.length) return null;
   if (/^\d+$/.test(lines[0]) && lines.length === 1) return null;
+  var startIdx = 0;
   var nickLine = lines[0];
-  if (/^(варка|только|написать)/i.test(nickLine) && lines.length < 2) return null;
+  // «варка» / «только» / «написать» — метка партнёра, не ник; ник на следующей строке
+  if (/^(варка|только|написать)\b/i.test(nickLine)) {
+    if (lines.length < 2) return null;
+    startIdx = 1;
+    nickLine = lines[1];
+  }
   var nick = extractInstagramNick_(nickLine);
+  // если extract взял общий хвост — оставить полную строку ника
   if (!nick || nick.length < 2) return null;
+  if (/^(варка|только|написать)$/i.test(nick) && lines.length > startIdx + 1) {
+    nickLine = lines[startIdx + 1];
+    nick = extractInstagramNick_(nickLine) || nickLine;
+    startIdx++;
+  }
+  // партнёры с припиской «варка» — сохраняем полное имя строки, чтобы не сливались
+  if (/\bварка\b/i.test(nickLine) && nick !== nickLine) {
+    nick = nickLine;
+  }
   var segment = "";
   var address = "";
   var phone = "";
   var noteBits = [];
-  for (var i = 1; i < lines.length; i++) {
+  if (/^варка\b/i.test(lines[0])) noteBits.push("варка");
+  for (var i = startIdx + 1; i < lines.length; i++) {
     var ln = lines[i];
     var segM = ln.match(/\b(АФК|ПП|БП|Р)\b/i);
     if (segM && !segment) {
@@ -3836,7 +3854,7 @@ function parseCrmCalendarCell_(text) {
     client: nick,
     address: address,
     phone: phone,
-    segment: segment || "ПП",
+    segment: segment || (/варка/i.test(lines[0]) ? "Р" : "ПП"),
     note: noteBits.join("; ")
   };
 }
