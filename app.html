@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.7</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.8</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -726,13 +726,19 @@
         <button type="button" class="btn-action btn-purple" id="btnSecondDogOrder" style="display:none;margin-top:8px;" onclick="startSecondDogOrder()">Внести заказ 2-й собаки</button>
       </div>
 
-      <div class="section-title">Корзина</div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span>Корзина</span>
+        <button type="button" class="btn-action" style="margin:0;padding:6px 12px;font-size:12px;background:#3a3a3c;" onclick="clearBasket()">Очистить</button>
+      </div>
       <div class="card" id="basketContainer"></div>
 
       <div class="section-title">Чеклист Instagram</div>
       <div class="card">
         <textarea class="ig-paste" id="igChecklistPaste" placeholder="Вставь чеклист из Instagram (позиции и граммы)…"></textarea>
-        <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoBasket()">Разобрать в корзину</button>
+        <div class="batch-bar-row" style="margin-top:8px;">
+          <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoBasket()">Разобрать в корзину</button>
+          <button class="btn-action" type="button" style="flex:0 0 auto;margin:0;padding:10px 12px;background:#3a3a3c;" onclick="clearIgChecklist()">Очистить</button>
+        </div>
       </div>
 
       <button type="button" class="btn-action btn-blue" id="btnManualEntry" onclick="toggleManualEntry()">Ручной ввод</button>
@@ -942,7 +948,10 @@
       <div class="section-title">Чеклист Instagram</div>
       <div class="card">
         <textarea class="ig-paste" id="igPriceChecklistPaste" placeholder="Вставь чеклист — разберём в корзину цены…"></textarea>
-        <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoPrice()">Разобрать и считать</button>
+        <div class="batch-bar-row" style="margin-top:8px;">
+          <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoPrice()">Разобрать и считать</button>
+          <button class="btn-action" type="button" style="flex:0 0 auto;margin:0;padding:10px 12px;background:#3a3a3c;" onclick="clearIgPriceChecklist()">Очистить</button>
+        </div>
       </div>
       <div id="priceResult"><p class="muted">—</p></div>
     </div>
@@ -966,7 +975,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.9.7";
+    const APP_VERSION = "v7.9.8";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2204,6 +2213,31 @@
       basket = basket.filter(x => x.id !== id);
       renderBasket();
     }
+
+    async function clearBasket() {
+      if (!basket.length) { showToast("Корзина уже пуста"); return; }
+      var ok = await uiConfirmAsync("Очистить корзину (" + basket.length + " поз.)?");
+      if (!ok) return;
+      basket = [];
+      renderBasket();
+      try { if (orderType === "retail") refreshRetailOrderPrice(); } catch (e) {}
+      showToast("Корзина очищена");
+    }
+    window.clearBasket = clearBasket;
+
+    function clearIgChecklist() {
+      var el = document.getElementById("igChecklistPaste");
+      if (el) el.value = "";
+      showToast("Чеклист очищен");
+    }
+    window.clearIgChecklist = clearIgChecklist;
+
+    function clearIgPriceChecklist() {
+      var el = document.getElementById("igPriceChecklistPaste");
+      if (el) el.value = "";
+      showToast("Чеклист очищен");
+    }
+    window.clearIgPriceChecklist = clearIgPriceChecklist;
 
     /** JSONP GET */
     function apiGet(params) {
