@@ -257,14 +257,13 @@
     }
     .route-actions { display: grid; gap: 8px; margin-top: 10px; }
     .field-hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.35; }
-    .label-row { display: flex; align-items: center; gap: 6px; }
-    .label-row > label, label.label-row { flex: 1; margin: 0; }
-    .help-q {
-      flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
-      border: 1px solid var(--border-color); background: #3a3a3c; color: #c7c7cc;
-      font-size: 13px; font-weight: 700; line-height: 20px; padding: 0; cursor: pointer;
+    .help-fab {
+      position: fixed; right: 14px; bottom: 72px; z-index: 1200;
+      width: 44px; height: 44px; border-radius: 50%; border: none;
+      background: #3a3a3c; color: #fff; font-size: 22px; font-weight: 700;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35); cursor: pointer;
     }
-    .help-q:active { background: #48484a; color: #fff; }
+    .help-fab:active { background: #48484a; }
     .time-wheel-wrap {
       position: relative; display: flex; height: 168px;
       background: #2c2c2e; border: 1px solid var(--border-color); border-radius: 12px;
@@ -612,7 +611,7 @@
     </div>
   </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.2</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -627,6 +626,7 @@
       <button type="button" class="order-flyout-btn" data-fly="statsScreen" data-fly-roles="owner,all">Статистика</button>
       <button type="button" class="order-flyout-btn" data-fly="peopleScreen" data-fly-roles="owner,all">Люди</button>
     </div>
+    <button type="button" class="help-fab" id="helpFab" onclick="openScreenHelp()" title="Справка" aria-label="Справка">?</button>
     <button type="button" class="bug-fab" id="bugFab" onclick="openBugReport()" title="Работает некорректно">!</button>
 
     <!-- МЕНЕДЖЕР: ПРИЁМ -->
@@ -646,7 +646,7 @@
       <div class="card">
         <input type="hidden" id="isEditMode" value="false">
         <div class="form-group">
-          <div class="label-row"><label>Тип заказа</label><button type="button" class="help-q" data-help="ПП — цена с листа ФАКТ СТОИМОСТЬ. БП = 0 + опросник. Розница — авто. Партнёр — свой прайс." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Тип заказа</label>
           <div class="seg-row" id="orderTypeRow">
             <button type="button" class="seg-btn active" id="otPp" onclick="setOrderType('pp')">ПП</button>
             <button type="button" class="seg-btn" id="otBp" onclick="setOrderType('bp')">БП</button>
@@ -655,22 +655,22 @@
           </div>
         </div>
         <div class="form-group" id="orderPriceGroup" style="display:none;">
-          <div class="label-row"><label>Цена (BYN)</label><button type="button" class="help-q" data-help="ПП — с листа ФАКТ СТОИМОСТЬ (можно поправить). БП = 0. Партнёр — вручную. Розница считается авто." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Цена (BYN)</label>
           <input type="number" id="orderPriceInput" step="0.01" min="0" placeholder="0" inputmode="decimal">
         </div>
         <div class="form-group">
-          <div class="label-row"><label>Дата доставки</label><button type="button" class="help-q" data-help="Бронь на дату. В «Прием заказов» попадёт утром предыдущего дня (для нарезки)." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Дата доставки</label>
           <input type="date" id="deliveryDate" onchange="onDeliveryDateChange()">
         </div>
         <div class="form-group">
-          <div class="label-row"><label>День недели</label><button type="button" class="help-q" data-help="Подставляется по дате из таблицы недели. Можно поправить вручную." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>День недели</label>
           <select id="day">
             <option>Понедельник</option><option>Вторник</option><option>Среда</option>
             <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
         </div>
         <div class="form-group">
-          <div class="label-row"><label>Ник / Имя</label><button type="button" class="help-q" data-help="«2 собаки»: контакты + 1-й состав → сохрани → затем только состав 2-й." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Ник / Имя</label>
           <input type="text" id="client" placeholder="Ник" autocomplete="off" oninput="onClientNameInput()">
           <div class="batch-bar-row" style="margin-top:8px;">
             <button type="button" class="btn-action btn-orange" id="clientMatchBtn" style="flex:1;margin:0;display:none;" onclick="applyClientMatch()"></button>
@@ -678,7 +678,7 @@
           </div>
         </div>
         <div class="form-group">
-          <div class="label-row"><label>Адрес</label><button type="button" class="help-q" data-help="Выбери из списка — тогда точка в Яндексе точная. Вне Минска / >20 км — спросим почту." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Адрес</label>
           <div class="addr-suggest-wrap">
             <input type="text" id="addressInput" placeholder="Улица и дом" autocomplete="off" oninput="onAddressInput()" onblur="onAddressBlurDelayed()">
             <div class="addr-suggest" id="addressSuggest"></div>
@@ -686,15 +686,15 @@
           <div class="addr-picked" id="addressPickedHint">Адрес выбран</div>
         </div>
         <div class="form-group">
-          <div class="label-row"><label>Подъезд / домофон</label><button type="button" class="help-q" data-help="Курьеру: короткий адрес + это. Полный текст поиска в маршрут не тащим." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Подъезд / домофон</label>
           <input type="text" id="entranceInput" placeholder="подъезд, домофон" autocomplete="off">
         </div>
         <div class="form-group">
-          <div class="label-row"><label>Телефон</label><button type="button" class="help-q" data-help="Курьер жмёт номер — сразу звонок." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Телефон</label>
           <input type="tel" id="phoneInput" placeholder="+375…" autocomplete="tel" inputmode="tel">
         </div>
         <div class="form-group" id="deliveryMethodGroup" style="display:none;">
-          <div class="label-row"><label>Доставка (за Минском)</label><button type="button" class="help-q" data-help="Для почты укажи адрес отделения ниже." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Доставка (за Минском)</label>
           <div class="seg-row">
             <button type="button" class="seg-btn" id="delivEuro" onclick="setDeliveryMethod('euro')">Европочта</button>
             <button type="button" class="seg-btn" id="delivBel" onclick="setDeliveryMethod('bel')">Белпочта</button>
@@ -702,7 +702,7 @@
           </div>
         </div>
         <div class="form-group" id="postOfficeGroup" style="display:none;">
-          <div class="label-row"><label>Отделение почты</label><button type="button" class="help-q" data-help="Адрес отделения, куда повезут заказ — не адрес клиента." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Отделение почты</label>
           <div class="addr-suggest-wrap">
             <input type="text" id="postOfficeInput" placeholder="Отделение" autocomplete="off" oninput="onPostOfficeInput()" onblur="onPostOfficeBlurDelayed()">
             <div class="addr-suggest" id="postOfficeSuggest"></div>
@@ -723,10 +723,7 @@
       <div class="section-title">Чеклист Instagram</div>
       <div class="card">
         <textarea class="ig-paste" id="igChecklistPaste" placeholder="Вставь чеклист из Instagram (позиции и граммы)…"></textarea>
-        <div class="label-row" style="margin-top:8px;">
-          <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoBasket()">Разобрать в корзину</button>
-          <button type="button" class="help-q" data-help="Дрессура без фракции → «Среднее». Неизвестное — в примечание позиции. Цена/доставка/заголовки игнор." onclick="showHelp(this)" aria-label="Справка">?</button>
-        </div>
+        <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoBasket()">Разобрать в корзину</button>
       </div>
 
       <button type="button" class="btn-action btn-blue" id="btnManualEntry" onclick="toggleManualEntry()">Ручной ввод</button>
@@ -762,7 +759,7 @@
     <div id="clientsScreen" class="screen">
       <div class="card">
         <div class="form-group">
-          <div class="label-row"><label>Дата</label><button type="button" class="help-q" data-help="Любая дата доставки — не только текущая неделя." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Дата</label>
           <input type="date" id="viewDate" onchange="onViewDateChange()">
         </div>
         <div class="form-group">
@@ -776,7 +773,7 @@
         <button type="button" class="btn-action btn-orange" onclick="loadClientsForDay()">Показать</button>
         <div class="batch-bar-row" style="margin-top:10px;">
           <button type="button" class="btn-action btn-purple" style="flex:1;margin:0;padding:10px;" onclick="topUpDayFromMonth()">Доукомплектовать день</button>
-          <button type="button" class="help-q" data-help="Дописывает людей из месяца на день (без состава из ПП/АФК/БП). Полную неделю — с главной после закрытия." onclick="showHelp(this)" aria-label="Справка">?</button>
+          
         </div>
       </div>
       <div id="totalDaySummaryContainer"></div>
@@ -785,7 +782,7 @@
         <div class="batch-bar-row">
           <button type="button" class="btn-action btn-blue" style="flex:1;margin:0;padding:10px;" onclick="selectAllViewClients(true)">Выбрать всех</button>
           <button type="button" class="btn-action" style="flex:1;margin:0;padding:10px;background:#3a3a3c;" onclick="selectAllViewClients(false)">Снять</button>
-          <button type="button" class="help-q" data-help="Отметь галочками → перенос или удаление пачкой." onclick="showHelp(this)" aria-label="Справка">?</button>
+          
         </div>
       </div>
       <div class="card" id="clientsContainer"><p class="muted">Укажите дату или день…</p></div>
@@ -837,7 +834,7 @@
           </select>
         </div>
         <div class="form-group">
-          <div class="label-row"><label>Точка выезда</label><button type="button" class="help-q" data-help="Склад одной кнопкой или свой адрес — «Минск» подставится сам." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Точка выезда</label>
           <div class="depot-presets">
             <button type="button" class="seg-btn" id="depotPresetWh" onclick="applyDepotPreset('Белецкого 10к2')">Склад (Белецкого 10к2)</button>
           </div>
@@ -896,7 +893,7 @@
         </div>
         <button class="btn-action btn-blue" type="button" onclick="loadSubscriptions()">Обновить</button>
         <div class="form-group" style="margin-top:12px;">
-          <div class="label-row"><label>Дата выгрузки состава</label><button type="button" class="help-q" data-help="Состав из ПП/БП — только кнопкой «В заказ», не при подтягивании недели." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Дата выгрузки состава</label>
           <input type="date" id="subPushDate">
         </div>
       </div>
@@ -906,7 +903,7 @@
     <!-- СТАТИСТИКА -->
     <div id="statsScreen" class="screen">
       <div class="card">
-        <div class="label-row"><div class="section-title" style="margin-top:0;flex:1;">Статистика</div><button type="button" class="help-q" data-help="Календарный месяц, воронка БП, CAC, аудит, экспорт." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+        <div class="section-title" style="margin-top:0;">Статистика</div>
         <button class="btn-action btn-blue" type="button" onclick="loadStats()">Обновить</button>
         <button class="btn-action btn-orange" type="button" style="margin-top:8px;" onclick="exportStatsMonth()">Экспорт месяца (бухгалтер)</button>
       </div>
@@ -917,7 +914,7 @@
     <div id="priceScreen" class="screen">
       <div class="card">
         <div class="form-group">
-          <div class="label-row"><label>Режим</label><button type="button" class="help-q" data-help="ПП/БП — себест.×коэф; розница — готовые цены (без 2.3)." onclick="showHelp(this)" aria-label="Справка">?</button></div>
+          <label>Режим</label>
           <div class="seg-row">
             <button type="button" class="seg-btn active" id="priceModePp" onclick="setPriceMode('pp')">ПП</button>
             <button type="button" class="seg-btn" id="priceModeBp" onclick="setPriceMode('bp')">БП</button>
@@ -929,10 +926,7 @@
       <div class="section-title">Чеклист Instagram</div>
       <div class="card">
         <textarea class="ig-paste" id="igPriceChecklistPaste" placeholder="Вставь чеклист — разберём в корзину цены…"></textarea>
-        <div class="label-row" style="margin-top:8px;">
-          <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoPrice()">Разобрать и считать</button>
-          <button type="button" class="help-q" data-help="Тот же разбор, что в Заказе. Дрессура без фракции → «Среднее»." onclick="showHelp(this)" aria-label="Справка">?</button>
-        </div>
+        <button class="btn-action btn-orange" type="button" style="flex:1;margin:0;" onclick="parseIgChecklistIntoPrice()">Разобрать и считать</button>
       </div>
       <div id="priceResult"><p class="muted">—</p></div>
     </div>
@@ -940,10 +934,7 @@
     <!-- ЛЮДИ -->
     <div id="peopleScreen" class="screen">
       <div class="card">
-        <div class="label-row">
-          <button class="btn-action btn-blue" type="button" style="flex:1;margin:0;" onclick="loadPeople()">Обновить список</button>
-          <button type="button" class="help-q" data-help="Только владельцы назначают роли: manager / cutter / courier / logistics / denied." onclick="showHelp(this)" aria-label="Справка">?</button>
-        </div>
+        <button class="btn-action btn-blue" type="button" style="flex:1;margin:0;" onclick="loadPeople()">Обновить список</button>
       </div>
       <div id="peopleContainer"><p class="muted">—</p></div>
     </div>
@@ -959,7 +950,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.9.1";
+    const APP_VERSION = "v7.9.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1152,11 +1143,50 @@
       // только заметный свайп вниз
       if ((y - _kbTouchY) > 40) dismissKeyboard();
     }, { passive: true });
-    function showHelp(el) {
-      var msg = (el && (el.getAttribute("data-help") || el.title)) || "";
-      if (msg) showToast(msg);
+    var SCREEN_HELP = {
+      orderScreen:
+        "Заказ\n" +
+        "• Тип: ПП — цена с листа ФАКТ СТОИМОСТЬ; БП = 0 + опросник; Розница — авто; Партнёр — свой прайс.\n" +
+        "• Дата: бронь; в «Прием заказов» — утром предыдущего дня.\n" +
+        "• 2 собаки: контакты + 1-й состав → сохрани → только состав 2-й.\n" +
+        "• Адрес: выбери из списка. Подъезд — для курьера (короткий адрес).\n" +
+        "• Чеклист: дрессура без фракции → «Среднее»; цена/доставка/заголовки игнор.",
+      clientsScreen:
+        "Просмотр\n" +
+        "• Любая дата доставки.\n" +
+        "• «Доукомплектовать» — люди из месяца на день (без состава ПП/АФК/БП).\n" +
+        "• Галочки → перенос или удаление пачкой.",
+      cuttingScreen: "Нарезка\n• Выбери день и отмечай нарезанное.",
+      courierScreen:
+        "Курьер\n" +
+        "• Точка выезда: склад или свой адрес.\n" +
+        "• Сборка: long-press. Форматы пакетов можно выключить — «Итого» уменьшится.",
+      warehouseScreen: "Склад\n• Сырое/сухое, коэффициенты, снабжение.",
+      subsScreen: "Подписки\n• Состав из ПП/БП — только кнопкой «В заказ», не при подтягивании недели.",
+      statsScreen: "Статистика\n• Месяц, воронка БП, CAC, аудит, экспорт.",
+      priceScreen: "Цена\n• ПП/БП — себест.×коэф; розница — готовые цены.\n• Чеклист — тот же разбор, что в Заказе.",
+      peopleScreen: "Люди\n• Роли назначают только владельцы."
+    };
+
+    async function openScreenHelp() {
+      var scr = document.querySelector(".screen.active");
+      var id = scr && scr.id ? scr.id : "orderScreen";
+      var text = SCREEN_HELP[id] || "Справка для этого экрана пока пустая.";
+      var html =
+        '<div class="modal-title">Справка</div>' +
+        '<div class="modal-text" style="white-space:pre-line;text-align:left;">' +
+        escapeHtml(String(text)) +
+        "</div>" +
+        '<div class="modal-actions"><button class="btn-action btn-blue" type="button" id="modalOk">ОК</button></div>';
+      var p = openModal(html);
+      setTimeout(function () {
+        var btn = document.getElementById("modalOk");
+        if (btn) btn.onclick = function () { closeModal(true); };
+      }, 0);
+      await p;
+      recoverUiFocus();
     }
-    window.showHelp = showHelp;
+    window.openScreenHelp = openScreenHelp;
 
     function showToast(msg) {
       const el = document.getElementById("appToast");
@@ -5656,11 +5686,11 @@
       }).join("") || '<p class="muted">Нет клиентов</p>';
 
       box.innerHTML =
-        '<div class="card"><div class="label-row"><b style="flex:1;">Форматы пакетов на день</b><button type="button" class="help-q" data-help="Нажми формат, чтобы выключить — фраза та же, «Итого» уменьшится." onclick="showHelp(this)">?</button></div>' +
+        '<div class="card"><b>Форматы пакетов на день</b>' +
         '<div class="pack-type-row">' + cells + "</div>" +
         '<div class="total-summary-badge">' + escapeHtml(phrase) + "</div>" +
         '<div class="total-summary-badge" style="margin-top:6px;">Итого пакетов: ' + enabledTotal + "</div>" +
-        '<div style="margin-top:12px;" class="label-row"><b style="flex:1;">Лёгкое для нарезки</b><button type="button" class="help-q" data-help="Полная картина по дню (граммы по фракциям)." onclick="showHelp(this)">?</button></div>' +
+        '<div style="margin-top:12px;"><b>Лёгкое для нарезки</b></div>' +
         lightLines +
         (lightGramsTotal ? '<div class="pack-line" style="margin-top:4px;">Всего лёгкого: <b>' + lightGramsTotal + " г</b></div>" : "") +
         "</div></div>" +
