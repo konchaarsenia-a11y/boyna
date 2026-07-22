@@ -661,7 +661,7 @@
   <div class="app">
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
-        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.9</div>
+        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.10</div>
         <div class="nav-tabs" id="navTabs">
           <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
           <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
@@ -1055,7 +1055,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.9";
+    const APP_VERSION = "v7.10.10";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1306,63 +1306,17 @@
       try { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success"); } catch (e) {}
       opts = opts || {};
 
-      // на сохранении заказа — без тянки, только лёгкий ✓
-      if (kind === "save") {
-        const wrap = document.createElement("div");
-        wrap.className = "fx-burst";
-        wrap.innerHTML = '<div class="fx-burst-ring"></div><div class="fx-burst-check">✓</div>';
-        document.body.appendChild(wrap);
-        setTimeout(function () { wrap.remove(); }, 800);
-        return;
-      }
-
-      if (kind === "cut" || kind === "finish") {
-        const old = document.getElementById("fxTyanOverlay");
-        if (old) old.remove();
-        const wrap = document.createElement("div");
-        wrap.id = "fxTyanOverlay";
-        var img = "assets/celebrate-cut.png";
-        var banner = "Заготовлено!";
-        var extraClass = " fx-tyan--cut";
-        var timeHtml = "";
-        if (kind === "finish") {
-          banner = "Нарезка завершена!";
-          extraClass = " fx-tyan--finish";
-          if (opts.elapsedLabel) {
-            timeHtml = '<div class="fx-tyan-time">' + escapeHtml(opts.elapsedLabel) + "</div>";
-            banner = "План закрыт за " + opts.elapsedLabel;
-          }
-        }
-        wrap.className = "fx-tyan" + extraClass;
-        wrap.innerHTML =
-          timeHtml +
-          '<div class="fx-tyan-banner">' + banner + "</div>" +
-          '<img src="' + img + '" alt="" draggable="false">';
-        for (let i = 0; i < 18; i++) {
-          const sx = (Math.random() * 280 - 140) + "px";
-          const sy = (-80 - Math.random() * 220) + "px";
-          const left = (8 + Math.random() * 84) + "%";
-          const top = (55 + Math.random() * 35) + "%";
-          const delay = (Math.random() * 0.45) + "s";
-          const sp = document.createElement("div");
-          sp.className = "fx-tyan-spark";
-          sp.style.left = left;
-          sp.style.top = top;
-          sp.style.setProperty("--sx", sx);
-          sp.style.setProperty("--sy", sy);
-          sp.style.animationDelay = delay;
-          wrap.appendChild(sp);
-        }
-        document.body.appendChild(wrap);
-        setTimeout(function () { wrap.remove(); }, kind === "finish" ? 3200 : 2700);
-        return;
-      }
-
+      // без тянки везде — только лёгкий ✓
+      const old = document.getElementById("fxTyanOverlay");
+      if (old) old.remove();
       const wrap = document.createElement("div");
       wrap.className = "fx-burst";
       wrap.innerHTML = '<div class="fx-burst-ring"></div><div class="fx-burst-check">✓</div>';
       document.body.appendChild(wrap);
       setTimeout(function () { wrap.remove(); }, 800);
+      if (kind === "finish" && opts.elapsedLabel) {
+        try { showToast("Нарезка завершена за " + opts.elapsedLabel); } catch (e2) {}
+      }
     }
 
     function closeModal(result) {
