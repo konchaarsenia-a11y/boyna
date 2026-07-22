@@ -2652,20 +2652,20 @@
           found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
         } catch (eCheck) {}
         const inWeek = found && found.basket && found.basket.length > 0;
+        try {
+          rememberClientProfile({
+            nick: clientName,
+            address: clientAddress,
+            phone: phone,
+            note: permanentNote || "",
+            basket: basket.map(function (x) {
+              return { cat: x.cat, main: x.main, name: x.main, sub: x.sub || "", value: x.value, val: x.value };
+            }),
+            orderType: orderType
+          });
+        } catch (eMem) {}
         if (inWeek) {
           celebrateSuccess("save");
-                    try {
-            rememberClientProfile({
-              nick: clientName,
-              address: clientAddress,
-              phone: phone,
-              note: permanentNote || "",
-              basket: basket.map(function (x) {
-                return { cat: x.cat, main: x.main, name: x.main, sub: x.sub || "", value: x.value, val: x.value };
-              }),
-              orderType: orderType
-            });
-          } catch (eMem) {}
           showToast((isEdit ? "Заказ обновлён" : "Заказ сохранён") +
             " (" + found.basket.length + " поз.)" +
             (orderPrice != null ? (" · " + orderPrice + " BYN") : ""));
