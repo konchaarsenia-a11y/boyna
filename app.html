@@ -41,16 +41,33 @@
       display: none; position: fixed; inset: 0; z-index: 9999;
       background: rgba(0,0,0,0.65); align-items: flex-end; justify-content: center;
       padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
+      overflow: hidden;
+      overscroll-behavior: contain;
     }
     .modal-overlay.open { display: flex; }
     .modal-sheet {
       width: 100%; max-width: 420px; background: #1c1c1e; border: 1px solid var(--border-color);
       border-radius: 16px; padding: 18px; color: #fff;
+      max-height: min(82vh, 640px);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
     }
-    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; flex-shrink: 0; }
     .modal-text { font-size: 14px; color: #d1d1d6; line-height: 1.4; margin-bottom: 16px; white-space: pre-wrap; }
-    .modal-actions { display: grid; gap: 8px; }
+    .modal-actions { display: grid; gap: 8px; flex-shrink: 0; }
     .modal-actions.row { grid-template-columns: 1fr 1fr; }
+    #notesModalBody {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      margin-bottom: 12px;
+      touch-action: pan-y;
+    }
     .modal-day-btn {
       height: 44px; border-radius: 10px; border: 1px solid var(--border-color);
       background: #2c2c2e; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
@@ -163,12 +180,19 @@
     }
     .client-item-card.selected { border-color: var(--accent-color); background: #1a222c; }
     .client-main-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .client-title-wrap { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+    .client-title-wrap { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
     .client-check {
       width: 22px; height: 22px; accent-color: var(--accent-color); flex-shrink: 0; cursor: pointer;
     }
-    .client-title { font-size: 15px; font-weight: 700; }
+    .client-title {
+      font-size: 15px; font-weight: 700;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .client-right-block { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .client-meta-row {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      margin-top: 8px; padding-top: 0;
+    }
     .crm-mini-btn {
       width: 34px; height: 34px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px;
     }
@@ -249,8 +273,11 @@
       animation: bannerPop 2.8s ease-out forwards;
       letter-spacing: 1px; z-index: 2;
     }
-    .check-line { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-    .check-line input { width: 20px; height: 20px; }
+    .check-line { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; overflow: hidden; }
+    .check-line input { width: 20px; height: 20px; flex-shrink: 0; }
+    .check-line .cut-title {
+      min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 0;
+    }
     .muted { color: var(--text-muted); font-style: italic; }
     .screen { display: none; }
     .screen.active { display: block; }
@@ -458,10 +485,6 @@
     .note-block .note-text { width: 100%; margin-bottom: 8px; }
     .note-block .note-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .note-perm-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-    .courier-flyout {
-      display: none; gap: 8px; padding: 8px 10px 0; flex-wrap: wrap;
-    }
-    .courier-flyout.open { display: flex; }
     .fx-tyan-banner {
       position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
       font-size: clamp(22px, 7vw, 34px); font-weight: 800; color: #fff;
@@ -578,17 +601,17 @@
     .pack-line { font-size:13px; color:#ddd; padding:4px 0; border-bottom:1px solid #222; }
     .ig-paste { width:100%; min-height:90px; background:#111; color:#fff; border:1px solid var(--border-color);
       border-radius:10px; padding:10px; font-size:13px; resize:vertical; }
-    .order-flyout {
-      display:none; gap:6px; margin:0 0 12px; padding:6px;
-      background:#141414; border:1px solid var(--border-color); border-radius:10px; flex-wrap:wrap;
+    .order-flyout, .courier-flyout {
+      display: none; gap: 6px; margin: 8px 0 0; padding: 6px;
+      background: #141414; border: 1px solid var(--border-color); border-radius: 10px; flex-wrap: wrap;
     }
-    .order-flyout.open { display:flex; }
+    .order-flyout.open, .courier-flyout.open { display: flex; }
     .order-flyout-btn {
-      flex:1 1 30%; min-width:90px; height:40px; border-radius:8px;
-      border:1px solid var(--border-color); background:#1c1c1e; color:#fff;
-      font-size:13px; font-weight:600; cursor:pointer;
+      flex: 1 1 30%; min-width: 90px; height: 40px; border-radius: 8px;
+      border: 1px solid var(--border-color); background: #1c1c1e; color: #fff;
+      font-size: 13px; font-weight: 600; cursor: pointer;
     }
-    .order-flyout-btn:active { background:var(--accent-color); }
+    .order-flyout-btn:active { background: var(--accent-color); }
     .pack-type-row { display:flex; gap:6px; margin:10px 0; flex-wrap:wrap; }
     .pack-type-cell {
       flex:1 1 18%; min-width:56px; text-align:center; padding:10px 4px;
@@ -638,23 +661,27 @@
   <div class="app">
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
-        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.5</div>
+        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.6</div>
         <div class="nav-tabs" id="navTabs">
           <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
           <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
           <button type="button" class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
           <button type="button" class="tab-link" data-screen="warehouseScreen" onclick="switchTab('warehouseScreen')">Склад</button>
         </div>
+        <div class="order-flyout" id="orderFlyout">
+          <button type="button" class="order-flyout-btn" data-fly="clientsScreen" data-fly-roles="manager,owner,all">Просмотр</button>
+          <button type="button" class="order-flyout-btn" data-fly="priceScreen" data-fly-roles="manager,owner,all">Цена</button>
+          <button type="button" class="order-flyout-btn" data-fly="subsScreen" data-fly-roles="owner,all">Подписки</button>
+          <button type="button" class="order-flyout-btn" data-fly="statsScreen" data-fly-roles="owner,all">Статистика</button>
+          <button type="button" class="order-flyout-btn" data-fly="peopleScreen" data-fly-roles="owner,all">Люди</button>
+        </div>
+        <div class="courier-flyout" id="courierFlyout">
+          <button type="button" class="order-flyout-btn" data-cfly="route">Маршрут</button>
+          <button type="button" class="order-flyout-btn" data-cfly="assembly">Сборка</button>
+        </div>
       </div>
     </div>
     <div class="app-top-spacer" id="appTopSpacer" aria-hidden="true"></div>
-    <div class="order-flyout" id="orderFlyout">
-      <button type="button" class="order-flyout-btn" data-fly="clientsScreen" data-fly-roles="manager,owner,all">Просмотр</button>
-      <button type="button" class="order-flyout-btn" data-fly="priceScreen" data-fly-roles="manager,owner,all">Цена</button>
-      <button type="button" class="order-flyout-btn" data-fly="subsScreen" data-fly-roles="owner,all">Подписки</button>
-      <button type="button" class="order-flyout-btn" data-fly="statsScreen" data-fly-roles="owner,all">Статистика</button>
-      <button type="button" class="order-flyout-btn" data-fly="peopleScreen" data-fly-roles="owner,all">Люди</button>
-    </div>
     <button type="button" class="help-fab" id="helpFab" onclick="openScreenHelp()" title="Справка" aria-label="Справка">?</button>
     <button type="button" class="bug-fab" id="bugFab" onclick="openBugReport()" title="Работает некорректно">!</button>
 
@@ -861,10 +888,6 @@
 
     <!-- КУРЬЕР -->
     <div id="courierScreen" class="screen">
-      <div class="courier-flyout" id="courierFlyout">
-        <button type="button" class="order-flyout-btn" data-cfly="route">Маршрут</button>
-        <button type="button" class="order-flyout-btn" data-cfly="assembly">Сборка</button>
-      </div>
       <div class="sub-tabs" style="display:none;" aria-hidden="true">
         <button type="button" class="sub-tab active" id="courierSubRoute" onclick="setCourierSub('route')">Маршрут</button>
         <button type="button" class="sub-tab" id="courierSubAsm" onclick="setCourierSub('assembly')">Сборка</button>
@@ -1032,7 +1055,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.5";
+    const APP_VERSION = "v7.10.6";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1348,6 +1371,10 @@
       overlay.style.display = "none";
       overlay.style.pointerEvents = "none";
       document.getElementById("modalSheet").innerHTML = "";
+      try {
+        document.body.style.overflow = "";
+        document.documentElement.style.overflow = "";
+      } catch (eLock) {}
       const resolver = modalResolver;
       modalResolver = null;
       recoverUiFocus();
@@ -1367,6 +1394,10 @@
         overlay.classList.add("open");
         overlay.style.display = "flex";
         overlay.style.pointerEvents = "auto";
+        try {
+          document.body.style.overflow = "hidden";
+          document.documentElement.style.overflow = "hidden";
+        } catch (eLock2) {}
       });
     }
 
@@ -1563,6 +1594,11 @@
       if (!fly) return;
       const open = force === true ? true : force === false ? false : !fly.classList.contains("open");
       fly.classList.toggle("open", open);
+      if (open) {
+        var cf = document.getElementById("courierFlyout");
+        if (cf) cf.classList.remove("open");
+      }
+      try { syncAppTopSpacer(); } catch (e) {}
     }
 
     let orderFlyoutJustOpened = false;
@@ -1574,6 +1610,11 @@
       if (!fly) return;
       var open = force === true ? true : force === false ? false : !fly.classList.contains("open");
       fly.classList.toggle("open", open);
+      if (open) {
+        var of = document.getElementById("orderFlyout");
+        if (of) of.classList.remove("open");
+      }
+      try { syncAppTopSpacer(); } catch (e) {}
     }
     let courierFlyoutJustOpened = false;
     let suppressCourierClick = false;
@@ -1854,7 +1895,8 @@
         if (totalCard) totalCard.style.display = "none";
       } else if (t === "bp") {
         retailPriceManual = false;
-        if (pg) pg.style.display = "";
+        // БП бесплатные — цену на экране не показываем; в статистике orderPrice=0
+        if (pg) pg.style.display = "none";
         if (inp) { inp.readOnly = true; inp.value = "0"; }
         if (lab) lab.textContent = "Цена (BYN)";
         if (live) live.style.display = "none";
@@ -2745,14 +2787,14 @@
       clientNote = (tagBits.join(" ") + (tagBits.length && noteBody ? " " : "") + noteBody).trim();
       var permanentNote = collectPermanentNotesText();
 
-      // цена в примечание — видно в Просмотре / курьеру / листе
+      // цена в примечание — видно в Просмотре / курьеру / листе (БП без цены на экране)
       clientNote = String(clientNote || "").replace(/\[ЦЕНА:[^\]]*\]/gi, "").replace(/\s{2,}/g, " ").trim();
-      if (orderPrice != null && !isNaN(Number(orderPrice))) {
+      if (orderType !== "bp" && orderPrice != null && !isNaN(Number(orderPrice))) {
         clientNote = ("[ЦЕНА: " + Number(orderPrice) + " BYN]" + (clientNote ? " " + clientNote : "")).trim();
       }
 
       var confirmMsg = isEdit ? ("Обновить заказ " + clientName + "?") : ("Сохранить заказ " + clientName + "?");
-      if (orderPrice != null && !isNaN(Number(orderPrice))) {
+      if (orderType !== "bp" && orderPrice != null && !isNaN(Number(orderPrice))) {
         confirmMsg += "\nЦена: " + Number(orderPrice) + " BYN";
       }
       const okConfirm = await uiConfirmAsync(confirmMsg);
@@ -3018,9 +3060,11 @@
                 <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
                 <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
                 <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
-                ${priceBadge}
-                <span class="client-badge">${client.orderCount} поз.</span>
               </div>
+            </div>
+            <div class="client-meta-row">
+              ${priceBadge}
+              <span class="client-badge">${client.orderCount} поз.</span>
             </div>
             ${(addr || note || deliv || priceHtml) ? `<div class="delivery-info-box">${priceHtml}${note}${roleHint}${deliv}${addr}${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : (formatTelHtml(client.phone || extractPhone(client.note || "")) ? `<div class="delivery-info-box">${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : "")}
             <div class="client-order-details" id="details_${index}">${lines}</div>
@@ -7024,6 +7068,34 @@
       loadPeople();
     }
     window.assignRole = assignRole;
+
+    function dismissKeyboardOnScroll() {
+      try {
+        var ae = document.activeElement;
+        if (!ae) return;
+        var tag = (ae.tagName || "").toUpperCase();
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return;
+        if (ae.closest && ae.closest("#modalOverlay, #notesModalBody, .modal-sheet")) return;
+        ae.blur();
+      } catch (e) {}
+    }
+    var _kbScrollTimer = null;
+    function onPageScrollDismissKb() {
+      if (_kbScrollTimer) return;
+      _kbScrollTimer = setTimeout(function () {
+        _kbScrollTimer = null;
+        dismissKeyboardOnScroll();
+      }, 80);
+    }
+    try {
+      window.addEventListener("scroll", onPageScrollDismissKb, { passive: true });
+      window.addEventListener("touchmove", function (e) {
+        try {
+          if (e.target && e.target.closest && e.target.closest("#modalOverlay, .modal-sheet, #notesModalBody")) return;
+        } catch (e2) {}
+        onPageScrollDismissKb();
+      }, { passive: true });
+    } catch (eKb) {}
 
     function syncAppTopSpacer() {
       var top = document.getElementById("appTopBar");
