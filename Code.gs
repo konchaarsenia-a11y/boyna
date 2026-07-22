@@ -645,6 +645,9 @@ function doGet(e) {
       client: e.parameter.client ? decodeURIComponent(e.parameter.client) : ""
     }, callback, false);
   }
+  if (action === "listClientProfiles") {
+    return handleListClientProfiles({}, callback, false);
+  }
   if (action === "crmInventory") {
     return handleCrmInventory({}, callback, false);
   }
@@ -780,6 +783,9 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "findClientMatch") {
     return handleFindClientMatch(json, callback, fromPost);
+  }
+  if (action === "listClientProfiles") {
+    return handleListClientProfiles(json, callback, fromPost);
   }
   if (action === "crmInventory") {
     return handleCrmInventory(json, callback, fromPost);
@@ -1301,7 +1307,8 @@ function handleSaveOrder(ss, json, callback) {
   try {
     var perm = String(json.permanentNote || "").trim();
     var profileNote = perm || ""; // постоянные — в Клиенты/Контакты; разовые не затирают профиль пустым
-    upsertClientProfile_(ss, json.client, json.address, json.phone || extractPhoneFromNote_(cleanNote), profileNote, "saveOrder");
+    var src = String(json.orderType || json.source || "saveOrder");
+    upsertClientProfile_(ss, json.client, json.address, json.phone || extractPhoneFromNote_(cleanNote), profileNote, src, json.basket || []);
   } catch (eProf) {}
 
   try { ensureBpAndSurveyFromOrder_(json); } catch (eBp) {}
@@ -3505,7 +3512,7 @@ function getCrmSpreadsheet_() {
   }
 }
 
-var CLIENTS_HEADERS_ = ["nick", "address", "phone", "note", "updatedAt", "source"];
+var CLIENTS_HEADERS_ = ["nick", "address", "phone", "note", "updatedAt", "source", "lastBasket"];
 
 function getClientsProfilesSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3518,10 +3525,11 @@ function getClientsProfilesSheet_() {
   return sh;
 }
 
-function upsertClientProfile_(ss, nick, address, phone, note, source) {
+function upsertClientProfile_(ss, nick, address, phone, note, source, lastBasket) {
   nick = String(nick || "").trim();
   if (!nick) return;
   var sh = getClientsProfilesSheet_();
+  ensureClientsBasketCol_(sh);
   var data = sh.getDataRange().getValues();
   var want = nick.toUpperCase();
   var rowIdx = -1;
@@ -3539,23 +3547,39 @@ function upsertClientProfile_(ss, nick, address, phone, note, source) {
     .replace(/\[РЕЗАТЬ\]/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+  var basketJson = "";
+  if (lastBasket && Object.prototype.toString.call(lastBasket) === "[object Array]" && lastBasket.length) {
+    try { basketJson = JSON.stringify(lastBasket); } catch (eB) { basketJson = ""; }
+  } else if (rowIdx > 0) {
+    basketJson = String(data[rowIdx - 1][6] || "");
+  }
   var vals = [
     nick,
     String(address != null ? address : (rowIdx > 0 ? data[rowIdx - 1][1] : "") || ""),
     String(phone != null ? phone : (rowIdx > 0 ? data[rowIdx - 1][2] : "") || ""),
     cleanNote || (rowIdx > 0 ? String(data[rowIdx - 1][3] || "") : ""),
     new Date(),
-    String(source || "retail")
+    String(source || "retail"),
+    basketJson
   ];
-  // не затираем адрес/телефон пустым
   if (rowIdx > 0) {
     if (!vals[1]) vals[1] = String(data[rowIdx - 1][1] || "");
     if (!vals[2]) vals[2] = String(data[rowIdx - 1][2] || "");
     if (!vals[3]) vals[3] = String(data[rowIdx - 1][3] || "");
+    if (!vals[6]) vals[6] = String(data[rowIdx - 1][6] || "");
     sh.getRange(rowIdx, 1, 1, CLIENTS_HEADERS_.length).setValues([vals]);
   } else {
     sh.appendRow(vals);
   }
+}
+
+function ensureClientsBasketCol_(sh) {
+  try {
+    var h = String(sh.getRange(1, 7).getValue() || "").trim();
+    if (h.toLowerCase().indexOf("basket") < 0 && h.toLowerCase().indexOf("состав") < 0) {
+      sh.getRange(1, 7).setValue("lastBasket");
+    }
+  } catch (e) {}
 }
 
 function extractPhoneFromNote_(note) {
@@ -3574,105 +3598,99 @@ function applyTelTag_(note, phone) {
 }
 
 function handleFindClientMatch(json, callback, fromPost) {
+  // быстрый поиск только по листу «Клиенты» (без обхода недели/CRM)
   var q = String(json.q || json.client || json.nick || "").trim();
-  if (q.length < 2) {
+  if (q.length < 1) {
     var empty = { status: "success", match: null, matches: [] };
     return fromPost ? jsonpText(callback, empty) : jsonp(callback, empty);
   }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var qU = q.toUpperCase();
+  var qU = q.toUpperCase().replace(/\s+/g, " ");
   var matches = [];
-
-  function pushMatch(nick, address, phone, note, source, score) {
-    nick = String(nick || "").trim();
-    if (!nick) return;
-    var key = nick.toUpperCase();
-    for (var i = 0; i < matches.length; i++) {
-      if (matches[i].nick.toUpperCase() === key) {
-        if (score > matches[i].score) {
-          matches[i] = { nick: nick, address: address || matches[i].address, phone: phone || matches[i].phone, note: note || matches[i].note, source: source, score: score };
-        } else {
-          if (!matches[i].address && address) matches[i].address = address;
-          if (!matches[i].phone && phone) matches[i].phone = phone;
-          if (!matches[i].note && note) matches[i].note = note;
-        }
-        return;
-      }
-    }
-    matches.push({ nick: nick, address: address || "", phone: phone || "", note: note || "", source: source || "", score: score || 0 });
-  }
-
-  // 1) лист Клиенты (локальная база в Бойне)
   try {
     var sh = getClientsProfilesSheet_();
+    ensureClientsBasketCol_(sh);
     var data = sh.getDataRange().getValues();
     for (var r = 1; r < data.length; r++) {
       var nick = String(data[r][0] || "").trim();
       if (!nick) continue;
-      var nU = nick.toUpperCase();
+      var nU = nick.toUpperCase().replace(/\s+/g, " ");
       var score = 0;
       if (nU === qU) score = 100;
-      else if (nU.indexOf(qU) === 0) score = 80;
-      else if (nU.indexOf(qU) >= 0 || qU.indexOf(nU) >= 0) score = 60;
+      else if (nU.indexOf(qU) === 0) score = 92;
+      else if (nU.indexOf(qU) >= 0) score = 78;
+      else {
+        var words = nU.split(/[\s._\-@]+/);
+        for (var w = 0; w < words.length; w++) {
+          if (words[w].indexOf(qU) === 0) { score = 85; break; }
+          if (words[w].indexOf(qU) >= 0) { score = Math.max(score, 70); }
+        }
+      }
+      if (score <= 0 && qU.length >= 2) {
+        var qi = 0;
+        for (var j = 0; j < nU.length && qi < qU.length; j++) {
+          if (nU.charAt(j) === qU.charAt(qi)) qi++;
+        }
+        if (qi === qU.length) score = 55;
+      }
       if (score > 0) {
-        pushMatch(nick, data[r][1], data[r][2], data[r][3], "Клиенты", score);
+        var bask = [];
+        try { bask = JSON.parse(String(data[r][6] || "[]")); } catch (eB) { bask = []; }
+        matches.push({
+          nick: nick,
+          address: String(data[r][1] || ""),
+          phone: String(data[r][2] || ""),
+          note: String(data[r][3] || ""),
+          source: String(data[r][5] || "Клиенты"),
+          basket: bask,
+          score: score
+        });
       }
     }
   } catch (e1) {}
-
-  // 2) Контакты CRM (локально или внешняя)
-  try {
-    var crm = getCrmSpreadsheet_();
-    var contacts = findSheetByBaseName_(crm, "Контакты");
-    if (contacts && contacts.getLastRow() > 1) {
-      var cdata = contacts.getDataRange().getValues();
-      for (var c = 1; c < cdata.length; c++) {
-        var raw = String(cdata[c][0] || "");
-        var nick2 = extractInstagramNick_(raw);
-        if (!nick2) continue;
-        var n2 = nick2.toUpperCase();
-        var sc = 0;
-        if (n2 === qU) sc = 95;
-        else if (n2.indexOf(qU) === 0 || raw.toUpperCase().indexOf(qU) >= 0) sc = 70;
-        if (sc > 0) {
-          pushMatch(nick2, cdata[c][3], cdata[c][4], cdata[c][6], "Контакты", sc);
-        }
-      }
-    }
-  } catch (e2) {}
-
-  // 3) текущая неделя Прием заказов
-  try {
-    ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Будущая неделя"].forEach(function (day) {
-      var dayData = getClientsData_(ss, day);
-      (dayData.clients || []).forEach(function (cl) {
-        var nU = String(cl.name || "").toUpperCase();
-        var sc = 0;
-        if (nU === qU) sc = 90;
-        else if (nU.indexOf(qU) === 0) sc = 75;
-        else if (nU.indexOf(qU) >= 0) sc = 50;
-        if (sc > 0) {
-          pushMatch(cl.name, cl.address, cl.phone || extractPhoneFromNote_(cl.note), cl.note, day, sc);
-        }
-      });
-    });
-  } catch (e3) {}
-
   matches.sort(function (a, b) { return b.score - a.score; });
   var best = matches.length ? matches[0] : null;
-  // для автозаполнения менеджеру — без состава
   if (best) {
     best = {
       nick: best.nick,
       address: best.address || "",
       phone: best.phone || "",
       note: String(best.note || "").replace(/\[TEL:[^\]]+\]/gi, "").replace(/\[GEO:[^\]]+\]/gi, "").replace(/\[YMAPS:[^\]]+\]/gi, "").trim(),
-      source: best.source
+      source: best.source,
+      basket: best.basket || []
     };
   }
-  var ok = { status: "success", match: best, matches: matches.slice(0, 5).map(function (m) {
-    return { nick: m.nick, address: m.address, phone: m.phone, note: m.note, source: m.source };
-  }) };
+  var ok = {
+    status: "success",
+    match: best,
+    matches: matches.slice(0, 8).map(function (m) {
+      return { nick: m.nick, address: m.address, phone: m.phone, note: m.note, source: m.source, basket: m.basket || [] };
+    })
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+function handleListClientProfiles(json, callback, fromPost) {
+  var out = [];
+  try {
+    var sh = getClientsProfilesSheet_();
+    ensureClientsBasketCol_(sh);
+    var data = sh.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      var nick = String(data[r][0] || "").trim();
+      if (!nick) continue;
+      var bask = [];
+      try { bask = JSON.parse(String(data[r][6] || "[]")); } catch (e) { bask = []; }
+      out.push({
+        nick: nick,
+        address: String(data[r][1] || ""),
+        phone: String(data[r][2] || ""),
+        note: String(data[r][3] || ""),
+        source: String(data[r][5] || ""),
+        basket: bask
+      });
+    }
+  } catch (e2) {}
+  var ok = { status: "success", clients: out };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 

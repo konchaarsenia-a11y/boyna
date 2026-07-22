@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.9</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.0</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -680,9 +680,11 @@
         </div>
         <div class="form-group">
           <label>Ник / Имя</label>
-          <input type="text" id="client" placeholder="Ник" autocomplete="off" oninput="onClientNameInput()">
+          <div class="addr-suggest-wrap">
+            <input type="text" id="client" placeholder="Ник" autocomplete="off" oninput="onClientNameInput()" onblur="onClientBlurDelayed()">
+            <div class="addr-suggest" id="clientSuggest"></div>
+          </div>
           <div class="batch-bar-row" style="margin-top:8px;">
-            <button type="button" class="btn-action btn-orange" id="clientMatchBtn" style="flex:1;margin:0;display:none;" onclick="applyClientMatch()"></button>
             <button type="button" class="btn-action btn-blue" id="btnSecondDog" style="flex:1;margin:0;" onclick="prepareSecondDog()">2 собаки</button>
           </div>
         </div>
@@ -1008,7 +1010,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.9.9";
+    const APP_VERSION = "v7.10.0";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1995,53 +1997,200 @@
 
 
 
-    let clientMatchTimer = null;
-    let clientMatchCache = null;
-    function hideClientMatchBtn() {
-      const btn = document.getElementById("clientMatchBtn");
-      if (btn) { btn.style.display = "none"; btn.textContent = ""; }
-      clientMatchCache = null;
+    const CLIENT_MEMORY_KEY = "superboyna_client_memory_v1";
+    let clientMemory = {}; // nickUpper -> {nick,address,phone,note,basket,orderType,updatedAt}
+    let clientSuggestList = [];
+    let clientSuggestHideTimer = null;
+
+    function loadClientMemory() {
+      try {
+        clientMemory = JSON.parse(localStorage.getItem(CLIENT_MEMORY_KEY) || "{}") || {};
+      } catch (e) { clientMemory = {}; }
+    }
+    function persistClientMemory() {
+      try { localStorage.setItem(CLIENT_MEMORY_KEY, JSON.stringify(clientMemory)); } catch (e) {}
+    }
+    function rememberClientProfile(p) {
+      if (!p || !p.nick) return;
+      var key = String(p.nick).trim().toUpperCase();
+      if (!key) return;
+      var prev = clientMemory[key] || {};
+      var basket = Array.isArray(p.basket) ? p.basket : (prev.basket || []);
+      clientMemory[key] = {
+        nick: String(p.nick).trim(),
+        address: p.address != null ? String(p.address) : (prev.address || ""),
+        phone: p.phone != null ? String(p.phone) : (prev.phone || ""),
+        note: p.note != null ? String(p.note) : (prev.note || ""),
+        basket: basket,
+        orderType: p.orderType || prev.orderType || "",
+        updatedAt: Date.now()
+      };
+      // не затирать адрес/телефон пустым
+      if (!clientMemory[key].address && prev.address) clientMemory[key].address = prev.address;
+      if (!clientMemory[key].phone && prev.phone) clientMemory[key].phone = prev.phone;
+      if (!basket.length && prev.basket && prev.basket.length) clientMemory[key].basket = prev.basket;
+      persistClientMemory();
+    }
+    function scoreClientNick(nick, q) {
+      var n = String(nick || "").toUpperCase().replace(/\s+/g, " ").trim();
+      var qu = String(q || "").toUpperCase().replace(/\s+/g, " ").trim();
+      if (!n || !qu) return 0;
+      if (n === qu) return 100;
+      if (n.indexOf(qu) === 0) return 92;
+      if (n.indexOf(qu) >= 0) return 78;
+      // слова ника начинаются с запроса
+      var words = n.split(/[\s._\-@]+/).filter(Boolean);
+      for (var i = 0; i < words.length; i++) {
+        if (words[i].indexOf(qu) === 0) return 85;
+        if (words[i].indexOf(qu) >= 0) return 70;
+      }
+      // подпоследовательность: мр → мария
+      var qi = 0;
+      for (var j = 0; j < n.length && qi < qu.length; j++) {
+        if (n.charAt(j) === qu.charAt(qi)) qi++;
+      }
+      if (qi === qu.length && qu.length >= 2) return 55;
+      // запрос содержится «почти»: без пробелов/точек
+      var n2 = n.replace(/[\s._\-@]/g, "");
+      var q2 = qu.replace(/[\s._\-@]/g, "");
+      if (n2.indexOf(q2) === 0) return 88;
+      if (n2.indexOf(q2) >= 0) return 72;
+      return 0;
+    }
+    function searchClientMemory(q) {
+      var qu = String(q || "").trim();
+      if (qu.length < 1) return [];
+      var out = [];
+      Object.keys(clientMemory).forEach(function (k) {
+        var p = clientMemory[k];
+        if (!p || !p.nick) return;
+        var sc = scoreClientNick(p.nick, qu);
+        if (sc > 0) out.push({ score: sc, profile: p });
+      });
+      out.sort(function (a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return (b.profile.updatedAt || 0) - (a.profile.updatedAt || 0);
+      });
+      return out.slice(0, 8).map(function (x) {
+        var p = x.profile;
+        return {
+          nick: p.nick,
+          address: p.address || "",
+          phone: p.phone || "",
+          note: p.note || "",
+          basket: p.basket || [],
+          orderType: p.orderType || "",
+          score: x.score
+        };
+      });
+    }
+    function hideClientSuggest() {
+      var box = document.getElementById("clientSuggest");
+      if (box) { box.classList.remove("open"); box.innerHTML = ""; }
+      clientSuggestList = [];
+    }
+    function renderClientSuggest(list) {
+      var box = document.getElementById("clientSuggest");
+      if (!box) return;
+      clientSuggestList = list || [];
+      if (!clientSuggestList.length) { hideClientSuggest(); return; }
+      box.innerHTML = clientSuggestList.map(function (m, i) {
+        var bags = (m.basket && m.basket.length) ? (m.basket.length + " поз.") : "без состава";
+        var sub = [m.address, bags].filter(Boolean).join(" · ");
+        return '<button type="button" class="addr-suggest-item" data-idx="' + i + '">' +
+          escapeHtml(m.nick) +
+          (sub ? '<span class="addr-suggest-sub">' + escapeHtml(sub) + "</span>" : "") +
+          "</button>";
+      }).join("");
+      box.classList.add("open");
+      box.querySelectorAll(".addr-suggest-item").forEach(function (btn) {
+        btn.onclick = function () {
+          var idx = Number(btn.getAttribute("data-idx"));
+          var m = clientSuggestList[idx];
+          if (m) applyClientMatch(m);
+        };
+      });
     }
     function onClientNameInput() {
-      const q = (document.getElementById("client").value || "").trim();
-      hideClientMatchBtn();
+      var q = (document.getElementById("client").value || "").trim();
       if (orderType === "pp" && q.length >= 2) {
         clearTimeout(onClientNameInput._ppT);
-        onClientNameInput._ppT = setTimeout(refreshPpFactPrice, 500);
+        onClientNameInput._ppT = setTimeout(refreshPpFactPrice, 450);
       }
-      if (q.length < 2) return;
-      clearTimeout(clientMatchTimer);
-      clientMatchTimer = setTimeout(async function () {
-        try {
-          const res = await apiGet({ action: "findClientMatch", q: q });
-          if (!res || !res.match) return;
-          // не предлагать, если уже всё заполнено тем же
-          const addr = (document.getElementById("addressInput").value || "").trim();
-          const phone = (document.getElementById("phoneInput").value || "").trim();
-          if (addr && phone) return;
-          clientMatchCache = res.match;
-          const btn = document.getElementById("clientMatchBtn");
-          if (!btn) return;
-          btn.style.display = "";
-          btn.textContent = "Есть совпадение: " + (res.match.nick || q);
-        } catch (e) {}
-      }, 450);
+      if (q.length < 1) { hideClientSuggest(); return; }
+      // моментально из локальной памяти
+      renderClientSuggest(searchClientMemory(q));
     }
-    function applyClientMatch() {
-      if (!clientMatchCache) return;
-      const m = clientMatchCache;
+    function onClientBlurDelayed() {
+      clearTimeout(clientSuggestHideTimer);
+      clientSuggestHideTimer = setTimeout(hideClientSuggest, 220);
+    }
+    async function applyClientMatch(m) {
+      if (!m) return;
+      hideClientSuggest();
       if (m.nick) document.getElementById("client").value = m.nick;
-      if (m.address) document.getElementById("addressInput").value = m.address;
+      if (m.address) {
+        document.getElementById("addressInput").value = m.address;
+        var picked = document.getElementById("addressPickedHint");
+        if (picked) picked.style.display = "block";
+      }
       if (m.phone) document.getElementById("phoneInput").value = m.phone;
       if (m.note) {
         var hasAny = (orderNotes || []).some(function (n) { return String(n.text || "").trim(); });
         if (!hasAny) loadOrderNotesFromRaw(m.note);
       }
-      hideClientMatchBtn();
-      showToast("Данные подставлены (состав не трогали)");
+      try { if (orderType === "pp") refreshPpFactPrice(); } catch (e0) {}
+      var bask = Array.isArray(m.basket) ? m.basket : [];
+      if (bask.length) {
+        var ask = await uiConfirmAsync(
+          "Клиент: " + m.nick + "\nВставить последний состав (" + bask.length + " поз.)?"
+        );
+        if (ask) {
+          basket = bask.map(function (x) {
+            return {
+              id: Date.now() + Math.random(),
+              cat: x.cat || "dressura",
+              main: x.main || x.name || "",
+              name: x.name || x.main || "",
+              sub: x.sub || "",
+              value: x.val != null ? x.val : x.value,
+              val: x.val != null ? x.val : x.value
+            };
+          }).filter(function (x) { return x.main && Number(x.value) > 0; });
+          renderBasket();
+          showToast("Состав вставлен (" + basket.length + " поз.)");
+        } else {
+          showToast("Контакты подставлены");
+        }
+      } else {
+        showToast("Контакты подставлены");
+      }
+    }
+    async function syncClientProfilesFromServer() {
+      try {
+        var res = await apiGet({ action: "listClientProfiles" });
+        if (!res || res.status !== "success" || !res.clients) return;
+        (res.clients || []).forEach(function (c) {
+          var bask = c.basket;
+          if (typeof bask === "string") {
+            try { bask = JSON.parse(bask || "[]"); } catch (e) { bask = []; }
+          }
+          rememberClientProfile({
+            nick: c.nick,
+            address: c.address,
+            phone: c.phone,
+            note: c.note,
+            basket: Array.isArray(bask) ? bask : [],
+            orderType: c.source || ""
+          });
+        });
+      } catch (e) {}
     }
     window.onClientNameInput = onClientNameInput;
+    window.onClientBlurDelayed = onClientBlurDelayed;
     window.applyClientMatch = applyClientMatch;
+    loadClientMemory();
+    setTimeout(syncClientProfilesFromServer, 400);
 
     function formatWhNum(n) {
       var x = Number(n);
@@ -2505,6 +2654,18 @@
         const inWeek = found && found.basket && found.basket.length > 0;
         if (inWeek) {
           celebrateSuccess("save");
+                    try {
+            rememberClientProfile({
+              nick: clientName,
+              address: clientAddress,
+              phone: phone,
+              note: permanentNote || "",
+              basket: basket.map(function (x) {
+                return { cat: x.cat, main: x.main, name: x.main, sub: x.sub || "", value: x.value, val: x.value };
+              }),
+              orderType: orderType
+            });
+          } catch (eMem) {}
           showToast((isEdit ? "Заказ обновлён" : "Заказ сохранён") +
             " (" + found.basket.length + " поз.)" +
             (orderPrice != null ? (" · " + orderPrice + " BYN") : ""));
