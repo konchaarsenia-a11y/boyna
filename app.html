@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.1</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.2</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -1010,7 +1010,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.1";
+    const APP_VERSION = "v7.10.2";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2211,19 +2211,26 @@
       return (Math.round(x * 100) / 100).toString();
     }
 
+    function hideSaveLoading() {
+      const ov = document.getElementById("saveLoadOverlay");
+      if (ov) {
+        ov.classList.remove("open");
+        ov.style.display = "none";
+      }
+    }
     function showSaveLoading(label) {
       const ov = document.getElementById("saveLoadOverlay");
       const lb = document.getElementById("saveLoadLabel");
       if (lb) lb.textContent = label || "Сохраняю заказ…";
-      if (ov) ov.classList.add("open");
-    }
-    function hideSaveLoading() {
-      const ov = document.getElementById("saveLoadOverlay");
-      if (ov) ov.classList.remove("open");
+      if (ov) {
+        ov.style.display = "flex";
+        ov.classList.add("open");
+      }
     }
 
     function clearBlockingOverlays() {
       try {
+        hideSaveLoading();
         var yr = document.getElementById("yandexRouteOverlay");
         if (yr) yr.remove();
         var tyan = document.getElementById("fxTyanOverlay");
@@ -2660,6 +2667,10 @@
 
       try {
         await apiPost(bookingPayload);
+        // сразу в неделю дня — надёжнее, чем ждать материализации брони
+        if (day) {
+          try { await apiPost(payload); } catch (eWeek) {}
+        }
         await new Promise(r => setTimeout(r, 500));
         let found = null;
         try {
@@ -2667,6 +2678,7 @@
           found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
         } catch (eCheck) {}
         const inWeek = found && found.basket && found.basket.length > 0;
+        const savedItems = basket.length;
         try {
           rememberClientProfile({
             nick: clientName,
@@ -2685,6 +2697,10 @@
             yandexUrl: selectedAddressGeo && selectedAddressGeo.yandexUrl
           });
         } catch (eMem) {}
+
+        // лоадер снять ДО тостов/очистки — иначе ошибка в cleanup держит кружок поверх модалки
+        hideSaveLoading();
+
         if (inWeek) {
           celebrateSuccess("save");
           showToast((isEdit ? "Заказ обновлён" : "Заказ сохранён") +
@@ -2706,7 +2722,7 @@
         clearOrderNotes();
         const phoneEl = document.getElementById("phoneInput");
         if (phoneEl) phoneEl.value = "";
-        hideClientMatchBtn();
+        hideClientSuggest();
         const po = document.getElementById("postOfficeInput");
         if (po) po.value = "";
         selectedAddressGeo = null;
@@ -2719,7 +2735,7 @@
         basket = [];
         renderBasket();
         document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
-        try { logLearnEvent("saveOrder", { client: clientName, day: day, items: basket.length, orderType: orderType }); } catch (eL) {}
+        try { logLearnEvent("saveOrder", { client: clientName, day: day, items: savedItems, orderType: orderType }); } catch (eL) {}
         if (!secondDogMode && ownerContactSnapshot) {
           var b2 = document.getElementById("btnSecondDogOrder");
           if (b2) b2.style.display = "";
@@ -2728,8 +2744,9 @@
           secondDogMode = false;
           document.getElementById("btnMainSave").innerText = "Сохранить заказ";
         }
-        await refreshDayViews(day);
+        try { await refreshDayViews(day); } catch (eRef) {}
       } catch (err) {
+        hideSaveLoading();
         await uiAlertAsync("Ошибка: " + (err.message || err));
       } finally {
         hideSaveLoading();
@@ -3061,7 +3078,7 @@
       const rawNote = client.note || "";
       const phoneEl = document.getElementById("phoneInput");
       if (phoneEl) phoneEl.value = client.phone || extractPhone(rawNote) || "";
-      hideClientMatchBtn();
+      hideClientSuggest();
       const geoFromNote = parseGeoFromNote(rawNote);
       const geo = client.geo || geoFromNote;
       selectedAddressGeo = geo ? {
