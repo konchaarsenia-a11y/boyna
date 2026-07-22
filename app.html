@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.0</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.1</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -1010,7 +1010,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.0";
+    const APP_VERSION = "v7.10.1";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1883,25 +1883,38 @@
     }
 
     function shortAddressForCourier(full, entrance) {
-      var s = String(full || "").trim();
-      // убрать страну/индекс/длинные хвосты геокодера
-      s = s.replace(/,\s*(Belarus|Беларусь|Минская область|Minsk Region).*$/i, "");
-      s = s.replace(/^\d{6},?\s*/g, "");
-      // оставить улица + дом (первые 2–3 значимых куска)
-      var parts = s.split(",").map(function (x) { return x.trim(); }).filter(Boolean);
-      var keep = [];
-      for (var i = 0; i < parts.length; i++) {
-        var p = parts[i];
-        if (/^(Belarus|Беларусь|Минск|Minsk)$/i.test(p) && keep.length) continue;
-        keep.push(p);
-        if (keep.length >= 2 && /\d/.test(p)) break;
-        if (keep.length >= 3) break;
-      }
-      var short = keep.length ? keep.join(", ") : s;
+      var short = formatStreetHouse(full);
       var ent = String(entrance || "").trim();
       if (ent) short = short + (short ? ", " : "") + ent;
       return short;
     }
+
+    /** Только улица + дом — без района/города/страны/индекса */
+    function formatStreetHouse(full) {
+      var s = String(full || "").trim();
+      if (!s) return "";
+      s = s.replace(/^\d{5,6}\s*,?\s*/g, "");
+      s = s.replace(/\s*\d{5,6}\s*$/g, "");
+      var parts = s.split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+      function dropPart(p) {
+        if (/^(беларусь|belarus|by|минск|minsk)$/i.test(p)) return true;
+        if (/^\d{5,6}$/.test(p)) return true;
+        if (/область|region|район|district|республик|сельсовет|микрорайон|^мкр\.?$/i.test(p)) return true;
+        if (/^минская\b/i.test(p) || /^minsk\s+region/i.test(p)) return true;
+        return false;
+      }
+      var keep = parts.filter(function (p) { return !dropPart(p); });
+      if (!keep.length) keep = parts.slice(0, 2);
+      var out = [];
+      for (var i = 0; i < keep.length; i++) {
+        out.push(keep[i]);
+        // улица + дом (когда появилась цифра дома) — хватит
+        if (out.length >= 2) break;
+        if (out.length === 1 && /\d/.test(keep[i]) && /[а-яa-z]/i.test(keep[i])) break; // "ул. X 12"
+      }
+      return out.join(", ") || s;
+    }
+    window.formatStreetHouse = formatStreetHouse;
 
     function updateNotesSummary() {
       var el = document.getElementById("notesSummary");
@@ -2487,6 +2500,8 @@
     async function sendEntireOrder() {
       const clientName = document.getElementById("client").value.trim();
       let clientAddressFull = document.getElementById("addressInput").value.trim();
+      clientAddressFull = formatStreetHouse(clientAddressFull) || clientAddressFull;
+      if (document.getElementById("addressInput")) document.getElementById("addressInput").value = clientAddressFull;
       const entrance = (document.getElementById("entranceInput") && document.getElementById("entranceInput").value || "").trim();
       let clientAddress = shortAddressForCourier(clientAddressFull, entrance);
       let clientNote = serializeOrderNotes(orderNotes).trim();
@@ -2662,6 +2677,12 @@
               return { cat: x.cat, main: x.main, name: x.main, sub: x.sub || "", value: x.value, val: x.value };
             }),
             orderType: orderType
+          });
+          rememberAddress({
+            address: clientAddress,
+            lat: selectedAddressGeo && selectedAddressGeo.lat,
+            lon: selectedAddressGeo && selectedAddressGeo.lon,
+            yandexUrl: selectedAddressGeo && selectedAddressGeo.yandexUrl
           });
         } catch (eMem) {}
         if (inWeek) {
@@ -4363,6 +4384,93 @@
       if (el) el.classList.toggle("show", !!on);
     }
 
+    const ADDR_MEMORY_KEY = "superboyna_addr_memory_v1";
+    let addrMemory = []; // [{address, lat, lon, yandexUrl, updatedAt}]
+
+    function loadAddrMemory() {
+      try {
+        addrMemory = JSON.parse(localStorage.getItem(ADDR_MEMORY_KEY) || "[]") || [];
+      } catch (e) { addrMemory = []; }
+      if (!Array.isArray(addrMemory)) addrMemory = [];
+      // подтянуть адреса из памяти клиентов
+      try {
+        Object.keys(clientMemory || {}).forEach(function (k) {
+          var a = clientMemory[k] && clientMemory[k].address;
+          if (a) rememberAddress({ address: a }, true);
+        });
+      } catch (e2) {}
+    }
+    function persistAddrMemory() {
+      try { localStorage.setItem(ADDR_MEMORY_KEY, JSON.stringify(addrMemory.slice(0, 400))); } catch (e) {}
+    }
+    function rememberAddress(item, quiet) {
+      if (!item) return;
+      var short = formatStreetHouse(item.address || item.title || "");
+      if (!short || short.length < 3) return;
+      var key = short.toUpperCase();
+      addrMemory = (addrMemory || []).filter(function (x) {
+        return formatStreetHouse(x.address || "").toUpperCase() !== key;
+      });
+      addrMemory.unshift({
+        address: short,
+        title: short,
+        subtitle: "",
+        lat: item.lat != null ? item.lat : null,
+        lon: item.lon != null ? item.lon : null,
+        yandexUrl: item.yandexUrl || "",
+        updatedAt: Date.now()
+      });
+      if (!quiet) persistAddrMemory();
+    }
+    function scoreAddress(addr, q) {
+      var a = String(addr || "").toUpperCase().replace(/\s+/g, " ").trim();
+      var qu = String(q || "").toUpperCase().replace(/\s+/g, " ").trim();
+      if (!a || !qu) return 0;
+      if (a === qu) return 100;
+      if (a.indexOf(qu) === 0) return 92;
+      if (a.indexOf(qu) >= 0) return 78;
+      var a2 = a.replace(/[.,]/g, " ").replace(/\s+/g, " ");
+      var q2 = qu.replace(/[.,]/g, " ").replace(/\s+/g, " ");
+      if (a2.indexOf(q2) === 0) return 90;
+      if (a2.indexOf(q2) >= 0) return 75;
+      var words = a2.split(" ");
+      for (var i = 0; i < words.length; i++) {
+        if (words[i].indexOf(q2) === 0) return 82;
+      }
+      var qi = 0;
+      for (var j = 0; j < a2.length && qi < q2.length; j++) {
+        if (a2.charAt(j) === q2.charAt(qi)) qi++;
+      }
+      if (qi === q2.length && q2.length >= 3) return 55;
+      return 0;
+    }
+    function searchAddrMemory(q) {
+      var qu = String(q || "").trim();
+      if (qu.length < 1) return [];
+      var out = [];
+      (addrMemory || []).forEach(function (it) {
+        var sc = scoreAddress(it.address || it.title, qu);
+        if (sc > 0) out.push({ score: sc, item: it });
+      });
+      out.sort(function (a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return (b.item.updatedAt || 0) - (a.item.updatedAt || 0);
+      });
+      return out.slice(0, 8).map(function (x) {
+        var it = x.item;
+        var short = formatStreetHouse(it.address || it.title);
+        return {
+          title: short,
+          subtitle: "",
+          address: short,
+          lat: it.lat,
+          lon: it.lon,
+          yandexUrl: it.yandexUrl || "",
+          local: true
+        };
+      });
+    }
+
     function clearAddressSuggest() {
       var box = document.getElementById("addressSuggest");
       if (box) {
@@ -4376,16 +4484,24 @@
       setAddressPickedHint(false);
       var q = document.getElementById("addressInput").value.trim();
       clearTimeout(addressSuggestTimer);
-      if (q.length < 2) {
+      var box = document.getElementById("addressSuggest");
+      if (q.length < 1) {
         clearAddressSuggest();
         return;
       }
-      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 180);
+      // моментально — локальная память
+      var local = searchAddrMemory(q);
+      if (local.length && box) renderAddressSuggestList(box, local);
+      else if (q.length < 2) {
+        clearAddressSuggest();
+        return;
+      }
+      // сеть только Photon (быстро), без webhook/nominatim
+      addressSuggestTimer = setTimeout(function () { fetchAddressSuggest(q); }, 100);
     }
 
     function onAddressBlurDelayed() {
       setTimeout(function () {
-        // не закрывать список, если тапнули по подсказке
         var a = document.activeElement;
         if (a && a.closest && a.closest("#addressSuggest")) return;
         clearAddressSuggest();
@@ -4401,9 +4517,12 @@
         for (var i = 0; i < arr.length; i++) {
           var it = arr[i];
           if (!it) continue;
+          var short = formatStreetHouse(it.address || it.title || "");
+          if (!short) continue;
+          it = Object.assign({}, it, { title: short, address: short, subtitle: "" });
           var key = (it.lat != null && it.lon != null)
             ? (Number(it.lat).toFixed(5) + "," + Number(it.lon).toFixed(5))
-            : String(it.address || it.title || "").toLowerCase();
+            : short.toLowerCase();
           if (!key || seen[key]) continue;
           seen[key] = true;
           out.push(it);
@@ -4416,48 +4535,42 @@
       var seq = ++addressSuggestSeq;
       var box = document.getElementById("addressSuggest");
       if (!box) return;
-      var cacheKey = "asuggest:v2:" + q.toLowerCase();
+      var local = searchAddrMemory(q);
+      var cacheKey = "asuggest:v3:" + q.toLowerCase();
+      var cachedList = [];
       try {
         var cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          var parsed = JSON.parse(cached);
-          if (parsed && parsed.length && seq === addressSuggestSeq) {
-            renderAddressSuggestList(box, parsed);
-            // всё равно обновим в фоне — Photon иногда «тупит»
-          }
-        }
+        if (cached) cachedList = JSON.parse(cached) || [];
       } catch (e0) {}
-      if (seq === addressSuggestSeq && (!box._items || !box._items.length)) {
-        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу адрес…</div>';
+      var first = mergeSuggestLists(local, cachedList);
+      if (first.length && seq === addressSuggestSeq) {
+        renderAddressSuggestList(box, first);
+      } else if (seq === addressSuggestSeq && !local.length) {
+        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ищу…</div>';
         box.classList.add("open");
       }
       var photonList = [];
-      var apiList = [];
-      var nominatimList = [];
-      await Promise.all([
-        photonSuggestClient(q).then(function (r) { photonList = r || []; }).catch(function () {}),
-        apiGet({ action: "suggestAddress", text: q }).then(function (res) {
-          apiList = (res && res.results) || [];
-        }).catch(function () {}),
-        nominatimSuggestClient(q).then(function (r) { nominatimList = r || []; }).catch(function () {})
-      ]);
+      try { photonList = await photonSuggestClient(q); } catch (e1) {}
       if (seq !== addressSuggestSeq) return;
-      var list = mergeSuggestLists(photonList, apiList, nominatimList);
+      var list = mergeSuggestLists(local, photonList, cachedList);
       if (!list.length) {
-        box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — попробуйте «улица дом» или «Минск, …»</div>';
-        box.classList.add("open");
+        if (!local.length) {
+          box.innerHTML = '<div class="addr-suggest-item" style="color:#8e8e93;">Ничего не найдено — «улица дом»</div>';
+          box.classList.add("open");
+        }
         return;
       }
-      try { localStorage.setItem(cacheKey, JSON.stringify(list.slice(0, 8))); } catch (e3) {}
+      try { localStorage.setItem(cacheKey, JSON.stringify(list.filter(function (x) { return !x.local; }).slice(0, 8))); } catch (e3) {}
       renderAddressSuggestList(box, list);
     }
 
     function renderAddressSuggestList(box, list) {
       box._items = list;
       box.innerHTML = list.map(function (item, i) {
+        var title = formatStreetHouse(item.title || item.address || "");
         return '<button type="button" class="addr-suggest-item" data-idx="' + i + '">' +
-          escapeHtml(item.title || item.address || "") +
-          (item.subtitle ? '<span class="addr-suggest-sub">' + escapeHtml(item.subtitle) + "</span>" : "") +
+          escapeHtml(title) +
+          (item.local ? '<span class="addr-suggest-sub">из памяти</span>' : "") +
           "</button>";
       }).join("");
       box.classList.add("open");
@@ -4483,23 +4596,25 @@
           if (!/брест|гродн|гомел|витебск|могил|борисов|жодино/i.test(text)) return;
         }
         var p = f.properties || {};
-        var parts = [];
-        if (p.name) parts.push(String(p.name));
-        if (p.street && p.street !== p.name) parts.push(String(p.street));
-        if (p.housenumber) parts.push(String(p.housenumber));
-        var title = parts.length ? parts.join(", ") : String(p.name || p.street || "Адрес");
-        var subParts = [];
-        if (p.district) subParts.push(String(p.district));
-        if (p.city || p.town || p.village) subParts.push(String(p.city || p.town || p.village));
-        var subtitle = subParts.join(", ") || "Минск";
-        var address = title + (subtitle ? (", " + subtitle) : "");
+        var street = String(p.street || "").trim();
+        var house = String(p.housenumber || "").trim();
+        if (!street && p.name && (p.osm_key === "highway" || p.type === "street" || !house)) {
+          street = String(p.name).trim();
+        }
+        var title = "";
+        if (street && house) title = street + ", " + house;
+        else if (street) title = street;
+        else if (p.name && house) title = String(p.name).trim() + ", " + house;
+        else title = formatStreetHouse([p.name, p.street, p.housenumber].filter(Boolean).join(", "));
+        title = formatStreetHouse(title);
+        if (!title) return;
         var keyDup = lat.toFixed(5) + "," + lon.toFixed(5);
         if (seen[keyDup]) return;
         seen[keyDup] = true;
         out.push({
           title: title,
-          subtitle: subtitle,
-          address: address,
+          subtitle: "",
+          address: title,
           lat: lat,
           lon: lon,
           yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
@@ -4531,6 +4646,7 @@
     }
 
     async function nominatimSuggestClient(text) {
+      // оставлен как запасной; основной путь — память + Photon
       var q = String(text || "").trim();
       if (!q) return [];
       if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(q)) q = q + ", Минск, Беларусь";
@@ -4543,11 +4659,16 @@
         var lat = Number(row.lat);
         var lon = Number(row.lon);
         if (!isFinite(lat) || !isFinite(lon)) return;
-        var title = String(row.display_name || "").split(",").slice(0, 3).join(",").trim() || "Адрес";
+        var ad = row.address || {};
+        var street = ad.road || ad.pedestrian || ad.street || "";
+        var house = ad.house_number || "";
+        var title = street && house ? (street + ", " + house) : formatStreetHouse(row.display_name || "");
+        title = formatStreetHouse(title);
+        if (!title) return;
         out.push({
           title: title,
-          subtitle: "Минск / Беларусь",
-          address: String(row.display_name || title),
+          subtitle: "",
+          address: title,
           lat: lat,
           lon: lon,
           yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
@@ -4556,18 +4677,24 @@
       return out;
     }
     function pickAddressSuggest(item) {
-      document.getElementById("addressInput").value = item.address || item.title || "";
+      var short = formatStreetHouse(item.address || item.title || "");
+      document.getElementById("addressInput").value = short;
       selectedAddressGeo = {
         lat: item.lat,
         lon: item.lon,
-        address: item.address || item.title || "",
-        yandexUrl: item.yandexUrl || ("https://yandex.ru/maps/?pt=" + item.lon + "," + item.lat + "&z=17&l=map")
+        address: short,
+        yandexUrl: item.yandexUrl || (item.lat != null ? ("https://yandex.ru/maps/?pt=" + item.lon + "," + item.lat + "&z=17&l=map") : "")
       };
+      rememberAddress({ address: short, lat: item.lat, lon: item.lon, yandexUrl: selectedAddressGeo.yandexUrl });
       setAddressPickedHint(true);
       clearAddressSuggest();
       dismissKeyboard();
       onAddressBlur();
     }
+
+    loadAddrMemory();
+    // после sync клиентов — обновить адреса в памяти
+    setTimeout(function () { try { loadAddrMemory(); persistAddrMemory(); } catch (e) {} }, 1200);
 
     function normalizeAddressForMaps(addr) {
       const a = String(addr || "").trim();

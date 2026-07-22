@@ -1984,27 +1984,26 @@ function photonSuggest_(text) {
       if (!/брест|гродн|гомел|витебск|могил|борисов|жодино|молодечн/i.test(q)) continue;
     }
     var p = f.properties || {};
-    var parts = [];
-    if (p.name) parts.push(String(p.name));
-    if (p.street && p.street !== p.name) parts.push(String(p.street));
-    if (p.housenumber) parts.push(String(p.housenumber));
-    var title = parts.length ? parts.join(", ") : String(p.name || p.street || "Адрес");
-    var subParts = [];
-    if (p.district) subParts.push(String(p.district));
-    if (p.city || p.town || p.village) subParts.push(String(p.city || p.town || p.village));
-    if (p.state && !/минск/i.test(String(p.city || ""))) subParts.push(String(p.state));
-    var subtitle = subParts.join(", ");
-    var address = title + (subtitle ? (", " + subtitle) : "");
-    if (!/минск/i.test(address) && (p.city === "Minsk" || /Minsk/i.test(String(p.city || p.state || "")))) {
-      address = address + ", Минск";
+    var street = String(p.street || "").trim();
+    var house = String(p.housenumber || "").trim();
+    if (!street && p.name && (String(p.osm_key || "") === "highway" || String(p.type || "") === "street" || !house)) {
+      street = String(p.name || "").trim();
     }
+    var title = "";
+    if (street && house) title = street + ", " + house;
+    else if (street) title = street;
+    else if (p.name && house) title = String(p.name).trim() + ", " + house;
+    else title = [p.name, p.street, p.housenumber].filter(Boolean).join(", ");
+    // без района/города/страны
+    title = String(title || "").replace(/,\s*(Беларусь|Belarus|Минск|Minsk|Минская область).*$/i, "").trim();
+    if (!title) continue;
     var keyDup = lat.toFixed(5) + "," + lon.toFixed(5);
     if (seen[keyDup]) continue;
     seen[keyDup] = true;
     out.push({
       title: title,
-      subtitle: subtitle || "Минск",
-      address: address,
+      subtitle: "",
+      address: title,
       lat: lat,
       lon: lon,
       yandexUrl: "https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map"
