@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.2</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.3</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -664,8 +664,9 @@
         </div>
         <div class="form-group" id="orderPriceGroup" style="display:none;">
           <label id="orderPriceLabel">Цена (BYN)</label>
-          <input type="number" id="orderPriceInput" step="0.01" min="0" placeholder="0" inputmode="decimal">
+          <input type="number" id="orderPriceInput" step="0.01" min="0" placeholder="0" inputmode="decimal" oninput="onOrderPriceInput()">
           <div class="field-hint" id="orderPriceLive" style="display:none;"></div>
+          <button type="button" class="btn-action" id="btnRetailPriceAuto" style="display:none;margin-top:6px;background:#3a3a3c;" onclick="resetRetailPriceToAuto()">По прайсу витрины</button>
         </div>
         <div class="form-group">
           <label>Дата доставки</label>
@@ -1010,7 +1011,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.2";
+    const APP_VERSION = "v7.10.3";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1806,6 +1807,7 @@
     let orderType = "pp"; // pp | bp | retail | partner
     let secondDogMode = false; // true = вводим только состав 2-й
     let ownerContactSnapshot = null;
+    let retailPriceManual = false; // true = менеджер ввёл свою цену розницы
 
     function setOrderType(t) {
       orderType = t;
@@ -1819,19 +1821,24 @@
       var lab = document.getElementById("orderPriceLabel");
       var live = document.getElementById("orderPriceLive");
       var totalCard = document.getElementById("orderTotalCard");
+      var btnAuto = document.getElementById("btnRetailPriceAuto");
+      if (btnAuto) btnAuto.style.display = t === "retail" ? "" : "none";
       if (t === "partner") {
+        retailPriceManual = false;
         if (pg) pg.style.display = "";
         if (inp) { inp.readOnly = false; inp.placeholder = "свой прайс"; }
         if (lab) lab.textContent = "Цена партнёра (BYN)";
         if (live) live.style.display = "none";
         if (totalCard) totalCard.style.display = "none";
       } else if (t === "bp") {
+        retailPriceManual = false;
         if (pg) pg.style.display = "";
         if (inp) { inp.readOnly = true; inp.value = "0"; }
         if (lab) lab.textContent = "Цена (BYN)";
         if (live) live.style.display = "none";
         if (totalCard) totalCard.style.display = "none";
       } else if (t === "pp") {
+        retailPriceManual = false;
         if (pg) pg.style.display = "";
         if (inp) { inp.readOnly = false; inp.placeholder = "ФАКТ СТОИМОСТЬ"; }
         if (lab) lab.textContent = "Цена ПП (BYN)";
@@ -1839,9 +1846,10 @@
         if (totalCard) totalCard.style.display = "none";
         try { refreshPpFactPrice(); } catch (e) {}
       } else {
-        // retail — считаем и показываем
+        // retail — авто по прайсу, можно править вручную
+        retailPriceManual = false;
         if (pg) pg.style.display = "";
-        if (inp) { inp.readOnly = true; inp.placeholder = "авто"; }
+        if (inp) { inp.readOnly = false; inp.placeholder = "авто или своя"; }
         if (lab) lab.textContent = "Цена розница (BYN)";
         if (live) live.style.display = "";
         if (totalCard) totalCard.style.display = "";
@@ -1851,22 +1859,44 @@
     window.setOrderType = setOrderType;
 
     function refreshRetailOrderPrice() {
-      if (orderType !== "retail") return;
+      if (orderType !== "retail") return { total: 0, lines: [] };
       var local = calcRetailBasketTotal(basket);
       var inp = document.getElementById("orderPriceInput");
-      if (inp) inp.value = String(local.total);
+      if (inp && !retailPriceManual) inp.value = String(local.total);
       var live = document.getElementById("orderPriceLive");
       if (live) {
         var miss = (local.lines || []).filter(function (L) { return !L.found && L.val > 0; }).length;
-        live.textContent = miss
-          ? ("По прайсу · без цены: " + miss + " поз.")
-          : (basket.length ? "По прайсу витрины" : "Добавь позиции в корзину");
+        if (retailPriceManual) {
+          live.textContent = "Своя цена · по прайсу было " + local.total + " BYN";
+        } else {
+          live.textContent = miss
+            ? ("По прайсу · без цены: " + miss + " поз. · можно править")
+            : (basket.length ? "По прайсу витрины · можно править" : "Добавь позиции или введи цену");
+        }
       }
       var t = document.getElementById("orderRetailTotalText");
-      if (t) t.textContent = local.total + " BYN";
+      if (t) {
+        var shown = inp && inp.value !== "" ? Number(inp.value) : local.total;
+        if (!isFinite(shown)) shown = local.total;
+        t.textContent = shown + " BYN";
+      }
       return local;
     }
     window.refreshRetailOrderPrice = refreshRetailOrderPrice;
+
+    function onOrderPriceInput() {
+      if (orderType !== "retail") return;
+      retailPriceManual = true;
+      try { refreshRetailOrderPrice(); } catch (e) {}
+    }
+    window.onOrderPriceInput = onOrderPriceInput;
+
+    function resetRetailPriceToAuto() {
+      retailPriceManual = false;
+      try { refreshRetailOrderPrice(); } catch (e) {}
+      showToast("Цена по прайсу");
+    }
+    window.resetRetailPriceToAuto = resetRetailPriceToAuto;
 
     async function refreshPpFactPrice() {
       if (orderType !== "pp") return;
@@ -2521,7 +2551,10 @@
       var orderPrice = null;
       if (orderType === "bp") orderPrice = 0;
       else if (orderType === "retail") {
-        orderPrice = refreshRetailOrderPrice().total;
+        var localRet = refreshRetailOrderPrice();
+        var pvR = document.getElementById("orderPriceInput") && document.getElementById("orderPriceInput").value;
+        if (pvR !== "" && pvR != null && !isNaN(Number(pvR))) orderPrice = Number(pvR);
+        else orderPrice = localRet && localRet.total != null ? localRet.total : 0;
       } else if (orderType === "partner" || orderType === "pp") {
         var pv = document.getElementById("orderPriceInput") && document.getElementById("orderPriceInput").value;
         orderPrice = pv === "" || pv == null ? null : Number(pv);
@@ -3034,6 +3067,13 @@
     }
     window.crmBatchMove = crmBatchMove;
 
+    function deleteClientParams(clientName, day) {
+      const params = { action: "deleteClient", client: clientName, day: day || "" };
+      const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
+      if (dateStr) params.date = dateStr;
+      return params;
+    }
+
     async function crmBatchDelete() {
       const idxs = getSelectedClientIndexes();
       if (!idxs.length) { showToast("Никого не выбрано"); return; }
@@ -3050,7 +3090,7 @@
       showToast("Удаляю " + names.length + "…");
       for (let i = 0; i < names.length; i++) {
         try {
-          const res = await apiGet({ action: "deleteClient", client: names[i], day: day });
+          const res = await apiGet(deleteClientParams(names[i], day));
           if (res.status === "success") ok++;
           else fail.push(names[i] + " (" + (res.status || "?") + ")");
         } catch (e) {
@@ -3171,12 +3211,12 @@
       const ok = await uiConfirmAsync("Удалить клиента " + client.name + "?");
       if (!ok) return;
       try {
-        const res = await apiGet({ action: "deleteClient", client: client.name, day: day });
+        const res = await apiGet(deleteClientParams(client.name, day));
         if (res.status !== "success") {
           await uiAlertAsync("Не удалось: " + (res.status || "ошибка"));
           return;
         }
-        showToast("Удалено");
+        showToast(res.alreadyGone ? "Уже удалено" : "Удалено");
         await refreshDayViews(day);
       } catch (err) {
         await uiAlertAsync(err.message || String(err));

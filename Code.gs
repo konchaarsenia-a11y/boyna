@@ -493,7 +493,9 @@ function doGet(e) {
     day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
     client: e.parameter.client ? decodeURIComponent(e.parameter.client) : "",
     oldDay: e.parameter.oldDay ? decodeURIComponent(e.parameter.oldDay) : "",
-    newDay: e.parameter.newDay ? decodeURIComponent(e.parameter.newDay) : ""
+    newDay: e.parameter.newDay ? decodeURIComponent(e.parameter.newDay) : "",
+    date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
+    deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : ""
   };
 
   // getClients — только чтение
@@ -1030,10 +1032,10 @@ function handleUpdateCutting(ss, json, callback, fromPost) {
 /** На листе «Доставки» ники клиентов в строке 3, галочки в строке 2. Столбец C часто «итого» — ищем ник по имени. */
 function findCourierClientCol_(courierSheet, clientName) {
   if (!courierSheet) return -1;
-  var want = String(clientName || "").trim().toUpperCase();
+  var want = normalizeClientKey_(clientName);
   var nicks = courierSheet.getRange(3, 3, 1, 16).getValues()[0];
   for (var i = 0; i < nicks.length; i++) {
-    var nick = String(nicks[i] || "").trim().toUpperCase();
+    var nick = normalizeClientKey_(nicks[i]);
     if (!nick || nick === "ИТОГО НА ДЕНЬ" || nick === "ИТОГО" || nick === "ФАКТ СНЯТОЕ") continue;
     if (nick === want) return i + 3; // 1-based column
   }
@@ -1153,26 +1155,118 @@ function handleSetDelivered(ss, json, callback) {
   return jsonpText(callback, { status: "success", paid: paidVal || null });
 }
 
-function handleDeleteClient(ss, json, callback) {
-  var block = getDayBlock(json.day);
-  if (!block) return jsonp(callback, { status: "bad_day" });
-  var targetSheet = getTargetSheet(ss, block);
-  if (!targetSheet) return jsonp(callback, { status: "error" });
+/** Нормализация ника для поиска: пробелы, ё/е, невидимые символы. */
+function normalizeClientKey_(s) {
+  return String(s || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase()
+    .replace(/Ё/g, "Е");
+}
 
-  var nicksRowValues = targetSheet.getRange(block.nick, 3, 1, 15).getValues()[0];
-  var want = String(json.client || "").trim().toUpperCase();
-  for (var i = 0; i < 15; i++) {
-    var currentNick = nicksRowValues[i] ? nicksRowValues[i].toString().trim().toUpperCase() : "";
-    if (currentNick === want) {
-      var targetCol = i + 3;
-      targetSheet.getRange(block.nick, targetCol).setValue("");
-      // товары + адрес + примечание
-      targetSheet.getRange(block.start, targetCol, block.note - block.start + 1, 1).clearContent();
-      checkLiveDeficitAndNotify();
-      return jsonp(callback, { status: "success" });
+/** Пометить брони клиента на дату (или все даты дня) как cancelled. */
+function cancelBookingsForClient_(ss, clientName, deliveryDate) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var want = normalizeClientKey_(clientName);
+  if (!want) return { cancelled: 0 };
+  var dateStr = deliveryDate ? dateKey_(deliveryDate, tz) : "";
+  var sh = getBookingsSheet_();
+  var all = readAllBookings_();
+  var n = 0;
+  for (var i = 0; i < all.length; i++) {
+    var b = all[i];
+    if (String(b.status) === "cancelled") continue;
+    if (normalizeClientKey_(b.client) !== want) continue;
+    if (dateStr) {
+      var bd = parseFlexibleDate_(b.date, tz);
+      if (!bd || dateKey_(bd, tz) !== dateStr) continue;
+    }
+    sh.getRange(b.rowIndex, 9).setValue("cancelled");
+    sh.getRange(b.rowIndex, 11).setValue(new Date());
+    n++;
+  }
+  return { cancelled: n };
+}
+
+function handleDeleteClient(ss, json, callback) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var dayName = String(json.day || "").trim();
+  var deliveryDate = parseFlexibleDate_(json.date || json.deliveryDate, tz);
+  if (!dayName && deliveryDate) {
+    dayName = findDayNameForDate_(ss, deliveryDate) || "";
+  }
+  if (!deliveryDate && dayName) {
+    try {
+      var rawD = getDayDate_(ss, dayName);
+      deliveryDate = parseFlexibleDate_(rawD, tz);
+    } catch (eD) {}
+  }
+
+  var clearedWeek = false;
+  var clearedCols = 0;
+  var block = getDayBlock(dayName);
+  var want = normalizeClientKey_(json.client);
+  if (block && want) {
+    var targetSheet = getTargetSheet(ss, block);
+    if (targetSheet) {
+      var nicksRowValues = targetSheet.getRange(block.nick, 3, 1, 15).getValues()[0];
+      // все столбцы с этим ником (дубликаты тоже)
+      for (var i = 0; i < 15; i++) {
+        var currentNick = normalizeClientKey_(nicksRowValues[i]);
+        if (currentNick && currentNick === want) {
+          var targetCol = i + 3;
+          targetSheet.getRange(block.nick, targetCol).setValue("");
+          targetSheet.getRange(block.start, targetCol, block.note - block.start + 1, 1).clearContent();
+          clearedWeek = true;
+          clearedCols++;
+        }
+      }
     }
   }
-  return jsonp(callback, { status: "client_not_found" });
+
+  var bookRes = { cancelled: 0 };
+  try {
+    // только на дату дня — не трогаем брони других дат того же ника
+    if (deliveryDate) {
+      bookRes = cancelBookingsForClient_(ss, json.client, deliveryDate);
+    }
+  } catch (eBook) {}
+
+  // курьерская галочка на дату дня — убрать ник/флаг, если есть
+  try {
+    var courier = ss.getSheetByName("Доставки");
+    if (courier && deliveryDate) {
+      var dateText = formatSheetDate(deliveryDate, tz);
+      if (formatSheetDate(courier.getRange("A1").getValue(), tz) === dateText) {
+        var cCol = findCourierClientCol_(courier, json.client);
+        if (cCol > 0) {
+          courier.getRange(2, cCol).setValue(false);
+          courier.getRange(3, cCol).setValue("");
+        }
+      }
+    }
+  } catch (eCour) {}
+
+  if (clearedWeek) {
+    try { checkLiveDeficitAndNotify(); } catch (eDef) {}
+  }
+
+  if (clearedWeek || (bookRes && bookRes.cancelled > 0)) {
+    return jsonp(callback, {
+      status: "success",
+      clearedWeek: clearedWeek,
+      clearedCols: clearedCols,
+      cancelledBookings: bookRes.cancelled || 0,
+      day: dayName || ""
+    });
+  }
+  // уже нет ни в неделе, ни в бронях — не ошибка (повторное удаление / рассинхрон UI)
+  return jsonp(callback, {
+    status: "success",
+    alreadyGone: true,
+    day: dayName || ""
+  });
 }
 
 function handleMoveClient(ss, json, callback) {
@@ -4101,14 +4195,22 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
   for (var i = 0; i < clients.length; i++) {
     var c = clients[i];
     var existing = null;
+    var wasCancelled = false;
     for (var j = 0; j < all.length; j++) {
       var bd = parseFlexibleDate_(all[j].date, tz);
-      if (bd && dateKey_(bd, tz) === dateStr &&
-          String(all[j].client).trim().toUpperCase() === String(c.client).trim().toUpperCase() &&
-          String(all[j].status) !== "cancelled") {
-        existing = all[j];
-        break;
+      if (!bd || dateKey_(bd, tz) !== dateStr) continue;
+      if (normalizeClientKey_(all[j].client) !== normalizeClientKey_(c.client)) continue;
+      if (String(all[j].status) === "cancelled") {
+        wasCancelled = true;
+        continue;
       }
+      existing = all[j];
+      break;
+    }
+    // удалили вручную — не возвращать из CRM-календаря
+    if (wasCancelled && !existing) {
+      skipped++;
+      continue;
     }
     if (existing && String(existing.source) === "retail") {
       skipped++;
