@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.4</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.5</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -966,7 +966,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.9.4";
+    const APP_VERSION = "v7.9.5";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2609,6 +2609,7 @@
             return `<div class="order-detail-line"><span>• ${g.name}${frac}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
           }).join("") || '<p class="muted">Нет позиций</p>';
           const addr = client.address ? `<div class="delivery-line addr-line">Адрес: ${escapeHtml(client.address)}</div>` : "";
+          const priceHtml = formatOrderPriceHtml(client.note || "");
           const noteClean = noteTextForRole(client.note || "", "mgr");
           const office = parseOfficeAddress(client.note || "");
           const dm = parseDeliveryMethod(client.note || "");
@@ -2619,6 +2620,9 @@
             : "";
           const deliv = (dm === "euro" || dm === "bel")
             ? `<div class="delivery-line">${dm === "euro" ? "Европочта" : "Белпочта"}${office ? ": " + escapeHtml(office) : ""}</div>`
+            : "";
+          const priceBadge = extractOrderPrice(client.note || "") != null
+            ? `<span class="client-badge" style="background:rgba(48,209,88,0.2);color:#30d158;">${extractOrderPrice(client.note)} BYN</span>`
             : "";
           return `<div class="client-item-card" id="clientCard_${index}">
             <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
@@ -2632,10 +2636,11 @@
                 <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
                 <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
                 <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
+                ${priceBadge}
                 <span class="client-badge">${client.orderCount} поз.</span>
               </div>
             </div>
-            ${(addr || note || deliv) ? `<div class="delivery-info-box">${note}${roleHint}${deliv}${addr}${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : (formatTelHtml(client.phone || extractPhone(client.note || "")) ? `<div class="delivery-info-box">${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : "")}
+            ${(addr || note || deliv || priceHtml) ? `<div class="delivery-info-box">${priceHtml}${note}${roleHint}${deliv}${addr}${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : (formatTelHtml(client.phone || extractPhone(client.note || "")) ? `<div class="delivery-info-box">${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : "")}
             <div class="client-order-details" id="details_${index}">${lines}</div>
           </div>`;
         }).join("");
@@ -3581,14 +3586,18 @@
             const frac = g.sub ? " (" + g.sub + ")" : "";
             return `<div class="order-detail-line"><span>• ${escapeHtml(g.name)}${escapeHtml(frac)}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
           }).join("");
+          const priceHtml = formatOrderPriceHtml(c.note || "", { br: true });
+          const courNote = noteTextForRole(c.note || "", "cour");
           return `<div class="courier-row${c.delivered ? " is-delivered" : ""}">
             <label class="check-line">
               <input type="checkbox" ${c.delivered ? "checked" : ""} onchange="toggleDelivered(${idx}, this.checked)">
               <span class="cut-title">${idx + 1}. ${escapeHtml(c.name)}</span>
+              ${extractOrderPrice(c.note || "") != null ? ('<span class="client-badge" style="margin-left:8px;background:rgba(48,209,88,0.2);color:#30d158;">' + extractOrderPrice(c.note) + " BYN</span>") : ""}
             </label>
             <div class="cut-meta">${c.address ? ("Адрес: " + escapeHtml(typeof shortAddressForCourier === "function" ? shortAddressForCourier(c.address, "") : c.address)) : "Адрес не указан"}
               ${formatTelHtml(c.phone || extractPhone(c.note || ""))}
-              ${noteTextForRole(c.note || "", "cour") ? ("<br>Примечание: " + escapeHtml(noteTextForRole(c.note || "", "cour"))) : ""}
+              ${priceHtml}
+              ${courNote ? ("<br>Примечание: " + escapeHtml(courNote)) : ""}
             </div>
             <div>${lines || '<span class="muted">Пустой заказ</span>'}</div>
           </div>`;
@@ -3789,6 +3798,7 @@
         .replace(/\[NOTE:[^\]]+\]/gi, "")
         .replace(/\[TEL:[^\]]+\]/gi, "")
         .replace(/\[PAID:[^\]]+\]/gi, "")
+        .replace(/\[ЦЕНА:[^\]]*\]/gi, "")
         .replace(/\[GEO:[^\]]+\]/gi, "")
         .replace(/\[YMAPS:[^\]]+\]/gi, "")
         .replace(/\s{2,}/g, " ")
@@ -4049,6 +4059,21 @@
       const m = s.match(/(\+?375[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\+?\d[\d\s\-]{8,}\d)/);
       return m ? m[1].replace(/\s+/g, "") : "";
     }
+    /** Цена из тега [ЦЕНА: 45 BYN] в примечании */
+    function extractOrderPrice(note) {
+      var m = String(note || "").match(/\[ЦЕНА:\s*([0-9]+(?:[.,][0-9]+)?)\s*BYN?\]/i);
+      if (!m) return null;
+      var n = Number(String(m[1]).replace(",", "."));
+      return isNaN(n) ? null : n;
+    }
+    function formatOrderPriceHtml(noteOrPrice, opts) {
+      var price = (typeof noteOrPrice === "number") ? noteOrPrice : extractOrderPrice(noteOrPrice);
+      if (price == null) return "";
+      var br = opts && opts.br ? "<br>" : "";
+      return br + '<div class="delivery-line" style="color:#30d158;font-weight:700;">Цена: ' +
+        escapeHtml(String(price)) + " BYN</div>";
+    }
+    window.extractOrderPrice = extractOrderPrice;
     function normalizeTelHref(phone) {
       let d = String(phone || "").replace(/[^\d+]/g, "");
       if (!d) return "";
@@ -4816,6 +4841,7 @@
             address: address,
             clientAddress: clientAddr,
             note: stripMetaFromNote(c.note || ""),
+            price: extractOrderPrice(c.note || ""),
             delivery: method,
             deliveryLabel: method === "euro" ? "Европочта" : "Белпочта",
             clientIndex: courierClientsCache.indexOf(c),
@@ -4836,6 +4862,7 @@
             address: addr,
             clientAddress: clientAddr,
             note: stripMetaFromNote(c.note || ""),
+            price: extractOrderPrice(c.note || ""),
             delivery: "courier",
             deliveryLabel: null,
             clientIndex: courierClientsCache.indexOf(c),
@@ -5271,6 +5298,10 @@
             html += '<div class="route-stop-top">';
             html += '<div><div class="route-stop-name">' + (i + 1) + ". " + escapeHtml(s.name) + "</div>";
             html += '<div class="route-stop-addr">' + escapeHtml(s.address) + "</div>";
+            if (s.price != null) {
+              html += '<div style="color:#30d158;font-weight:700;font-size:13px;margin-top:2px;">Цена: ' +
+                escapeHtml(String(s.price)) + " BYN</div>";
+            }
             if (s.deliveryLabel) {
               html += '<div class="route-badge">' + escapeHtml(s.deliveryLabel) +
                 (s.clientAddress ? (" → " + escapeHtml(s.clientAddress)) : "") + "</div>";
