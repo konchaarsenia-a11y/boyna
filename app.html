@@ -618,7 +618,7 @@
   </div>
   <div class="app">
     <div class="app-top" id="appTopBar">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.3</div>
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.4</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
@@ -1011,7 +1011,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.3";
+    const APP_VERSION = "v7.10.4";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2534,6 +2534,92 @@
     }
     window.onDeliveryDateChange = onDeliveryDateChange;
 
+    function resetOrderScreen(opts) {
+      opts = opts || {};
+      var keepSecondDogOffer = !!opts.keepSecondDogOffer;
+
+      document.getElementById("isEditMode").value = "false";
+      var clientEl = document.getElementById("client");
+      if (clientEl) {
+        clientEl.readOnly = false;
+        clientEl.value = "";
+      }
+      var addr = document.getElementById("addressInput");
+      if (addr) addr.value = "";
+      var entrance = document.getElementById("entranceInput");
+      if (entrance) entrance.value = "";
+      var phoneEl = document.getElementById("phoneInput");
+      if (phoneEl) phoneEl.value = "";
+      var delivDate = document.getElementById("deliveryDate");
+      if (delivDate) delivDate.value = "";
+      var daySel = document.getElementById("day");
+      if (daySel) daySel.selectedIndex = 0;
+      var po = document.getElementById("postOfficeInput");
+      if (po) po.value = "";
+      var priceInp = document.getElementById("orderPriceInput");
+      if (priceInp) priceInp.value = "";
+      var ig = document.getElementById("igChecklistPaste");
+      if (ig) ig.value = "";
+
+      selectedAddressGeo = null;
+      selectedPostOfficeGeo = null;
+      selectedDeliveryMethod = null;
+      retailPriceManual = false;
+      setAddressPickedHint(false);
+      try { hideClientSuggest(); } catch (e0) {}
+      document.querySelectorAll("#orderScreen .addr-suggest").forEach(function (el) {
+        el.classList.remove("open");
+        el.innerHTML = "";
+      });
+
+      var dmg = document.getElementById("deliveryMethodGroup");
+      if (dmg) dmg.style.display = "none";
+      var pog = document.getElementById("postOfficeGroup");
+      if (pog) pog.style.display = "none";
+      ["delivEuro", "delivBel", "delivCourier"].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b) b.classList.remove("active");
+      });
+
+      clearOrderNotes();
+      try { setNoteRoles({ mgr: false, cut: false, cour: true }); } catch (e2) {}
+      try { updateNotesSummary(); } catch (e2b) {}
+
+      basket = [];
+      renderBasket();
+
+      var panel = document.getElementById("manualEntryPanel");
+      if (panel) panel.style.display = "none";
+      var sel = document.getElementById("selectorCard");
+      if (sel) sel.style.display = "none";
+      var btnMan = document.getElementById("btnManualEntry");
+      if (btnMan) btnMan.textContent = "Ручной ввод";
+      var vol = document.getElementById("volumeInput");
+      if (vol) vol.value = "";
+
+      secondDogMode = false;
+      if (!keepSecondDogOffer) {
+        ownerContactSnapshot = null;
+        var b2 = document.getElementById("btnSecondDogOrder");
+        if (b2) b2.style.display = "none";
+      } else if (ownerContactSnapshot) {
+        var b2ok = document.getElementById("btnSecondDogOrder");
+        if (b2ok) b2ok.style.display = "";
+      }
+
+      try { setOrderType("pp"); } catch (e3) {}
+      var saveBtn = document.getElementById("btnMainSave");
+      if (saveBtn) saveBtn.innerText = "Сохранить заказ";
+      document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
+
+      var orderScreen = document.getElementById("orderScreen");
+      if (orderScreen) {
+        try { orderScreen.scrollTop = 0; } catch (e4) {}
+      }
+      try { window.scrollTo(0, 0); } catch (e5) {}
+    }
+    window.resetOrderScreen = resetOrderScreen;
+
     async function sendEntireOrder() {
       const clientName = document.getElementById("client").value.trim();
       let clientAddressFull = document.getElementById("addressInput").value.trim();
@@ -2748,35 +2834,10 @@
           void card.offsetWidth;
           card.classList.add("fx-success");
         }
-        document.getElementById("isEditMode").value = "false";
-        document.getElementById("client").readOnly = false;
-        document.getElementById("client").value = "";
-        document.getElementById("addressInput").value = "";
-        clearOrderNotes();
-        const phoneEl = document.getElementById("phoneInput");
-        if (phoneEl) phoneEl.value = "";
-        hideClientSuggest();
-        const po = document.getElementById("postOfficeInput");
-        if (po) po.value = "";
-        selectedAddressGeo = null;
-        selectedPostOfficeGeo = null;
-        setAddressPickedHint(false);
-        selectedDeliveryMethod = null;
-        setNoteRoles({ mgr: false, cut: false, cour: true });
-        document.getElementById("deliveryMethodGroup").style.display = "none";
-        document.getElementById("postOfficeGroup").style.display = "none";
-        basket = [];
-        renderBasket();
-        document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
         try { logLearnEvent("saveOrder", { client: clientName, day: day, items: savedItems, orderType: orderType }); } catch (eL) {}
-        if (!secondDogMode && ownerContactSnapshot) {
-          var b2 = document.getElementById("btnSecondDogOrder");
-          if (b2) b2.style.display = "";
-        }
-        if (secondDogMode) {
-          secondDogMode = false;
-          document.getElementById("btnMainSave").innerText = "Сохранить заказ";
-        }
+        // полный сброс экрана Заказа; для сценария «2 собаки» оставляем кнопку 2-й
+        var keep2 = !secondDogMode && !!ownerContactSnapshot;
+        resetOrderScreen({ keepSecondDogOffer: keep2 });
         try { await refreshDayViews(day); } catch (eRef) {}
       } catch (err) {
         hideSaveLoading();
