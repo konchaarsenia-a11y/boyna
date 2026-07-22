@@ -1314,9 +1314,6 @@
       wrap.innerHTML = '<div class="fx-burst-ring"></div><div class="fx-burst-check">✓</div>';
       document.body.appendChild(wrap);
       setTimeout(function () { wrap.remove(); }, 800);
-      if (kind === "finish" && opts.elapsedLabel) {
-        try { showToast("Нарезка завершена за " + opts.elapsedLabel); } catch (e2) {}
-      }
     }
 
     function closeModal(result) {
