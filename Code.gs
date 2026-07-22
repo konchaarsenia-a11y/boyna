@@ -4700,6 +4700,123 @@ function countDeliveredThisWeek_(ss, clientName, dateValue, tz) {
 
 /* ----- Цена ----- */
 
+/** Розничный прайс с витрины IG (2026-07), BYN за 100г / шт / пакеты */
+var RETAIL_PRICE_BYN_ = {
+  "ЛЁГКОЕ|Мелкое": { per100: 12 },
+  "ЛЁГКОЕ|Среднее": { per100: 10 },
+  "ЛЁГКОЕ|Большое": { per100: 9 },
+  "ЛЁГКОЕ|Целое": { per100: 8 },
+  "ЛЁГКОЕ": { per100: 10 },
+  "СЕРДЦЕ|Мелкое": { per100: 13 },
+  "СЕРДЦЕ|Целое": { per100: 10 },
+  "СЕРДЦЕ": { per100: 12 },
+  "РУБЕЦ Т|Мелкое": { per100: 13 },
+  "РУБЕЦ Т|Среднее": { per100: 12 },
+  "РУБЕЦ Т|Крупное": { per100: 11 },
+  "РУБЕЦ Т|Целое": { per100: 10 },
+  "РУБЕЦ Т": { per100: 12 },
+  "ПОЧКИ|Мелкое": { per100: 11 },
+  "ПОЧКИ|Целое": { per100: 10 },
+  "ПОЧКИ": { per100: 10 },
+  "БАРАНЬЕ ЛЁГКОЕ|Мелкое": { per100: 15 },
+  "БАРАНЬЕ ЛЁГКОЕ|Среднее": { per100: 14 },
+  "БАРАНЬЕ ЛЁГКОЕ|Целое": { per100: 12 },
+  "БАРАНЬЕ ЛЁГКОЕ": { per100: 14 },
+  "ПЕЧЕНЬ": { per100: 9 },
+  "СВЕТЛЫЙ РУБЕЦ": { per100: 9 },
+  "КНИЖКА": { per100: 9 },
+  "ВЫМЯ": { per100: 9 },
+  "СЕМЕННИКИ": { per100: 12 },
+  "МЯСНЫЕ ЛОМТИКИ": { per100: 13 },
+  "ПИКАЛЬНОЕ МЯСО": { per100: 10 },
+  "ИНДЕЙКА": { per100: 16 },
+  "БАРАНЬЯ ПЕЧЕНЬ": { per100: 17 },
+  "КРОШКА ЛЁГКОГО": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
+  "КРОШКА ПОЧЕК": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
+  "КРОШКА СЕРДЦА": { packs: { "20": 7, "50": 9, "100": 12 }, per100: 12 },
+  "КРОШКА РУБЕЦ": { packs: { "20": 7, "50": 9, "100": 12 }, per100: 12 },
+  "КРОШКА МИКС": { packs: { "20": 6, "50": 8, "100": 11 }, per100: 11 },
+  "БАНАНЫ": { per100: 10 },
+  "ЯБЛОКИ": { per100: 9 },
+  "ГРУШИ": { per100: 10 },
+  "МОРКОВЬ": { per100: 10 },
+  "ТЫКВА": { per100: 12 },
+  "БАТАТ": { per100: 11 },
+  "КАБАЧОК": { per100: 12 },
+  "КОПЫТО шт.": { perPiece: 9 },
+  "КОЛЕНИ шт.": { perPiece: 6 },
+  "НОСЫ шт.": { perPiece: 7 },
+  "ЛОП ХРЯЩ шт.": { perPiece: 4 },
+  "УТИНЫЕ ШЕИ шт.": { perPiece: 3 },
+  "ПЕРЕПЁЛКИ шт.": { perPiece: 4 },
+  "ТРАХЕЯ|МАЛ": { perPiece: 4 },
+  "ТРАХЕЯ|СРЕД": { perPiece: 7 },
+  "ТРАХЕЯ|БОЛ": { perPiece: 12 },
+  "ТРАХЕЯ|ПЛАСТ": { perPiece: 7 },
+  "ТРАХЕЯ|ОГР": { perPiece: 12 },
+  "ТРАХЕЯ": { perPiece: 7 },
+  "БЫЧИЙ КОРЕНЬ|ОЧ МАЛ": { perPiece: 6 },
+  "БЫЧИЙ КОРЕНЬ|МАЛ": { perPiece: 6 },
+  "БЫЧИЙ КОРЕНЬ|СРЕД": { perPiece: 11 },
+  "БЫЧИЙ КОРЕНЬ|БОЛ": { perPiece: 21 },
+  "БЫЧИЙ КОРЕНЬ|ОГР": { perPiece: 25 },
+  "БЫЧИЙ КОРЕНЬ": { perPiece: 11 },
+  "УХО Г|ПОЛОВИНКА": { perPiece: 4 },
+  "УХО Г|Обычное": { perPiece: 6 },
+  "УХО Г": { perPiece: 6 },
+  "АОРТА|ПОЛОВИНКА": { perPiece: 2 },
+  "АОРТА|Обычная": { perPiece: 4 },
+  "АОРТА": { perPiece: 4 },
+  "СТАНОВАЯ ЖИЛА|ПАЛК": { perPiece: 1 },
+  "СТАНОВАЯ ЖИЛА|СРЕД": { perPiece: 4 },
+  "СТАНОВАЯ ЖИЛА|БОЛ": { perPiece: 6 },
+  "СТАНОВАЯ ЖИЛА": { perPiece: 4 }
+};
+
+function retailNormalizeName_(name) {
+  var n = String(name || "").trim();
+  var u = n.toUpperCase().replace(/Ё/g, "Е");
+  var aliases = {
+    "ЛЕГКОЕ": "ЛЁГКОЕ",
+    "БАРАНЬЕ ЛЕГКОЕ": "БАРАНЬЕ ЛЁГКОЕ",
+    "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО",
+    "ПЕРЕПЕЛКИ ШТ.": "ПЕРЕПЁЛКИ шт.",
+    "ПЕРЕПЕЛКИ ШТ": "ПЕРЕПЁЛКИ шт.",
+    "КОПЫТО ШТ.": "КОПЫТО шт.",
+    "КОЛЕНИ ШТ.": "КОЛЕНИ шт.",
+    "НОСЫ ШТ.": "НОСЫ шт.",
+    "ЛОП ХРЯЩ ШТ.": "ЛОП ХРЯЩ шт.",
+    "УТИНЫЕ ШЕИ ШТ.": "УТИНЫЕ ШЕИ шт."
+  };
+  if (aliases[u]) return aliases[u];
+  if (u.indexOf("КРОШКА РУБ") === 0) return "КРОШКА РУБЕЦ";
+  return n;
+}
+
+function retailLineCost_(name, sub, val, cat) {
+  var n = retailNormalizeName_(name);
+  var s = String(sub || "").trim();
+  var key = n + (s ? "|" + s : "");
+  var info = RETAIL_PRICE_BYN_[key] || RETAIL_PRICE_BYN_[n];
+  var v = Number(val) || 0;
+  if (!info || v <= 0) return { cost: 0, per: 0, found: !!info };
+  if (info.packs) {
+    var g = String(Math.round(v));
+    if (info.packs[g] != null) return { cost: Number(info.packs[g]), per: Number(info.packs[g]), found: true };
+    var p100 = info.packs["100"] != null ? Number(info.packs["100"]) : Number(info.per100 || 0);
+    var c = p100 * (v / 100);
+    return { cost: Math.round(c * 100) / 100, per: p100, found: true };
+  }
+  if (info.perPiece != null || String(cat || "") === "chew" || /шт/i.test(n)) {
+    var pp = Number(info.perPiece || 0);
+    return { cost: Math.round(pp * v * 100) / 100, per: pp, found: true };
+  }
+  var p = Number(info.per100 || 0);
+  return { cost: Math.round((v / 100) * p * 100) / 100, per: p, found: true };
+}
+
+
+
 function getPriceSpreadsheet_() {
   var id = PropertiesService.getScriptProperties().getProperty("PRICE_SPREADSHEET_ID") || PRICE_SPREADSHEET_ID_DEFAULT_;
   return SpreadsheetApp.openById(id);
@@ -4739,6 +4856,36 @@ function readPriceCosts_(mode) {
 function handleCalcPrice(json, callback, fromPost) {
   var mode = json.mode || "subscription";
   var basket = json.basket || [];
+  var m = String(mode || "").toLowerCase();
+  var isRetail = m.indexOf("розн") >= 0 || m === "retail";
+
+  // Розница — прайс с витрины (фото), без листа и без ×2.3
+  if (isRetail) {
+    var rLines = [];
+    var rTotal = 0;
+    for (var ri = 0; ri < basket.length; ri++) {
+      var rit = basket[ri];
+      var rname = String(rit.name || rit.main || "").trim();
+      var rsub = String(rit.sub || "").trim();
+      var rval = Number(rit.val != null ? rit.val : rit.value) || 0;
+      if (!rname || rval <= 0) continue;
+      var rc = retailLineCost_(rname, rsub, rval, rit.cat);
+      rTotal += rc.cost;
+      rLines.push({ name: rname, sub: rsub, val: rval, per100: rc.per, cost: rc.cost, found: rc.found });
+    }
+    rTotal = Math.round(rTotal * 100) / 100;
+    var rok = {
+      status: "success",
+      mode: mode,
+      sheet: "витрина IG",
+      lines: rLines,
+      cost: rTotal,
+      markup: 1,
+      total: rTotal
+    };
+    return fromPost ? jsonpText(callback, rok) : jsonp(callback, rok);
+  }
+
   var priceInfo;
   try {
     priceInfo = readPriceCosts_(mode);
@@ -4756,7 +4903,6 @@ function handleCalcPrice(json, callback, fromPost) {
     if (!name || val <= 0) continue;
     var key = name + (sub ? " / " + sub : "");
     var info = priceInfo.costs[key];
-    // fallback: только имя
     if (!info) {
       for (var k in priceInfo.costs) {
         if (priceInfo.costs[k].name === name && (!sub || priceInfo.costs[k].sub === sub)) {
@@ -4770,10 +4916,7 @@ function handleCalcPrice(json, callback, fromPost) {
     totalCost += cost;
     lines.push({ name: name, sub: sub, val: val, per100: per100, cost: Math.round(cost * 100) / 100 });
   }
-  // ПП/БП: себест × 2.3; розница: готовые цены (markup=1, costs уже розничные)
-  var m = String(mode || "").toLowerCase();
-  var isRetail = m.indexOf("розн") >= 0 || m === "retail";
-  var markup = isRetail ? 1 : 2.3;
+  var markup = 2.3;
   var total = Math.round(totalCost * markup * 100) / 100;
   var ok = {
     status: "success",

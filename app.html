@@ -62,9 +62,15 @@
       padding: 12px 16px; border-radius: 12px; font-size: 14px; max-width: 90%;
     }
     .toast.show { display: block; }
-    .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
+    .app-top {
+      position: sticky; top: 0; z-index: 80;
+      background: var(--bg-color);
+      padding-top: 2px; padding-bottom: 10px; margin-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .header-main { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 10px; }
     .nav-tabs {
-      display: flex; gap: 6px; margin-bottom: 16px; background: #1c1c1e;
+      display: flex; gap: 6px; margin-bottom: 0; background: #1c1c1e;
       padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); overflow-x: auto;
       position: relative; z-index: 20;
     }
@@ -611,13 +617,15 @@
     </div>
   </div>
   <div class="app">
-    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.2</div>
+    <div class="app-top" id="appTopBar">
+    <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.9.3</div>
 
     <div class="nav-tabs" id="navTabs">
       <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
       <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
       <button type="button" class="tab-link" data-screen="courierScreen" onclick="switchTab('courierScreen')">Курьер</button>
       <button type="button" class="tab-link" data-screen="warehouseScreen" onclick="switchTab('warehouseScreen')">Склад</button>
+    </div>
     </div>
     <div class="order-flyout" id="orderFlyout">
       <button type="button" class="order-flyout-btn" data-fly="clientsScreen" data-fly-roles="manager,owner,all">Просмотр</button>
@@ -950,7 +958,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.9.2";
+    const APP_VERSION = "v7.9.3";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1601,6 +1609,148 @@
     }
 
 
+
+    /** Розничный прайс с витрины (фото IG, 2026-07), BYN */
+    var RETAIL_PRICE = {
+      // дрессура 100г: мелкий рез дороже
+      "ЛЁГКОЕ|Мелкое": { per100: 12 },
+      "ЛЁГКОЕ|Среднее": { per100: 10 },
+      "ЛЁГКОЕ|Большое": { per100: 9 },
+      "ЛЁГКОЕ|Целое": { per100: 8 },
+      "ЛЁГКОЕ": { per100: 10 },
+      "СЕРДЦЕ|Мелкое": { per100: 13 },
+      "СЕРДЦЕ|Целое": { per100: 10 },
+      "СЕРДЦЕ": { per100: 12 },
+      "РУБЕЦ Т|Мелкое": { per100: 13 },
+      "РУБЕЦ Т|Среднее": { per100: 12 },
+      "РУБЕЦ Т|Крупное": { per100: 11 },
+      "РУБЕЦ Т|Целое": { per100: 10 },
+      "РУБЕЦ Т": { per100: 12 },
+      "ПОЧКИ|Мелкое": { per100: 11 },
+      "ПОЧКИ|Целое": { per100: 10 },
+      "ПОЧКИ": { per100: 10 },
+      "БАРАНЬЕ ЛЁГКОЕ|Мелкое": { per100: 15 },
+      "БАРАНЬЕ ЛЁГКОЕ|Среднее": { per100: 14 },
+      "БАРАНЬЕ ЛЁГКОЕ|Целое": { per100: 12 },
+      "БАРАНЬЕ ЛЁГКОЕ": { per100: 14 },
+      // мясо 100г
+      "ПЕЧЕНЬ": { per100: 9 },
+      "СВЕТЛЫЙ РУБЕЦ": { per100: 9 },
+      "КНИЖКА": { per100: 9 },
+      "ВЫМЯ": { per100: 9 },
+      "СЕМЕННИКИ": { per100: 12 },
+      "МЯСНЫЕ ЛОМТИКИ": { per100: 13 },
+      "ПИКАЛЬНОЕ МЯСО": { per100: 10 },
+      "ИНДЕЙКА|Мелкое": { per100: 17 },
+      "ИНДЕЙКА|Среднее": { per100: 16 },
+      "ИНДЕЙКА|Целое": { per100: 15 },
+      "ИНДЕЙКА": { per100: 16 },
+      "БАРАНЬЯ ПЕЧЕНЬ|Мелкое": { per100: 18 },
+      "БАРАНЬЯ ПЕЧЕНЬ|Целое": { per100: 16 },
+      "БАРАНЬЯ ПЕЧЕНЬ": { per100: 17 },
+      // присыпки: пакеты 20/50/100
+      "КРОШКА ЛЁГКОГО": { packs: { 20: 5, 50: 7, 100: 10 }, per100: 10 },
+      "КРОШКА ПОЧЕК": { packs: { 20: 5, 50: 7, 100: 10 }, per100: 10 },
+      "КРОШКА СЕРДЦА": { packs: { 20: 7, 50: 9, 100: 12 }, per100: 12 },
+      "КРОШКА РУБЕЦ": { packs: { 20: 7, 50: 9, 100: 12 }, per100: 12 },
+      "КРОШКА МИКС": { packs: { 20: 6, 50: 8, 100: 11 }, per100: 11 },
+      // овощи 100г
+      "БАНАНЫ": { per100: 10 },
+      "ЯБЛОКИ": { per100: 9 },
+      "ГРУШИ": { per100: 10 },
+      "МОРКОВЬ": { per100: 10 },
+      "ТЫКВА": { per100: 12 },
+      "БАТАТ": { per100: 11 },
+      "КАБАЧОК": { per100: 12 },
+      // погрызушки 1 шт
+      "КОПЫТО шт.": { perPiece: 9 },
+      "КОЛЕНИ шт.": { perPiece: 6 },
+      "НОСЫ шт.": { perPiece: 7 },
+      "ЛОП ХРЯЩ шт.": { perPiece: 4 },
+      "УТИНЫЕ ШЕИ шт.": { perPiece: 3 },
+      "ПЕРЕПЁЛКИ шт.": { perPiece: 4 },
+      "ТРАХЕЯ|МАЛ": { perPiece: 4 },
+      "ТРАХЕЯ|СРЕД": { perPiece: 7 },
+      "ТРАХЕЯ|БОЛ": { perPiece: 12 },
+      "ТРАХЕЯ|ПЛАСТ": { perPiece: 7 },
+      "ТРАХЕЯ|ОГР": { perPiece: 12 },
+      "ТРАХЕЯ": { perPiece: 7 },
+      "БЫЧИЙ КОРЕНЬ|ОЧ МАЛ": { perPiece: 6 },
+      "БЫЧИЙ КОРЕНЬ|МАЛ": { perPiece: 6 },
+      "БЫЧИЙ КОРЕНЬ|СРЕД": { perPiece: 11 },
+      "БЫЧИЙ КОРЕНЬ|БОЛ": { perPiece: 21 },
+      "БЫЧИЙ КОРЕНЬ|ОГР": { perPiece: 25 },
+      "БЫЧИЙ КОРЕНЬ": { perPiece: 11 },
+      "УХО Г|ПОЛОВИНКА": { perPiece: 4 },
+      "УХО Г|Обычное": { perPiece: 6 },
+      "УХО Г": { perPiece: 6 },
+      "АОРТА|ПОЛОВИНКА": { perPiece: 2 },
+      "АОРТА|Обычная": { perPiece: 4 },
+      "АОРТА": { perPiece: 4 },
+      "СТАНОВАЯ ЖИЛА|ПАЛК": { perPiece: 1 },
+      "СТАНОВАЯ ЖИЛА|СРЕД": { perPiece: 4 },
+      "СТАНОВАЯ ЖИЛА|БОЛ": { perPiece: 6 },
+      "СТАНОВАЯ ЖИЛА": { perPiece: 4 }
+    };
+
+    function retailLookupKey_(name, sub) {
+      var n = String(name || "").toUpperCase().trim()
+        .replace(/Ё/g, "Е");
+      // restore ё for catalog keys we use with ё
+      var mapN = {
+        "ЛЕГКОЕ": "ЛЁГКОЕ",
+        "БАРАНЬЕ ЛЕГКОЕ": "БАРАНЬЕ ЛЁГКОЕ",
+        "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО",
+        "ПЕРЕПЕЛКИ ШТ.": "ПЕРЕПЁЛКИ шт.",
+        "ПЕРЕПЕЛКИ ШТ": "ПЕРЕПЁЛКИ шт."
+      };
+      if (mapN[n]) n = mapN[n];
+      // catalog uses mixed case for шт.
+      ["КОПЫТО шт.", "КОЛЕНИ шт.", "НОСЫ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ПЕРЕПЁЛКИ шт.", "ГУБЫ шт."].forEach(function (k) {
+        if (n === k.toUpperCase().replace(/Ё/g, "Е")) n = k;
+      });
+      if (n === "КРОШКА РУБЕЦ" || n.indexOf("КРОШКА РУБ") === 0) n = "КРОШКА РУБЕЦ";
+      var s = String(sub || "").trim();
+      return { name: n, sub: s, key: n + (s ? "|" + s : "") };
+    }
+
+    function retailLineCost(name, sub, val, cat) {
+      var meta = retailLookupKey_(name, sub);
+      var info = RETAIL_PRICE[meta.key] || RETAIL_PRICE[meta.name];
+      var v = Number(val) || 0;
+      if (!info || v <= 0) return { cost: 0, per: 0, found: !!info };
+      if (info.packs) {
+        var g = Math.round(v);
+        if (info.packs[g] != null) return { cost: info.packs[g], per: info.packs[g], found: true, pack: g };
+        var p100 = info.packs[100] != null ? info.packs[100] : info.per100;
+        var c = (p100 || 0) * (v / 100);
+        return { cost: Math.round(c * 100) / 100, per: p100 || 0, found: true };
+      }
+      if (info.perPiece != null || cat === "chew" || /шт/i.test(meta.name)) {
+        var pp = info.perPiece != null ? info.perPiece : 0;
+        return { cost: Math.round(pp * v * 100) / 100, per: pp, found: true };
+      }
+      var p = info.per100 || 0;
+      var cost = (v / 100) * p;
+      return { cost: Math.round(cost * 100) / 100, per: p, found: true };
+    }
+
+    function calcRetailBasketTotal(list) {
+      var lines = [];
+      var total = 0;
+      (list || []).forEach(function (it) {
+        var name = it.name || it.main || "";
+        var sub = it.sub || "";
+        var val = it.val != null ? it.val : it.value;
+        var r = retailLineCost(name, sub, val, it.cat);
+        total += r.cost;
+        lines.push({ name: name, sub: sub, val: Number(val) || 0, per100: r.per, cost: r.cost, found: r.found });
+      });
+      total = Math.round(total * 100) / 100;
+      return { total: total, lines: lines, markup: 1, sheet: "витрина IG" };
+    }
+    window.calcRetailBasketTotal = calcRetailBasketTotal;
+
     let orderType = "pp"; // pp | bp | retail | partner
     let secondDogMode = false; // true = вводим только состав 2-й
     let ownerContactSnapshot = null;
@@ -2075,7 +2225,9 @@
       if (!basket.length) { await uiAlertAsync("Корзина пуста"); return; }
       var orderPrice = null;
       if (orderType === "bp") orderPrice = 0;
-      else if (orderType === "partner" || orderType === "pp") {
+      else if (orderType === "retail") {
+        orderPrice = calcRetailBasketTotal(basket).total;
+      } else if (orderType === "partner" || orderType === "pp") {
         var pv = document.getElementById("orderPriceInput") && document.getElementById("orderPriceInput").value;
         orderPrice = pv === "" || pv == null ? null : Number(pv);
         if (orderType === "partner" && !(orderPrice >= 0)) {
@@ -6055,37 +6207,47 @@
     window.setPriceMode = setPriceMode;
 
     async function calcPriceFromBasket(usePriceBasket) {
+      var list = usePriceBasket && priceBasket && priceBasket.length ? priceBasket : basket;
       var box = document.getElementById("priceResult");
-      var src = (usePriceBasket && priceBasket.length) ? priceBasket : basket;
-      if (!src.length) {
-        box.innerHTML = '<p class="muted">Корзина пуста — соберите на Заказе или вставьте чеклист выше</p>';
-        return;
+      if (!list || !list.length) {
+        if (box) box.innerHTML = '<p class="muted">Корзина пуста</p>';
+        return null;
       }
-      box.innerHTML = simpleLoadingHtml("Считаю цену…");
+      if (priceMode === "retail") {
+        var local = calcRetailBasketTotal(list);
+        if (box) {
+          var rows = (local.lines || []).map(function (L) {
+            return '<div class="pack-line">' + escapeHtml(L.name) +
+              (L.sub ? (" · " + escapeHtml(L.sub)) : "") +
+              ": " + L.val + " → <b>" + L.cost + " BYN</b>" +
+              (L.found ? "" : " <span class=\"muted\">(нет в прайсе)</span>") +
+              "</div>";
+          }).join("");
+          box.innerHTML = '<div class="card"><b>Розница</b> · витрина IG<br><b style="font-size:18px;">' +
+            local.total + " BYN</b></div>" + rows;
+        }
+        return local;
+      }
       try {
-        var payloadBasket = src.map(function (x) {
-          return { name: x.name || x.main, sub: x.sub || "", val: x.val || x.value, cat: x.cat };
-        });
-        var res = await apiGet({
+        var res = await apiPost({
           action: "calcPrice",
           mode: priceMode,
-          basket: JSON.stringify(payloadBasket)
+          basket: list
         });
         if (!res || res.status !== "success") {
-          box.innerHTML = '<p class="muted">Прайс-таблица недоступна (нужен доступ Apps Script)</p>';
-          return;
+          if (box) box.innerHTML = '<p class="muted">Ошибка расчёта</p>';
+          return null;
         }
-        var modeLabel = priceMode === "retail" ? "Розница" : (priceMode === "bp" ? "БП" : "ПП");
-        box.innerHTML = '<div class="card"><b>Итого: ' + res.total + ' BYN</b> <span class="muted">(' + modeLabel + ')</span>' +
-          '<div class="muted" style="margin-top:4px;">' +
-          (res.markup === 1 ? ("готовые цены · " + (res.sheet || "")) : ("себест. " + res.cost + " × " + res.markup + " (" + (res.sheet || "") + ")")) +
-          "</div>" +
-          (res.lines || []).map(function (l) {
-            return '<div class="pack-line">' + escapeHtml(l.name) + (l.sub ? " / " + escapeHtml(l.sub) : "") +
-              " · " + l.val + " → " + l.cost + " BYN</div>";
-          }).join("") + "</div>";
+        var modeLabel = priceMode === "bp" ? "БП" : "ПП";
+        if (box) {
+          box.innerHTML = '<div class="card"><b>' + modeLabel + "</b> · " +
+            ("себест. " + res.cost + " × " + res.markup + " (" + (res.sheet || "") + ")") +
+            '<br><b style="font-size:18px;">' + res.total + " BYN</b></div>";
+        }
+        return res;
       } catch (e) {
-        box.innerHTML = '<p class="muted">Ошибка расчёта</p>';
+        if (box) box.innerHTML = '<p class="muted">Ошибка сети</p>';
+        return null;
       }
     }
     window.calcPriceFromBasket = calcPriceFromBasket;
