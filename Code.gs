@@ -645,6 +645,21 @@ function doGet(e) {
       onlyMissing: e.parameter.onlyMissing
     }, callback, false);
   }
+  if (action === "getViewCompare") {
+    return handleGetViewCompare({
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
+      date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
+      deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : ""
+    }, callback, false);
+  }
+  if (action === "pullClientFromMonth") {
+    return handlePullClientFromMonth({
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
+      date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
+      deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : "",
+      client: e.parameter.client ? decodeURIComponent(e.parameter.client) : ""
+    }, callback, false);
+  }
   if (action === "materializeWeek") {
     return handleMaterializeWeek({
       onlyMissing: e.parameter.onlyMissing,
@@ -783,6 +798,12 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "ensureDayMaterialized") {
     return handleEnsureDayMaterialized(json, callback, fromPost);
+  }
+  if (action === "getViewCompare") {
+    return handleGetViewCompare(json, callback, fromPost);
+  }
+  if (action === "pullClientFromMonth") {
+    return handlePullClientFromMonth(json, callback, fromPost);
   }
   if (action === "materializeWeek") {
     return handleMaterializeWeek(json, callback, fromPost);
@@ -3918,6 +3939,132 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
     onlyMissing: onlyMissing,
     crm: crmSync
   };
+}
+
+function resolveViewDeliveryDate_(ss, json) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var dayHint = String((json && json.day) || "").trim();
+  var deliveryDate = parseFlexibleDate_((json && (json.deliveryDate || json.date)) || "", tz);
+  if (deliveryDate) {
+    var byDate = findDayNameForDate_(ss, deliveryDate);
+    if (byDate) return { date: deliveryDate, day: byDate, dateNotInWeek: false };
+    if (dayHint) {
+      var d2 = parseFlexibleDate_(getDayDate_(ss, dayHint), tz);
+      if (d2) return { date: d2, day: dayHint, dateNotInWeek: false };
+    }
+    return { date: deliveryDate, day: "", dateNotInWeek: true };
+  }
+  if (dayHint) {
+    var d3 = parseFlexibleDate_(getDayDate_(ss, dayHint), tz);
+    return { date: d3, day: dayHint, dateNotInWeek: false };
+  }
+  return null;
+}
+
+/** Просмотр: кто уже на неделе + кто в календаре месяца ещё не перенесён. */
+function handleGetViewCompare(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var resolved = resolveViewDeliveryDate_(ss, json || {});
+  if (!resolved || (!resolved.day && !resolved.date)) {
+    var need = { status: "error", message: "need_day_or_date", week: [], month: [] };
+    return fromPost ? jsonpText(callback, need) : jsonp(callback, need);
+  }
+
+  var week = [];
+  var already = {};
+  if (resolved.day) {
+    var data = getClientsData_(ss, resolved.day);
+    (data.clients || []).forEach(function (c) {
+      var name = String(c.name || "").trim();
+      if (!name) return;
+      var k = clientMatchKey_(name);
+      if (k) already[k] = true;
+      week.push({
+        name: name,
+        address: c.address || "",
+        note: c.note || "",
+        phone: c.phone || extractPhoneFromNote_(c.note || ""),
+        basket: c.basket || [],
+        orderCount: c.orderCount != null ? c.orderCount : ((c.basket || []).length)
+      });
+    });
+  }
+
+  var month = [];
+  var monthSheet = "";
+  if (resolved.date) {
+    try {
+      var crmSs = getCrmSpreadsheet_();
+      var sh = resolveCrmMonthSheet_(crmSs, resolved.date);
+      monthSheet = sh ? sh.getName() : "";
+      var crmClients = readCrmClientsForDate_(crmSs, resolved.date);
+      for (var i = 0; i < crmClients.length; i++) {
+        var cc = crmClients[i];
+        var key = cc.matchKey || clientMatchKey_(cc.client);
+        if (key && already[key]) continue;
+        month.push({
+          name: displayClientNick_(cc.client) || String(cc.client || ""),
+          segment: cc.segment || "",
+          note: cc.note || "",
+          address: cc.address || "",
+          phone: cc.phone || ""
+        });
+      }
+    } catch (eM) {
+      monthSheet = "";
+    }
+  }
+
+  var ok = {
+    status: "success",
+    day: resolved.day || "",
+    date: resolved.date ? dateKey_(resolved.date, tz) : "",
+    dateNotInWeek: !!resolved.dateNotInWeek,
+    monthSheet: monthSheet,
+    week: week,
+    month: month,
+    weekCount: week.length,
+    monthCount: month.length
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+/** Один клиент из календаря месяца → блок дня на «Прием заказов». */
+function handlePullClientFromMonth(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var client = String((json && (json.client || json.nick)) || "").trim();
+  if (!client) {
+    var bad = { status: "error", message: "need_client" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var resolved = resolveViewDeliveryDate_(ss, json || {});
+  if (!resolved || !resolved.date || !resolved.day) {
+    var no = {
+      status: "error",
+      message: (resolved && resolved.dateNotInWeek) ? "date_not_in_week" : "need_day_or_date"
+    };
+    return fromPost ? jsonpText(callback, no) : jsonp(callback, no);
+  }
+  var crmSync = null;
+  try { crmSync = syncCrmIntoBookings_(ss, resolved.date); } catch (eS) {
+    crmSync = { ok: false, detail: String(eS) };
+  }
+  var result = materializeDeliveryDate_(ss, resolved.date, {
+    forceClient: client,
+    onlyMissing: true
+  });
+  try { bustClientsCache_(); } catch (eB) {}
+  var out = {
+    status: result && result.ok ? "success" : "error",
+    result: result,
+    crm: crmSync,
+    day: resolved.day,
+    date: dateKey_(resolved.date, tz),
+    client: client
+  };
+  return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
 }
 
 function handleEnsureDayMaterialized(json, callback, fromPost) {

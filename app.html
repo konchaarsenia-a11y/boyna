@@ -665,7 +665,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.33</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.34</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -856,34 +856,36 @@
     <div id="clientsScreen" class="screen">
       <div class="card">
         <div class="form-group">
-          <label>Дата</label>
-          <input type="date" id="viewDate" onchange="onViewDateChange()">
-        </div>
-        <div class="form-group">
-          <label>День (блок на листе «Прием заказов»)</label>
+          <label>День недели</label>
           <select id="viewDaySelect" onchange="onViewDayChange()">
             <option value="">-- Выбрать день --</option>
             <option>Понедельник</option><option>Вторник</option><option>Среда</option>
             <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
-          <div class="muted" style="font-size:12px;margin-top:6px;">Либо дата, либо день — не оба сразу. Смена дня сбрасывает дату.</div>
         </div>
-        <button type="button" class="btn-action btn-orange" onclick="loadClientsForDay()">Показать</button>
-        <div class="batch-bar-row" style="margin-top:10px;">
-          <button type="button" class="btn-action btn-purple" style="flex:1;margin:0;padding:10px;" onclick="topUpDayFromMonth()">Доукомплектовать день</button>
-          
+        <div class="form-group">
+          <label>Или дата (из листа месяца / ячеек недели)</label>
+          <input type="date" id="viewDate" onchange="onViewDateChange()">
         </div>
+        <div class="muted" style="font-size:12px;">Списки обновляются сами. Слева — уже на неделе, справа — ещё только в календаре месяца (Июль…).</div>
       </div>
       <div id="totalDaySummaryContainer"></div>
-      <div class="section-title">Клиенты</div>
-      <div class="card" style="margin-bottom:10px;padding:10px;">
-        <div class="batch-bar-row">
-          <button type="button" class="btn-action btn-blue" style="flex:1;margin:0;padding:10px;" onclick="selectAllViewClients(true)">Выбрать всех</button>
-          <button type="button" class="btn-action" style="flex:1;margin:0;padding:10px;background:#3a3a3c;" onclick="selectAllViewClients(false)">Снять</button>
-          
-        </div>
+
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <span>На неделе <span class="muted" id="viewWeekCount"></span></span>
+        <span class="batch-bar-row" style="margin:0;gap:6px;">
+          <button type="button" class="btn-action btn-blue" style="margin:0;padding:8px 10px;font-size:12px;" onclick="selectAllViewClients(true)">Все</button>
+          <button type="button" class="btn-action" style="margin:0;padding:8px 10px;font-size:12px;background:#3a3a3c;" onclick="selectAllViewClients(false)">Снять</button>
+        </span>
       </div>
-      <div class="card" id="clientsContainer"><p class="muted">Укажите дату или день…</p></div>
+      <div id="clientsContainer"><p class="muted">Выберите день…</p></div>
+
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:16px;">
+        <span>В месяце <span class="muted" id="viewMonthCount"></span></span>
+        <button type="button" class="btn-action btn-purple" style="margin:0;padding:8px 12px;font-size:12px;" onclick="topUpDayFromMonth()">Перенести всех →</button>
+      </div>
+      <div id="monthClientsContainer"><p class="muted">—</p></div>
+
       <div class="batch-bar" id="batchBar">
         <div class="batch-count" id="batchCount">Выбрано: 0</div>
         <div class="batch-bar-row">
@@ -1196,7 +1198,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.33";
+    const APP_VERSION = "v7.10.34";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2687,6 +2689,7 @@
         }
         if (screenId === "clientsScreen") {
           document.getElementById("appHeaderTitle").innerText = "Просмотр · " + APP_VERSION;
+          try { ensureViewDaySelected(); loadClientsForDay(); } catch (eV) {}
         }
       } catch (e) {}
       try {
@@ -3300,10 +3303,18 @@
     }
     window.toggleManualEntry = toggleManualEntry;
 
+    function ensureViewDaySelected() {
+      var daySel = document.getElementById("viewDaySelect");
+      var dateEl = document.getElementById("viewDate");
+      if (!daySel) return;
+      if (daySel.value || (dateEl && dateEl.value)) return;
+      var day = (typeof opsWeekdayNameNow === "function") ? opsWeekdayNameNow() : "";
+      if (day) setSelectDayValue(daySel, day);
+    }
+
     function onViewDateChange() {
       const el = document.getElementById("viewDate");
       if (!el || !el.value) return;
-      // не угадываем день по JS-weekday — иначе при дате вне недели подтягивается чужой блок
       const daySel = document.getElementById("viewDaySelect");
       if (daySel) daySel.selectedIndex = 0;
       loadClientsForDay();
@@ -3317,106 +3328,179 @@
     }
     window.onViewDayChange = onViewDayChange;
 
+    function renderWeekClientCard(client, index) {
+      const lines = (client.basket || []).map(g => {
+        const unit = g.unit || unitForItem(g.cat, g.name);
+        const frac = g.sub ? " (" + g.sub + ")" : "";
+        return `<div class="order-detail-line"><span>• ${g.name}${frac}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
+      }).join("") || '<p class="muted">Нет позиций</p>';
+      const addr = client.address ? `<div class="delivery-line addr-line">Адрес: ${escapeHtml(client.address)}</div>` : "";
+      const priceHtml = formatOrderPriceHtml(client.note || "");
+      const noteClean = noteTextForRole(client.note || "", "mgr");
+      const office = parseOfficeAddress(client.note || "");
+      const dm = parseDeliveryMethod(client.note || "");
+      const note = noteClean ? `<div class="delivery-line time-alert">Примечание: ${escapeHtml(noteClean)}</div>` : "";
+      const roles = parseNoteAudience(client.note || "");
+      const roleHint = noteClean
+        ? `<div class="delivery-line muted" style="font-size:11px;opacity:0.75;">для: ${escapeHtml(formatNoteRoles(roles))}</div>`
+        : "";
+      const deliv = (dm === "euro" || dm === "bel")
+        ? `<div class="delivery-line">${dm === "euro" ? "Европочта" : "Белпочта"}${office ? ": " + escapeHtml(office) : ""}</div>`
+        : "";
+      const priceBadge = extractOrderPrice(client.note || "") != null
+        ? `<span class="client-badge" style="background:rgba(48,209,88,0.2);color:#30d158;">${extractOrderPrice(client.note)} BYN</span>`
+        : "";
+      return `<div class="client-item-card" id="clientCard_${index}">
+        <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
+          <div class="client-title-wrap">
+            <input type="checkbox" class="client-check" data-index="${index}"
+              onclick="event.stopPropagation()" onchange="onClientCheckChange(${index})"
+              aria-label="Выбрать ${escapeHtml(client.name)}">
+            <span class="client-title">${index + 1}. ${escapeHtml(client.name)}</span>
+          </div>
+          <div class="client-right-block">
+            <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
+            <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
+            <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
+          </div>
+        </div>
+        <div class="client-meta-row">
+          ${priceBadge}
+          <span class="client-badge">${client.orderCount || 0} поз.</span>
+        </div>
+        ${(addr || note || deliv || priceHtml) ? `<div class="delivery-info-box">${priceHtml}${note}${roleHint}${deliv}${addr}${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : (formatTelHtml(client.phone || extractPhone(client.note || "")) ? `<div class="delivery-info-box">${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : "")}
+        <div class="client-order-details" id="details_${index}">${lines}</div>
+      </div>`;
+    }
+
+    function renderMonthClientCard(client, index) {
+      var safe = String(client.name || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      var seg = client.segment ? ('<span class="client-badge">' + escapeHtml(client.segment) + "</span>") : "";
+      var meta = [];
+      if (client.address) meta.push(escapeHtml(client.address));
+      if (client.note) meta.push(escapeHtml(String(client.note).slice(0, 80)));
+      return '<div class="client-item-card" style="border-color:rgba(175,82,222,0.35);">' +
+        '<div class="client-main-row" style="align-items:center;">' +
+        '<div class="client-title-wrap"><span class="client-title">' + escapeHtml(client.name) + "</span></div>" +
+        '<button type="button" class="btn-action btn-purple" style="margin:0;padding:8px 12px;font-size:12px;flex:0 0 auto;" ' +
+        'onclick="pullOneFromMonth(\'' + safe + '\')">→ на неделю</button>' +
+        "</div>" +
+        '<div class="client-meta-row">' + seg + "</div>" +
+        (meta.length ? ('<div class="delivery-info-box muted" style="font-size:12px;">' + meta.join(" · ") + "</div>") : "") +
+        "</div>";
+    }
+
     async function loadClientsForDay() {
+      ensureViewDaySelected();
       const day = document.getElementById("viewDaySelect").value;
       const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
       const box = document.getElementById("clientsContainer");
+      const monthBox = document.getElementById("monthClientsContainer");
       const summary = document.getElementById("totalDaySummaryContainer");
+      const weekCountEl = document.getElementById("viewWeekCount");
+      const monthCountEl = document.getElementById("viewMonthCount");
       if (!day && !dateStr) {
-        box.innerHTML = '<p class="muted">Укажите дату или день…</p>';
-        summary.innerHTML = "";
+        box.innerHTML = '<p class="muted">Выберите день…</p>';
+        if (monthBox) monthBox.innerHTML = '<p class="muted">—</p>';
+        if (summary) summary.innerHTML = "";
         loadedClientsRawData = [];
         updateBatchBar();
         return;
       }
-      summary.innerHTML = "";
-      box.innerHTML = loadingDanceHtml("Загружаю клиентов…");
+      if (summary) summary.innerHTML = "";
+      box.innerHTML = loadingDanceHtml("Сверяю неделю и месяц…");
+      if (monthBox) monthBox.innerHTML = '<p class="muted">…</p>';
       try {
-        // строго один ключ: дата ИЛИ день (оба вместе путали блоки)
-        const params = { action: "getClients" };
+        const params = { action: "getViewCompare" };
         if (dateStr) params.date = dateStr;
         else params.day = day;
         try { _apiGetMem = Object.create(null); } catch (eClr) {}
-        const res = await apiGet(params, { timeoutMs: 22000, cacheTtlMs: 0 });
+        const res = await apiGet(params, { timeoutMs: 25000, cacheTtlMs: 0 });
         const daySel = document.getElementById("viewDaySelect");
-        if (res.day && daySel) {
+        if (res && res.day && daySel) {
           for (let i = 0; i < daySel.options.length; i++) {
             if (daySel.options[i].value === res.day || daySel.options[i].text === res.day) {
               daySel.selectedIndex = i;
               break;
             }
           }
-        } else if (res.dateNotInWeek && daySel) {
+        } else if (res && res.dateNotInWeek && daySel) {
           daySel.selectedIndex = 0;
         }
-        if (res.status !== "success" || !res.clients || !res.clients.length) {
-          var emptyHint = res.dateNotInWeek
-            ? "Дата не стоит в текущей неделе на листе — в блоке дня никого. Выбери день недели или дату из A1/A62/…"
-            : "На эту дату никто не записан";
-          box.innerHTML = '<p class="muted">' + emptyHint + "</p>";
-          summary.innerHTML = res.dateNotInWeek
-            ? '<div class="total-summary-badge" style="border-color:#ff453a;">Дата вне недели · доукомплект по дню</div>'
-            : "";
-          loadedClientsRawData = [];
-          updateBatchBar();
-          return;
+
+        const week = (res && res.week) || [];
+        const month = (res && res.month) || [];
+        loadedClientsRawData = week;
+
+        if (weekCountEl) weekCountEl.textContent = "(" + week.length + ")";
+        if (monthCountEl) {
+          monthCountEl.textContent = "(" + month.length + ")" +
+            (res && res.monthSheet ? (" · " + res.monthSheet) : "");
         }
-        loadedClientsRawData = res.clients;
-        const src = res.fromBookings ? " · из броней" : "";
-        const notWeek = res.dateNotInWeek ? " · дата вне недели" : "";
-        const dayLabel = res.day ? (" · " + res.day) : "";
-        const dateLabel = res.date ? (" · " + res.date) : (dateStr ? (" · " + dateStr) : "");
-        summary.innerHTML = `<div class="total-summary-badge">Клиентов: ${res.clients.length}${dayLabel}${dateLabel}${src}${notWeek}</div>`;
-        box.innerHTML = res.clients.map((client, index) => {
-          const lines = (client.basket || []).map(g => {
-            const unit = g.unit || unitForItem(g.cat, g.name);
-            const frac = g.sub ? " (" + g.sub + ")" : "";
-            return `<div class="order-detail-line"><span>• ${g.name}${frac}</span><span class="order-detail-volume">${g.val} ${unit}</span></div>`;
-          }).join("") || '<p class="muted">Нет позиций</p>';
-          const addr = client.address ? `<div class="delivery-line addr-line">Адрес: ${escapeHtml(client.address)}</div>` : "";
-          const priceHtml = formatOrderPriceHtml(client.note || "");
-          const noteClean = noteTextForRole(client.note || "", "mgr");
-          const office = parseOfficeAddress(client.note || "");
-          const dm = parseDeliveryMethod(client.note || "");
-          const note = noteClean ? `<div class="delivery-line time-alert">Примечание: ${escapeHtml(noteClean)}</div>` : "";
-          const roles = parseNoteAudience(client.note || "");
-          const roleHint = noteClean
-            ? `<div class="delivery-line muted" style="font-size:11px;opacity:0.75;">для: ${escapeHtml(formatNoteRoles(roles))}</div>`
-            : "";
-          const deliv = (dm === "euro" || dm === "bel")
-            ? `<div class="delivery-line">${dm === "euro" ? "Европочта" : "Белпочта"}${office ? ": " + escapeHtml(office) : ""}</div>`
-            : "";
-          const priceBadge = extractOrderPrice(client.note || "") != null
-            ? `<span class="client-badge" style="background:rgba(48,209,88,0.2);color:#30d158;">${extractOrderPrice(client.note)} BYN</span>`
-            : "";
-          return `<div class="client-item-card" id="clientCard_${index}">
-            <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
-              <div class="client-title-wrap">
-                <input type="checkbox" class="client-check" data-index="${index}"
-                  onclick="event.stopPropagation()" onchange="onClientCheckChange(${index})"
-                  aria-label="Выбрать ${escapeHtml(client.name)}">
-                <span class="client-title">${index + 1}. ${escapeHtml(client.name)}</span>
-              </div>
-              <div class="client-right-block">
-                <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
-                <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
-                <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
-              </div>
-            </div>
-            <div class="client-meta-row">
-              ${priceBadge}
-              <span class="client-badge">${client.orderCount} поз.</span>
-            </div>
-            ${(addr || note || deliv || priceHtml) ? `<div class="delivery-info-box">${priceHtml}${note}${roleHint}${deliv}${addr}${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : (formatTelHtml(client.phone || extractPhone(client.note || "")) ? `<div class="delivery-info-box">${formatTelHtml(client.phone || extractPhone(client.note || ""))}</div>` : "")}
-            <div class="client-order-details" id="details_${index}">${lines}</div>
-          </div>`;
-        }).join("");
+
+        const dayLabel = res && res.day ? (" · " + res.day) : "";
+        const dateLabel = res && res.date ? (" · " + res.date) : "";
+        const warn = res && res.dateNotInWeek ? " · дата вне недели" : "";
+        if (summary) {
+          summary.innerHTML = '<div class="total-summary-badge">На неделе: ' + week.length +
+            " · в месяце ещё: " + month.length + dayLabel + dateLabel + warn + "</div>";
+        }
+
+        box.innerHTML = week.length
+          ? week.map(renderWeekClientCard).join("")
+          : '<div class="card"><p class="muted">На неделе пока пусто — перенеси из месяца ↓</p></div>';
+
+        if (monthBox) {
+          if (res && res.dateNotInWeek && !month.length) {
+            monthBox.innerHTML = '<div class="card"><p class="muted">Дата не стоит в ячейках текущей недели — выбери Пн–Пт или дату из листа.</p></div>';
+          } else {
+            monthBox.innerHTML = month.length
+              ? month.map(renderMonthClientCard).join("")
+              : '<div class="card"><p class="muted">Все из месяца уже на неделе (или в календаре никого).</p></div>';
+          }
+        }
         updateBatchBar();
       } catch (err) {
-        box.innerHTML = '<p class="muted">Ошибка загрузки: ' + escapeHtml(err.message || String(err)) + "</p>";
+        box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
+        if (monthBox) monthBox.innerHTML = '<p class="muted">Нужен Deploy Code.gs (getViewCompare)</p>';
         updateBatchBar();
       }
     }
+    window.loadClientsForDay = loadClientsForDay;
+
+    async function pullOneFromMonth(clientName) {
+      var name = String(clientName || "").trim();
+      if (!name) return;
+      var day = document.getElementById("viewDaySelect").value;
+      var dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
+      if (!day && !dateStr) {
+        showToast("Сначала выбери день");
+        return;
+      }
+      try {
+        showToast("Переношу " + name + "…");
+        var params = { action: "pullClientFromMonth", client: name };
+        if (day) params.day = day;
+        else params.date = dateStr;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+        var res = await apiGet(params, { timeoutMs: 35000, cacheTtlMs: 0 });
+        if (!res || res.status !== "success") {
+          var msg = (res && res.message) || (res && res.result && res.result.message) || "ошибка";
+          if (msg === "date_not_in_week") {
+            await uiAlertAsync("Дата вне текущей недели. Выбери день Пн–Пт.");
+            return;
+          }
+          showToast("Не удалось: " + msg);
+          return;
+        }
+        var n = res.result && res.result.count != null ? Number(res.result.count) : 0;
+        showToast(n ? ("На неделе: " + name) : ("Уже был / нечего тянуть: " + name));
+        await loadClientsForDay();
+      } catch (e) {
+        showToast(e.message || "Ошибка сети / Deploy");
+      }
+    }
+    window.pullOneFromMonth = pullOneFromMonth;
 
     async function refreshDayViews(dayHint) {
       const viewDay = document.getElementById("viewDaySelect").value;
@@ -6747,13 +6831,12 @@
       }
       const label = day || dateStr;
       const ok = await uiConfirmAsync(
-        "Доукомплектовать " + label + " из месяца?\nДобавим тех, кого ещё нет — уже с составом с ПП/АФК/БП.\nУ стоящих состав не затираем."
+        "Перенести всех из месяца на «" + label + "»?\nДобавим тех, кого ещё нет на неделе (состав с ПП/АФК/БП).\nУже стоящих не затираем."
       );
       if (!ok) return;
       try {
-        showToast("Доукомплектовываю…");
+        showToast("Переношу всех…");
         const params = { action: "ensureDayMaterialized", onlyMissing: "1" };
-        // один ключ: день блока надёжнее «чужой» даты
         if (day) params.day = day;
         else params.date = dateStr;
         try { _apiGetMem = Object.create(null); } catch (eClr) {}
@@ -6761,7 +6844,7 @@
         if (!res || res.status !== "success") {
           var msg = (res && res.result && res.result.message) || (res && res.message) || "ошибка";
           if (msg === "date_not_in_week") {
-            await uiAlertAsync("Эта дата не стоит в текущей неделе на листе.\nВыбери день (Пн–Пт) или дату из ячеек A1/A62/A123/A184/A245.");
+            await uiAlertAsync("Эта дата не стоит в текущей неделе на листе.\nВыбери день (Пн–Пт).");
             return;
           }
           await uiAlertAsync("Не удалось: " + msg);
