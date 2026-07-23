@@ -593,7 +593,7 @@
   <div class="app">
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
-        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.27</div>
+        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.28</div>
         <div class="nav-tabs" id="navTabs">
           <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
           <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
@@ -838,11 +838,12 @@
       <div class="card">
         <div class="form-group">
           <label>День доставки</label>
-          <select id="courierDaySelect" onchange="loadCourier()">
+          <select id="courierDaySelect" onchange="onCourierDayChange()">
             <option value="">-- Выбрать день --</option>
             <option>Понедельник</option><option>Вторник</option><option>Среда</option>
             <option>Четверг</option><option>Пятница</option>
           </select>
+          <button class="btn-action btn-blue" type="button" style="margin-top:8px;" onclick="loadCourier(true)">Обновить список</button>
         </div>
         <div class="form-group">
           <label>Точка выезда</label>
@@ -868,13 +869,13 @@
         <div class="card">
           <div class="form-group">
             <label>День сборки</label>
-            <select id="assemblyDaySelect" onchange="loadAssembly()">
+            <select id="assemblyDaySelect" onchange="onAssemblyDayChange()">
               <option value="">-- Выбрать день --</option>
               <option>Понедельник</option><option>Вторник</option><option>Среда</option>
               <option>Четверг</option><option>Пятница</option>
             </select>
           </div>
-          <button class="btn-action btn-orange" type="button" onclick="loadAssembly()">Посчитать пакеты</button>
+          <button class="btn-action btn-orange" type="button" onclick="loadAssembly(true)">Посчитать пакеты</button>
         </div>
         <div id="assemblyContainer"><p class="muted">Выберите день…</p></div>
       </div>
@@ -1109,7 +1110,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.27";
+    const APP_VERSION = "v7.10.28";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2563,7 +2564,9 @@
         if (screenId === "peopleScreen") loadPeople();
         if (screenId === "courierScreen") {
           // короткий тап = маршрут; сборку открывает long-press → setCourierSub после switchTab
+          ensureOpsDaySelected();
           if (!window._courierOpenAssembly) setCourierSub("route");
+          // setCourierSub сам soft-грузит маршрут/сборку; повторно не дёргаем
           window._courierOpenAssembly = false;
         }
       } catch (e3) {}
@@ -3282,7 +3285,7 @@
       if (dayHint && viewDay === dayHint) jobs.push(loadClientsForDay());
       else if (viewDay) jobs.push(loadClientsForDay());
       if (cutDay && (!dayHint || cutDay === dayHint)) jobs.push(loadCutting());
-      if (courDay && (!dayHint || courDay === dayHint)) jobs.push(loadCourier());
+      if (courDay && (!dayHint || courDay === dayHint)) jobs.push(loadCourier(true));
       if (jobs.length) await Promise.all(jobs);
     }
 
@@ -4206,7 +4209,73 @@
       }
     }
 
-    async function loadCourier() {
+    function opsWeekdayNameNow() {
+      var names = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
+      var wd = new Date().getDay();
+      if (wd === 0) return "Понедельник";
+      if (wd === 6) return "Пятница";
+      return names[wd];
+    }
+
+    function setSelectDayValue(sel, day) {
+      if (!sel || !day) return false;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === day || sel.options[i].text === day) {
+          sel.selectedIndex = i;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function persistOpsDay(day) {
+      var d = String(day || "").trim();
+      if (!d) return;
+      try { localStorage.setItem("opsDayCourier", d); } catch (e) {}
+      try { localStorage.setItem("opsDayAssembly", d); } catch (e) {}
+    }
+
+    function readPersistedOpsDay() {
+      try {
+        return localStorage.getItem("opsDayCourier") || localStorage.getItem("opsDayAssembly") || "";
+      } catch (e) {
+        return "";
+      }
+    }
+
+    /** День сразу: память → сегодня (Пн–Пт) → не трогаем, если уже выбран. */
+    function ensureOpsDaySelected() {
+      var cour = document.getElementById("courierDaySelect");
+      var asm = document.getElementById("assemblyDaySelect");
+      var cur = (cour && cour.value) || (asm && asm.value) || "";
+      var day = cur || readPersistedOpsDay() || opsWeekdayNameNow();
+      if (cour && !cour.value) setSelectDayValue(cour, day);
+      if (asm && !asm.value) setSelectDayValue(asm, (cour && cour.value) || day);
+      var finalDay = (cour && cour.value) || (asm && asm.value) || "";
+      if (finalDay) persistOpsDay(finalDay);
+      return finalDay;
+    }
+
+    function onCourierDayChange() {
+      var day = document.getElementById("courierDaySelect").value;
+      persistOpsDay(day);
+      var asm = document.getElementById("assemblyDaySelect");
+      if (asm && day) setSelectDayValue(asm, day);
+      loadCourier(true);
+    }
+    window.onCourierDayChange = onCourierDayChange;
+
+    function onAssemblyDayChange() {
+      var day = document.getElementById("assemblyDaySelect").value;
+      persistOpsDay(day);
+      var cour = document.getElementById("courierDaySelect");
+      if (cour && day) setSelectDayValue(cour, day);
+      loadAssembly(true);
+    }
+    window.onAssemblyDayChange = onAssemblyDayChange;
+
+    async function loadCourier(force) {
+      ensureOpsDaySelected();
       const day = document.getElementById("courierDaySelect").value;
       const box = document.getElementById("courierContainer");
       setDepartTimeLocked(false);
@@ -4216,6 +4285,11 @@
         refreshCourierSummary();
         document.getElementById("routePlanBox").innerHTML = "";
         routePlanState.routes = [[], []];
+        return;
+      }
+      // без запроса — не дёргаем сеть, если день уже в кэше
+      if (!force && courierClientsCache && courierClientsCache.length && courierClientsCache._day === day) {
+        refreshCourierSummary();
         return;
       }
       courierClientsCache = [];
@@ -4235,6 +4309,7 @@
         }
         courierClientsCache = res.clients;
         courierClientsCache._date = res.date || day;
+        courierClientsCache._day = day;
         refreshCourierSummary();
         box.innerHTML = res.clients.map((c, idx) => {
           const lines = (c.basket || []).map(g => {
@@ -6566,18 +6641,26 @@
       document.getElementById("courierSubAsm").classList.toggle("active", which === "assembly");
       document.getElementById("courierRoutePane").style.display = which === "route" ? "" : "none";
       document.getElementById("courierAssemblyPane").style.display = which === "assembly" ? "" : "none";
+      ensureOpsDaySelected();
       if (which === "assembly") {
         var d = document.getElementById("courierDaySelect").value;
-        if (d) document.getElementById("assemblyDaySelect").value = d;
-        loadAssembly();
+        if (d) setSelectDayValue(document.getElementById("assemblyDaySelect"), d);
+        loadAssembly(false);
+      } else {
+        loadCourier(false);
       }
     }
     window.setCourierSub = setCourierSub;
 
-    async function loadAssembly() {
+    async function loadAssembly(force) {
+      ensureOpsDaySelected();
       var day = document.getElementById("assemblyDaySelect").value || document.getElementById("courierDaySelect").value;
       var box = document.getElementById("assemblyContainer");
       if (!day) { box.innerHTML = '<p class="muted">Выберите день…</p>'; return; }
+      if (!force && assemblyCache && assemblyCache.status === "success" && String(assemblyCache.day || "") === String(day)) {
+        renderAssemblyView();
+        return;
+      }
       box.innerHTML = loadingDanceHtml("Считаю пакеты…");
       try {
         var res = await apiGet({ action: "getAssembly", day: day }, { timeoutMs: 22000, cacheTtlMs: 8000 });
