@@ -46,6 +46,60 @@ function jsonp(callback, obj) {
   return ContentService.createTextOutput(cb + "(" + JSON.stringify(obj) + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
+/** Кэш на время одного запроса + короткий ScriptCache между вызовами */
+var _memoCrmSheets_ = {};
+
+function cacheGetJson_(key) {
+  try {
+    var raw = CacheService.getScriptCache().get(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function cachePutJson_(key, obj, ttlSec) {
+  try {
+    var s = JSON.stringify(obj);
+    if (s.length > 90000) return false;
+    CacheService.getScriptCache().put(key, s, Math.max(5, ttlSec || 30));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function bustClientsCache_() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var days = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "БУДУЩАЯ НЕДЕЛЯ"];
+    for (var i = 0; i < days.length; i++) cache.remove("GC:" + days[i]);
+  } catch (e) {}
+}
+
+function getCrmSheetValuesFast_(crmSs, sheetName) {
+  var sid = "";
+  try { sid = crmSs.getId(); } catch (eId) { sid = "x"; }
+  var memoKey = sid + ":" + sheetName;
+  if (_memoCrmSheets_[memoKey]) return _memoCrmSheets_[memoKey];
+  var cacheKey = "CRM:" + String(sid).slice(-10) + ":" + sheetName;
+  var hit = cacheGetJson_(cacheKey);
+  if (hit && hit.length) {
+    _memoCrmSheets_[memoKey] = hit;
+    return hit;
+  }
+  var sh = findSheetByBaseName_(crmSs, sheetName);
+  if (!sh || sh.getLastRow() < 2) {
+    _memoCrmSheets_[memoKey] = null;
+    return null;
+  }
+  var data = sh.getDataRange().getValues();
+  _memoCrmSheets_[memoKey] = data;
+  cachePutJson_(cacheKey, data, 60);
+  return data;
+}
+
 function jsonpText(callback, obj) {
   var cb = callback || "callback";
   return ContentService.createTextOutput(cb + "(" + JSON.stringify(obj) + ")").setMimeType(ContentService.MimeType.TEXT);
@@ -1351,6 +1405,7 @@ function handleDeleteClient(ss, json, callback) {
   }
 
   if (clearedWeek || (bookRes && bookRes.cancelled > 0)) {
+    bustClientsCache_();
     return jsonp(callback, {
       status: "success",
       clearedWeek: clearedWeek,
@@ -1360,6 +1415,7 @@ function handleDeleteClient(ss, json, callback) {
     });
   }
   // уже нет ни в неделе, ни в бронях — не ошибка (повторное удаление / рассинхрон UI)
+  bustClientsCache_();
   return jsonp(callback, {
     status: "success",
     alreadyGone: true,
@@ -1425,6 +1481,7 @@ function handleMoveClient(ss, json, callback) {
   sourceSheet.getRange(srcBlock.start, oldClientCol, srcBlock.note - srcBlock.start + 1, 1).clearContent();
 
   checkLiveDeficitAndNotify();
+  bustClientsCache_();
   return jsonp(callback, { status: "success", cutRaw: cutRaw });
 }
 
@@ -1501,6 +1558,7 @@ function handleSaveOrder(ss, json, callback) {
   } catch (eProf) {}
 
   try { ensureBpAndSurveyFromOrder_(json); } catch (eBp) {}
+  bustClientsCache_();
   // Telegram-проверку склада не зовём на каждый save — сильно тормозит запись
   return jsonpText(callback, { status: "success" });
 }
@@ -1616,16 +1674,20 @@ function normalizeFraction(s) {
 }
 
 function extractEmbeddedFraction(sheetFull) {
-  if (sheetFull.indexOf("ОЧ МАЛ") > -1) return "ОЧ МАЛ";
-  if (sheetFull.indexOf("ПОЛОВИНКА") > -1) return "ПОЛОВИНКА";
-  if (sheetFull.indexOf("ПАЛК") > -1) return "ПАЛК";
-  if (sheetFull.indexOf("ПЛАСТ") > -1) return "ПЛАСТ";
-  if (sheetFull.indexOf("ОГР") > -1) return "ОГР";
-  if (/\bМАЛ\b/.test(sheetFull) || sheetFull.indexOf(" МЕЛКОЕ") > -1) return "МАЛ";
-  if (sheetFull.indexOf("СРЕД") > -1) return "СРЕД";
-  if (sheetFull.indexOf("БОЛ") > -1 || sheetFull.indexOf("БОЛЬШОЕ") > -1) return "БОЛ";
-  if (sheetFull.indexOf("КРУПНОЕ") > -1) return "КРУПНОЕ";
-  if (sheetFull.indexOf("ЦЕЛОЕ") > -1) return "ЦЕЛОЕ";
+  var u = String(sheetFull || "").toUpperCase().replace(/Ё/g, "Е");
+  if (!u) return "";
+  // «ОЧ МАЛ» раньше «МАЛ» — иначе МАЛ перехватит кусок
+  if (u.indexOf("ОЧ МАЛ") > -1 || /ОЧЕНЬ\s*(МАЛ|МЕЛК)|СУПЕР\s*(МАЛ|МЕЛК)/.test(u)) return "ОЧ МАЛ";
+  if (u.indexOf("ПОЛОВИНКА") > -1) return "ПОЛОВИНКА";
+  if (u.indexOf("ПАЛК") > -1) return "ПАЛК";
+  if (u.indexOf("ПЛАСТ") > -1) return "ПЛАСТ";
+  if (u.indexOf("ОГР") > -1) return "ОГР";
+  // \b в JS не работает с кириллицей — граница по не-буквам
+  if (/(^|[^А-ЯA-Z0-9])МАЛ([^А-ЯA-Z0-9]|$)/.test(u) || u.indexOf(" МЕЛКОЕ") > -1 || /МЕЛК/.test(u)) return "МАЛ";
+  if (u.indexOf("СРЕД") > -1) return "СРЕД";
+  if (u.indexOf("БОЛ") > -1 || u.indexOf("БОЛЬШОЕ") > -1) return "БОЛ";
+  if (u.indexOf("КРУПН") > -1) return "КРУПНОЕ";
+  if (u.indexOf("ЦЕЛ") > -1) return "ЦЕЛОЕ";
   return "";
 }
 
@@ -1642,6 +1704,11 @@ function handleGetClients(dayName, callback, dateStr) {
     }
   }
   if (resolvedDay) {
+    var cacheKey = "GC:" + String(resolvedDay || "").toUpperCase();
+    if (!dateStr) {
+      var cached = cacheGetJson_(cacheKey);
+      if (cached && cached.status) return jsonp(callback, cached);
+    }
     var data = getClientsData_(ss, resolvedDay);
     for (var i = 0; i < data.clients.length; i++) delete data.clients[i].col;
     data.day = resolvedDay;
@@ -1655,6 +1722,7 @@ function handleGetClients(dayName, callback, dateStr) {
         data.fromBookings = true;
       }
     }
+    if (!dateStr && data.status === "success") cachePutJson_(cacheKey, data, 25);
     return jsonp(callback, data);
   }
   if (deliveryDate) {
@@ -1715,6 +1783,7 @@ function getClientsData_(ss, dayName) {
   var allOrdersMatrix = targetSheet.getRange(startRow, 3, endRow - startRow + 1, colsToRead).getValues();
   var addressesMatrix = totalSheetRows >= addressRow ? targetSheet.getRange(addressRow, 3, 1, colsToRead).getValues() : null;
   var notesMatrix = totalSheetRows >= noteRow ? targetSheet.getRange(noteRow, 3, 1, colsToRead).getValues() : null;
+  var geoIndex = buildDayGeoIndex_(dayName);
 
   var clientsDataList = [];
   if (nicksMatrix && nicksMatrix.length > 0) {
@@ -1764,15 +1833,8 @@ function getClientsData_(ss, dayName) {
         var noteStr = rawNote != null ? String(rawNote).trim() : "";
         // Миграция: GEO из старых примечаний → лист Гео_Клиентов, из ячейки убираем
         var legacyGeo = parseGeoTagsFromNote_(noteStr);
-        if (legacyGeo) {
-          upsertClientGeo_(ss, dayName, nameClean, legacyGeo.lat, legacyGeo.lon, legacyGeo.yandexUrl || "");
-          noteStr = stripGeoTagsFromNote_(noteStr);
-          try {
-            targetSheet.getRange(noteRow, colIdx + 3).setValue(noteStr);
-          } catch (eMig) {}
-        }
-        var geoObj = getClientGeo_(ss, dayName, nameClean);
-        if (!geoObj && legacyGeo) geoObj = legacyGeo;
+        if (legacyGeo) noteStr = stripGeoTagsFromNote_(noteStr);
+        var geoObj = geoIndex[nameClean.toUpperCase()] || legacyGeo || null;
         var phone = "";
         var telM = noteStr.match(/\[TEL:([^\]]+)\]/i);
         if (telM) phone = String(telM[1] || "").trim();
@@ -1780,13 +1842,6 @@ function getClientsData_(ss, dayName) {
           var phM = noteStr.match(/(\+?375[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})/);
           if (phM) phone = phM[1].replace(/\s+/g, "");
         }
-        try {
-          if (!phone) {
-            var crm = getCrmSpreadsheet_();
-            var contact = lookupContactAddress_(crm, nameClean);
-            if (contact && contact.phone) phone = contact.phone;
-          }
-        } catch (ePhone) {}
         clientsDataList.push({
           name: nameClean,
           orderCount: totalItemsInOrder,
@@ -1863,23 +1918,11 @@ function parseSheetItemName(currentItemName, rIdx) {
     var splitIdx = currentItemName.indexOf(" / ");
     cleanNameOnly = currentItemName.substring(0, splitIdx).trim();
     var subText = currentItemName.substring(splitIdx + 3).trim();
-    frac = subText;
-    if (subText === "Мелкое") frac = "Мелкое";
-    if (subText === "Среднее") frac = "Среднее";
-    if (subText === "Большое") frac = "Большое";
-    if (subText === "Крупное") frac = "Крупное";
-    if (subText === "Целое") frac = "Целое";
+    // дрессура: оставляем Мелкое/Среднее/… как в листе; жевалки — нормализуем
+    if (/^(Мелкое|Среднее|Большое|Крупное|Целое)$/i.test(subText)) frac = subText;
+    else frac = normalizeFraction(subText) || subText;
   } else {
-    frac = "";
-    if (upper.indexOf("ОЧ МАЛ") > -1) frac = "ОЧ МАЛ";
-    else if (upper.indexOf("ПОЛОВИНКА") > -1) frac = "ПОЛОВИНКА";
-    else if (upper.indexOf("ПАЛК") > -1) frac = "ПАЛК";
-    else if (upper.indexOf("ПЛАСТ") > -1) frac = "ПЛАСТ";
-    else if (upper.indexOf("ОГР") > -1) frac = "ОГР";
-    else if (/\bМАЛ\b/.test(upper)) frac = "МАЛ";
-    else if (upper.indexOf("СРЕД") > -1) frac = "СРЕД";
-    else if (upper.indexOf("БОЛ") > -1) frac = "БОЛ";
-
+    frac = extractEmbeddedFraction(upper);
     cleanNameOnly = currentItemName
       .replace(/\s*шт\.?/gi, "")
       .replace(/\s*ШТ\.?/g, "")
@@ -1891,6 +1934,8 @@ function parseSheetItemName(currentItemName, rIdx) {
       .replace(/\s*МАЛ/gi, "")
       .replace(/\s*СРЕД/gi, "")
       .replace(/\s*БОЛ/gi, "")
+      .replace(/\s*КРУПНОЕ/gi, "")
+      .replace(/\s*ЦЕЛОЕ/gi, "")
       .trim();
   }
 
@@ -2540,6 +2585,31 @@ function getClientGeo_(ss, dayName, clientName) {
     }
   }
   return null;
+}
+
+/** Индекс geo дня: один read на getClients вместо N */
+function buildDayGeoIndex_(dayName) {
+  var out = {};
+  try {
+    var sh = getGeoSheet_();
+    if (!sh || sh.getLastRow() < 2) return out;
+    var day = String(dayName || "").trim().toUpperCase();
+    var data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim().toUpperCase() !== day) continue;
+      var client = String(data[i][1] || "").trim().toUpperCase();
+      if (!client) continue;
+      var lat = Number(data[i][2]);
+      var lon = Number(data[i][3]);
+      if (!isFinite(lat) || !isFinite(lon)) continue;
+      out[client] = {
+        lat: lat,
+        lon: lon,
+        yandexUrl: data[i][4] ? String(data[i][4]) : ("https://yandex.ru/maps/?pt=" + lon + "," + lat + "&z=17&l=map")
+      };
+    }
+  } catch (e) {}
+  return out;
 }
 
 /* ========== Дефицит нарезки + пуши ========== */
@@ -4504,31 +4574,121 @@ function handleSeedCrmClients(json, callback, fromPost) {
 }
 
 function mapCrmHeaderToItem_(header) {
-  var h = String(header || "").replace(/\s+/g, " ").trim().toUpperCase();
-  if (!h || h.indexOf("ЛЮДИ") === 0 || h.indexOf("ID") === 0 || h.indexOf("КОЛИЧ") === 0) return null;
-  if (/СТАТУС|ПОЖЕЛАН|ЗАМЕТК|СЕБЕСТОИМ|СУММА|ЦЕНА|ИТОГО/.test(h)) return null;
+  var h = String(header || "").replace(/\s+/g, " ").trim().toUpperCase().replace(/Ё/g, "Е");
+  if (!h) return null;
+  if (/^(ЛЮДИ|ID|КОЛИЧ|СТАТУС|ПОЖЕЛАН|ЗАМЕТК)/.test(h)) return null;
+  if (/СЕБЕСТОИМ|СУММА|ЦЕНА|ИТОГ|СКИДК|ВЫХЛОП|ФАКТ|КАРМАН|ФРАК|ГРЯЗН|^У[123]$|^УП4$/.test(h)) return null;
 
-  var sub = "";
-  if (/МЕЛК/.test(h)) sub = "Мелкое";
-  else if (/СРЕДН/.test(h)) sub = "Среднее";
-  else if (/БОЛЬШ|КРУПН/.test(h)) sub = /РУБЕЦ/.test(h) ? "Крупное" : "Большое";
-  else if (/ЦЕЛ/.test(h)) sub = "Целое";
-
-  var name = "";
-  if (/БАРАНЬ?Е?\s*Л[ЕЁ]ГК/.test(h)) name = "БАРАНЬЕ ЛЁГКОЕ";
-  else if (/Л[ЕЁ]ГК/.test(h)) name = "ЛЁГКОЕ";
-  else if (/СЕРДЦ/.test(h)) name = "СЕРДЦЕ";
-  else if (/ПОЧК/.test(h)) name = "ПОЧКИ";
-  else if (/РУБЕЦ/.test(h)) name = "РУБЕЦ Т";
-  else if (/ШЕЯ|ТРАХЕ|УХО|УШИ|НОС|ХВОСТ|СУСТАВ|КОЛЕНО|КОПЫТ|РОГ|СУХОЖИЛ|ПОЗВОН|РЁБР|РЕБР|МОРД|ГУБА|ПЕЧЕН|СЕЛЕЗ|ВЫМЯ|ПЕНИС|БЫЧ/.test(h)) {
-    // жевалки / шт — берём исходный заголовок укороченно
-    name = String(header || "").replace(/\s+/g, " ").trim();
-    sub = "";
-    return { name: name, sub: "", cat: "chews", grams: false };
-  } else {
-    return null;
+  // --- присыпки ---
+  if (/КРОШК/.test(h)) {
+    if (/Л[ЕЁ]?ГК|ЛЕГК/.test(h)) return { name: "КРОШКА ЛЁГКОГО", sub: "", cat: "powder", grams: true };
+    if (/ПОЧ/.test(h)) return { name: "КРОШКА ПОЧЕК", sub: "", cat: "powder", grams: true };
+    if (/СЕРДЦ/.test(h)) return { name: "КРОШКА СЕРДЦА", sub: "", cat: "powder", grams: true };
+    if (/РУБ/.test(h)) return { name: "КРОШКА РУБЕЦ", sub: "", cat: "powder", grams: true };
+    if (/МИКС/.test(h)) return { name: "КРОШКА МИКС", sub: "", cat: "powder", grams: true };
+    return { name: "КРОШКА МИКС", sub: "", cat: "powder", grams: true };
   }
-  return { name: name, sub: sub, cat: "dressura", grams: true };
+
+  // --- жевалки с фракциями (до общих шт.) ---
+  if (/БЫЧ.*КОРЕН|КОРЕНЬ.*БЫЧ|^БЫЧИЙ КОРЕН/.test(h)) {
+    var rootSub = "";
+    if (/ОЧЕНЬ\s*МАЛ|ОЧ\s*МАЛ|СУПЕР\s*МАЛ/.test(h)) rootSub = "ОЧ МАЛ";
+    else if (/ОГРОМ|РОГАЛ|ОГР/.test(h)) rootSub = "ОГР";
+    else if (/БОЛЬШ|БОЛ/.test(h)) rootSub = "БОЛ";
+    else if (/СРЕДН|СРЕД/.test(h)) rootSub = "СРЕД";
+    else if (/МАЛЕНЬК|МАЛ/.test(h)) rootSub = "МАЛ";
+    return { name: "БЫЧИЙ КОРЕНЬ", sub: rootSub, cat: "chew", grams: false };
+  }
+  if (/ТРАХЕ/.test(h)) {
+    var trSub = "";
+    if (/ПЛАСТ|ПЛАСТИН/.test(h)) trSub = "ПЛАСТ";
+    else if (/ОГРОМ|ОГР/.test(h)) trSub = "ОГР";
+    else if (/БОЛЬШ|БОЛ/.test(h)) trSub = "БОЛ";
+    else if (/СРЕДН|СРЕД/.test(h)) trSub = "СРЕД";
+    else if (/МАЛЕНЬК|МАЛ/.test(h)) trSub = "МАЛ";
+    return { name: "ТРАХЕЯ", sub: trSub, cat: "chew", grams: false };
+  }
+  if (/СТАНОВ/.test(h)) {
+    var stSub = "СРЕД";
+    if (/ПАЛОЧ|ПАЛК/.test(h)) stSub = "ПАЛК";
+    else if (/БОЛЬШ|БОЛ|ЦЕЛ/.test(h) && !/СРЕД/.test(h)) stSub = "БОЛ";
+    else if (/СРЕДН|СРЕД|ПОЛОВИН/.test(h)) stSub = "СРЕД";
+    return { name: "СТАНОВАЯ ЖИЛА", sub: stSub, cat: "chew", grams: false };
+  }
+  if (/УХО|УШК/.test(h)) {
+    var earSub = /ПОЛОВИН/.test(h) ? "ПОЛОВИНКА" : "Обычное";
+    return { name: "УХО Г", sub: earSub, cat: "chew", grams: false };
+  }
+  if (/АОРТ/.test(h)) {
+    var aoSub = /ПОЛОВИН/.test(h) ? "ПОЛОВИНКА" : "Обычная";
+    return { name: "АОРТА", sub: aoSub, cat: "chew", grams: false };
+  }
+  if (/КОЛЕН/.test(h)) return { name: "КОЛЕНИ шт.", sub: "", cat: "chew", grams: false };
+  if (/КОПЫТ/.test(h)) return { name: "КОПЫТО шт.", sub: "", cat: "chew", grams: false };
+  if (/НОС/.test(h)) return { name: "НОСЫ шт.", sub: "", cat: "chew", grams: false };
+  if (/ЛОП.*ХРЯЩ|ХРЯЩ.*ЛОП|ЛОПАТ/.test(h)) return { name: "ЛОП ХРЯЩ шт.", sub: "", cat: "chew", grams: false };
+  if (/УТИН.*ШЕ|ШЕИ\s*УТ|УТИНЫЕ/.test(h)) return { name: "УТИНЫЕ ШЕИ шт.", sub: "", cat: "chew", grams: false };
+  if (/ПЕРЕП[ЕЁ]Л|ПЕРЕПЕЛ/.test(h)) return { name: "ПЕРЕПЁЛКИ шт.", sub: "", cat: "chew", grams: false };
+  if (/ГУБ/.test(h)) return { name: "ГУБЫ шт.", sub: "", cat: "chew", grams: false };
+
+  // --- дрессура / баранье ---
+  function dressSub_(hh) {
+    if (/МЕЛК/.test(hh)) return "Мелкое";
+    if (/СРЕД/.test(hh)) return "Среднее";
+    if (/КРУПН/.test(hh)) return "Крупное";
+    if (/БОЛЬШ|ПОЛОСК/.test(hh)) return "Большое";
+    if (/ЦЕЛ|ЛОМТ/.test(hh)) return "Целое";
+    return "";
+  }
+
+  if (/БАРАНЬ?Я\s*ПЕЧЕН/.test(h)) {
+    return { name: "БАРАНЬЯ ПЕЧЕНЬ", sub: dressSub_(h) || "", cat: "other", grams: true };
+  }
+  if (/БАРАНЬ?Е?\s*Л[ЕЁ]?ГК|БАРАНЬЕ ЛЕГК/.test(h)) {
+    return { name: "БАРАНЬЕ ЛЁГКОЕ", sub: dressSub_(h) || "Среднее", cat: "dressura", grams: true };
+  }
+  if (/ЛЕГК/.test(h) && !/КРОШК|БАРАН/.test(h)) {
+    return { name: "ЛЁГКОЕ", sub: dressSub_(h) || "Среднее", cat: "dressura", grams: true };
+  }
+  if (/СЕРДЦ/.test(h)) {
+    return { name: "СЕРДЦЕ", sub: dressSub_(h) || (/ЦЕЛ|ЛОМТ/.test(h) ? "Целое" : "Мелкое"), cat: "dressura", grams: true };
+  }
+  if (/ПОЧК/.test(h)) {
+    return { name: "ПОЧКИ", sub: dressSub_(h) || (/ЦЕЛ/.test(h) ? "Целое" : "Мелкое"), cat: "dressura", grams: true };
+  }
+  if (/РУБЕЦ\s*С\b|СВЕТЛ.*РУБ|РУБЕЦ\s*СВЕТ/.test(h) || h === "РУБЕЦ С") {
+    return { name: "СВЕТЛЫЙ РУБЕЦ", sub: "", cat: "other", grams: true };
+  }
+  if (/РУБЕЦ/.test(h)) {
+    var rs = dressSub_(h);
+    if (/КРУПН/.test(h)) rs = "Крупное";
+    return { name: "РУБЕЦ Т", sub: rs || "Среднее", cat: "dressura", grams: true };
+  }
+
+  // --- другое мясо ---
+  if (/ПЕЧЕН/.test(h)) return { name: "ПЕЧЕНЬ", sub: "", cat: "other", grams: true };
+  if (/ИНДЕЙК/.test(h)) {
+    var is = dressSub_(h);
+    return { name: "ИНДЕЙКА", sub: is, cat: "other", grams: true };
+  }
+  if (/МЯСН.*ЛОМТ|ЛОМТИК/.test(h)) return { name: "МЯСНЫЕ ЛОМТИКИ", sub: "", cat: "other", grams: true };
+  if (/ВЫМЯ/.test(h)) return { name: "ВЫМЯ", sub: "", cat: "other", grams: true };
+  if (/СЕМЕН/.test(h)) return { name: "СЕМЕННИКИ", sub: "", cat: "other", grams: true };
+  if (/ПИКАЛЬН/.test(h)) return { name: "ПИКАЛЬНОЕ МЯСО", sub: "", cat: "other", grams: true };
+  if (/КНИЖК/.test(h)) return { name: "КНИЖКА", sub: "", cat: "other", grams: true };
+
+  // --- овощи/фрукты ---
+  if (/БАНАН/.test(h)) return { name: "БАНАНЫ", sub: "", cat: "veg", grams: true };
+  if (/ЯБЛОК/.test(h)) return { name: "ЯБЛОКИ", sub: "", cat: "veg", grams: true };
+  if (/ГРУШ/.test(h)) return { name: "ГРУШИ", sub: "", cat: "veg", grams: true };
+  if (/КЛУБНИК/.test(h)) return { name: "КЛУБНИКА", sub: "", cat: "veg", grams: true };
+  if (/МОРКОВ/.test(h)) return { name: "МОРКОВЬ", sub: "", cat: "veg", grams: true };
+  if (/КАБАЧ/.test(h)) return { name: "КАБАЧОК", sub: "", cat: "veg", grams: true };
+  if (/ТЫКВ/.test(h)) return { name: "ТЫКВА", sub: "", cat: "veg", grams: true };
+  if (/СВЕКЛ/.test(h)) return { name: "СВЕКЛА", sub: "", cat: "veg", grams: true };
+  if (/БАТАТ/.test(h)) return { name: "БАТАТ", sub: "", cat: "veg", grams: true };
+
+  return null;
 }
 
 function basketFromSubscriberRow_(headers, row) {
@@ -4540,7 +4700,14 @@ function basketFromSubscriberRow_(headers, row) {
     if (raw === "" || raw == null) continue;
     var num = Number(String(raw).replace(",", "."));
     if (!num || num <= 0) continue;
-    var val = map.grams ? Math.round(num * 1000) : Math.round(num);
+    // ТЗ: сыпучее 1 = 100г. Целое ≥20 уже в граммах (не трогаем).
+    var val;
+    if (map.grams) {
+      if (num >= 20 && Math.abs(num - Math.round(num)) < 1e-9) val = Math.round(num);
+      else val = Math.round(num * 100);
+    } else {
+      val = Math.round(num);
+    }
     if (val <= 0) continue;
     basket.push({
       cat: map.cat,
@@ -4564,9 +4731,8 @@ function findSubscriberBasket_(crmSs, nick, preferredSegment) {
   var wantKey = clientMatchKey_(nick);
   if (!wantKey) return { basket: [], subId: "", wishes: "", sheet: "" };
   for (var s = 0; s < sheets.length; s++) {
-    var sh = findSheetByBaseName_(crmSs, sheets[s]);
-    if (!sh || sh.getLastRow() < 3) continue;
-    var data = sh.getDataRange().getValues();
+    var data = getCrmSheetValuesFast_(crmSs, sheets[s]);
+    if (!data || data.length < 3) continue;
     var headers = data[0];
     var best = null;
     for (var r = 2; r < data.length; r++) {
@@ -4586,9 +4752,8 @@ function findSubscriberBasket_(crmSs, nick, preferredSegment) {
 }
 
 function lookupContactAddress_(crmSs, nick) {
-  var sh = findSheetByBaseName_(crmSs, "Контакты");
-  if (!sh || sh.getLastRow() < 2) return { address: "", note: "", phone: "" };
-  var data = sh.getDataRange().getValues();
+  var data = getCrmSheetValuesFast_(crmSs, "Контакты");
+  if (!data || data.length < 2) return { address: "", note: "", phone: "" };
   for (var r = 1; r < data.length; r++) {
     var cell = String(data[r][0] || "");
     if (!nicksMatch_(cell, nick)) continue;
@@ -5624,9 +5789,8 @@ function weekPaidKey_(dateValue, tz) {
 function lookupPpDeliveries_(clientName) {
   try {
     var crmSs = getCrmSpreadsheet_();
-    var sh = findSheetByBaseName_(crmSs, "ПП");
-    if (!sh || sh.getLastRow() < 3) return 0;
-    var data = sh.getDataRange().getValues();
+    var data = getCrmSheetValuesFast_(crmSs, "ПП");
+    if (!data || data.length < 3) return 0;
     for (var r = 2; r < data.length; r++) {
       if (nicksMatch_(data[r][0], clientName)) return Number(data[r][2]) || 0;
     }
@@ -5680,6 +5844,8 @@ var RETAIL_PRICE_BYN_ = {
   "ЛЁГКОЕ|Целое": { per100: 8 },
   "ЛЁГКОЕ": { per100: 10 },
   "СЕРДЦЕ|Мелкое": { per100: 13 },
+  "СЕРДЦЕ|Среднее": { per100: 12 },
+  "СЕРДЦЕ|Большое": { per100: 11 },
   "СЕРДЦЕ|Целое": { per100: 10 },
   "СЕРДЦЕ": { per100: 12 },
   "РУБЕЦ Т|Мелкое": { per100: 13 },
@@ -5692,6 +5858,7 @@ var RETAIL_PRICE_BYN_ = {
   "ПОЧКИ": { per100: 10 },
   "БАРАНЬЕ ЛЁГКОЕ|Мелкое": { per100: 15 },
   "БАРАНЬЕ ЛЁГКОЕ|Среднее": { per100: 14 },
+  "БАРАНЬЕ ЛЁГКОЕ|Большое": { per100: 13 },
   "БАРАНЬЕ ЛЁГКОЕ|Целое": { per100: 12 },
   "БАРАНЬЕ ЛЁГКОЕ": { per100: 14 },
   "ПЕЧЕНЬ": { per100: 9 },
@@ -5701,7 +5868,13 @@ var RETAIL_PRICE_BYN_ = {
   "СЕМЕННИКИ": { per100: 12 },
   "МЯСНЫЕ ЛОМТИКИ": { per100: 13 },
   "ПИКАЛЬНОЕ МЯСО": { per100: 10 },
+  "ИНДЕЙКА|Мелкое": { per100: 17 },
+  "ИНДЕЙКА|Среднее": { per100: 16 },
+  "ИНДЕЙКА|Целое": { per100: 15 },
   "ИНДЕЙКА": { per100: 16 },
+  "БАРАНЬЯ ПЕЧЕНЬ|Мелкое": { per100: 18 },
+  "БАРАНЬЯ ПЕЧЕНЬ|Среднее": { per100: 17 },
+  "БАРАНЬЯ ПЕЧЕНЬ|Целое": { per100: 16 },
   "БАРАНЬЯ ПЕЧЕНЬ": { per100: 17 },
   "КРОШКА ЛЁГКОГО": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
   "КРОШКА ПОЧЕК": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
@@ -5711,16 +5884,19 @@ var RETAIL_PRICE_BYN_ = {
   "БАНАНЫ": { per100: 10 },
   "ЯБЛОКИ": { per100: 9 },
   "ГРУШИ": { per100: 10 },
+  "КЛУБНИКА": { per100: 10 },
   "МОРКОВЬ": { per100: 10 },
   "ТЫКВА": { per100: 12 },
   "БАТАТ": { per100: 11 },
   "КАБАЧОК": { per100: 12 },
+  "СВЕКЛА": { per100: 10 },
   "КОПЫТО шт.": { perPiece: 9 },
   "КОЛЕНИ шт.": { perPiece: 6 },
   "НОСЫ шт.": { perPiece: 7 },
   "ЛОП ХРЯЩ шт.": { perPiece: 4 },
   "УТИНЫЕ ШЕИ шт.": { perPiece: 3 },
   "ПЕРЕПЁЛКИ шт.": { perPiece: 4 },
+  "ГУБЫ шт.": { perPiece: 4 },
   "ТРАХЕЯ|МАЛ": { perPiece: 4 },
   "ТРАХЕЯ|СРЕД": { perPiece: 7 },
   "ТРАХЕЯ|БОЛ": { perPiece: 12 },
@@ -5745,6 +5921,41 @@ var RETAIL_PRICE_BYN_ = {
   "СТАНОВАЯ ЖИЛА": { perPiece: 4 }
 };
 
+function retailNormalizeSub_(name, sub) {
+  var s = String(sub || "").trim();
+  if (!s) return "";
+  var u = s.toUpperCase().replace(/Ё/g, "Е").replace(/\s+/g, " ");
+  var n = String(name || "").toUpperCase().replace(/Ё/g, "Е");
+  // жевалки — каталожные коды
+  if (/БЫЧИЙ КОРЕН|ТРАХЕ|СТАНОВ/.test(n)) {
+    if (/ОЧЕНЬ\s*МАЛ|ОЧ\s*МАЛ|СУПЕР/.test(u)) return "ОЧ МАЛ";
+    if (/ОГРОМ|РОГАЛ|ОГР/.test(u)) return "ОГР";
+    if (/БОЛЬШ|БОЛ/.test(u)) return "БОЛ";
+    if (/СРЕДН|СРЕД|ПОЛОВИН/.test(u) && /СТАНОВ/.test(n)) return /ПАЛ/.test(u) ? "ПАЛК" : "СРЕД";
+    if (/СРЕД/.test(u)) return "СРЕД";
+    if (/ПАЛОЧ|ПАЛК/.test(u)) return "ПАЛК";
+    if (/ПЛАСТ/.test(u)) return "ПЛАСТ";
+    if (/МАЛ/.test(u)) return "МАЛ";
+  }
+  if (/УХО|УШК/.test(n)) {
+    if (/ПОЛОВИН/.test(u)) return "ПОЛОВИНКА";
+    return "Обычное";
+  }
+  if (/АОРТ/.test(n)) {
+    if (/ПОЛОВИН/.test(u)) return "ПОЛОВИНКА";
+    return "Обычная";
+  }
+  // дрессура / прайс-синонимы с фото
+  if (/МЕЛК/.test(u)) return "Мелкое";
+  if (/СРЕД|КУСОЧ|КУБИК/.test(u) && !/МЕЛК|БОЛЬШ|ЦЕЛ|ЛОМТ|ПОЛОСК/.test(u)) return "Среднее";
+  if (/СРЕД|КУСОЧК/.test(u) && !/МЕЛК/.test(u)) return "Среднее";
+  if (/КРУПН/.test(u)) return "Крупное";
+  if (/БОЛЬШ|ПОЛОСК/.test(u)) return "Большое";
+  if (/ЦЕЛ|ЛОМТ/.test(u)) return "Целое";
+  if (/КУБИК/.test(u)) return "Среднее";
+  return s;
+}
+
 function retailNormalizeName_(name) {
   var n = String(name || "").trim();
   var u = n.toUpperCase().replace(/Ё/g, "Е");
@@ -5758,7 +5969,13 @@ function retailNormalizeName_(name) {
     "КОЛЕНИ ШТ.": "КОЛЕНИ шт.",
     "НОСЫ ШТ.": "НОСЫ шт.",
     "ЛОП ХРЯЩ ШТ.": "ЛОП ХРЯЩ шт.",
-    "УТИНЫЕ ШЕИ ШТ.": "УТИНЫЕ ШЕИ шт."
+    "УТИНЫЕ ШЕИ ШТ.": "УТИНЫЕ ШЕИ шт.",
+    "ГУБЫ ШТ.": "ГУБЫ шт.",
+    "ГУБЫ ШТ": "ГУБЫ шт.",
+    "КАБАЧКИ": "КАБАЧОК",
+    "ГРУШЫ": "ГРУШИ",
+    "РУБЕЦ С": "СВЕТЛЫЙ РУБЕЦ",
+    "СВЕТЛЫЙ РУБЕЦ": "СВЕТЛЫЙ РУБЕЦ"
   };
   if (aliases[u]) return aliases[u];
   if (u.indexOf("КРОШКА РУБ") === 0) return "КРОШКА РУБЕЦ";
@@ -5767,7 +5984,7 @@ function retailNormalizeName_(name) {
 
 function retailLineCost_(name, sub, val, cat) {
   var n = retailNormalizeName_(name);
-  var s = String(sub || "").trim();
+  var s = retailNormalizeSub_(n, sub);
   var key = n + (s ? "|" + s : "");
   var info = RETAIL_PRICE_BYN_[key] || RETAIL_PRICE_BYN_[n];
   var v = Number(val) || 0;
@@ -5779,7 +5996,7 @@ function retailLineCost_(name, sub, val, cat) {
     var c = p100 * (v / 100);
     return { cost: Math.round(c * 100) / 100, per: p100, found: true };
   }
-  if (info.perPiece != null || String(cat || "") === "chew" || /шт/i.test(n)) {
+  if (info.perPiece != null || String(cat || "") === "chew" || String(cat || "") === "chews" || /шт/i.test(n)) {
     var pp = Number(info.perPiece || 0);
     return { cost: Math.round(pp * v * 100) / 100, per: pp, found: true };
   }
@@ -6237,11 +6454,10 @@ function handleGetPpFactCost(json, callback, fromPost) {
   var out = { status: "success", nick: nick, factCost: null, deliveries: 0 };
   try {
     var crmSs = getCrmSpreadsheet_();
-    var sh = findSheetByBaseName_(crmSs, "ПП");
-    if (!sh || sh.getLastRow() < 2) {
+    var data = getCrmSheetValuesFast_(crmSs, "ПП");
+    if (!data || data.length < 2) {
       return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
     }
-    var data = sh.getDataRange().getValues();
     var headers = data[0].map(function (h) { return String(h || "").trim().toUpperCase(); });
     var factCol = -1;
     for (var c = 0; c < headers.length; c++) {

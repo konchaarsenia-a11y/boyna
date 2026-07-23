@@ -579,7 +579,7 @@
   <div class="app">
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
-        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.13</div>
+        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.15</div>
         <div class="nav-tabs" id="navTabs">
           <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
           <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
@@ -975,7 +975,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.13";
+    const APP_VERSION = "v7.10.15";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1373,36 +1373,39 @@
         items: ["ЛЁГКОЕ", "ПОЧКИ", "СЕРДЦЕ", "РУБЕЦ Т", "БАРАНЬЕ ЛЁГКОЕ"],
         fractions: {
           "ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"],
-          "СЕРДЦЕ": ["Мелкое", "Целое"],
+          "СЕРДЦЕ": ["Мелкое", "Среднее", "Большое", "Целое"],
           "ПОЧКИ": ["Мелкое", "Целое"],
           "РУБЕЦ Т": ["Мелкое", "Среднее", "Крупное", "Целое"],
-          "БАРАНЬЕ ЛЁГКОЕ": ["Мелкое", "Среднее", "Целое"]
+          "БАРАНЬЕ ЛЁГКОЕ": ["Мелкое", "Среднее", "Большое", "Целое"]
         }
       },
       chew: {
         title: "Жевалки",
-        items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт.", "КНИЖКА"],
+        items: ["БЫЧИЙ КОРЕНЬ", "ТРАХЕЯ", "АОРТА", "УХО Г", "НОСЫ шт.", "СТАНОВАЯ ЖИЛА", "КОЛЕНИ шт.", "КОПЫТО шт.", "ПЕРЕПЁЛКИ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ГУБЫ шт."],
         fractions: {
-          "БЫЧИЙ КОРЕНЬ": ["МАЛ", "ОЧ МАЛ", "СРЕД", "БОЛ", "ОГР"],
-          "ТРАХЕЯ": ["МАЛ", "ПЛАСТ", "СРЕД", "БОЛ", "ОГР"],
+          "БЫЧИЙ КОРЕНЬ": ["ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
+          "ТРАХЕЯ": ["ПЛАСТ", "МАЛ", "СРЕД", "БОЛ", "ОГР"],
           "СТАНОВАЯ ЖИЛА": ["ПАЛК", "СРЕД", "БОЛ"],
-          "УХО Г": ["Обычное", "ПОЛОВИНКА"],
+          "УХО Г": ["ПОЛОВИНКА", "Обычное"],
           "АОРТА": ["ПОЛОВИНКА", "Обычная"]
         }
       },
       other: {
         title: "Другое",
-        items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО"],
-        fractions: {}
+        items: ["ПЕЧЕНЬ", "СВЕТЛЫЙ РУБЕЦ", "КНИЖКА", "ИНДЕЙКА", "МЯСНЫЕ ЛОМТИКИ", "ВЫМЯ", "СЕМЕННИКИ", "ПИКАЛЬНОЕ МЯСО", "БАРАНЬЯ ПЕЧЕНЬ"],
+        fractions: {
+          "ИНДЕЙКА": ["Мелкое", "Среднее", "Целое"],
+          "БАРАНЬЯ ПЕЧЕНЬ": ["Мелкое", "Среднее", "Целое"]
+        }
       },
       powder: {
         title: "Присыпки",
-        items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК"],
+        items: ["КРОШКА РУБЕЦ", "КРОШКА ЛЁГКОГО", "КРОШКА ПОЧЕК", "КРОШКА СЕРДЦА", "КРОШКА МИКС"],
         fractions: {}
       },
       veg: {
         title: "Овощи/Фрукты",
-        items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"],
+        items: ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "КЛУБНИКА", "МОРКОВЬ", "КАБАЧОК", "ТЫКВА", "СВЕКЛА", "БАТАТ"],
         fractions: {}
       }
     };
@@ -1607,6 +1610,8 @@
       "ЛЁГКОЕ|Целое": { per100: 8 },
       "ЛЁГКОЕ": { per100: 10 },
       "СЕРДЦЕ|Мелкое": { per100: 13 },
+      "СЕРДЦЕ|Среднее": { per100: 12 },
+      "СЕРДЦЕ|Большое": { per100: 11 },
       "СЕРДЦЕ|Целое": { per100: 10 },
       "СЕРДЦЕ": { per100: 12 },
       "РУБЕЦ Т|Мелкое": { per100: 13 },
@@ -1619,6 +1624,7 @@
       "ПОЧКИ": { per100: 10 },
       "БАРАНЬЕ ЛЁГКОЕ|Мелкое": { per100: 15 },
       "БАРАНЬЕ ЛЁГКОЕ|Среднее": { per100: 14 },
+      "БАРАНЬЕ ЛЁГКОЕ|Большое": { per100: 13 },
       "БАРАНЬЕ ЛЁГКОЕ|Целое": { per100: 12 },
       "БАРАНЬЕ ЛЁГКОЕ": { per100: 14 },
       // мясо 100г
@@ -1634,6 +1640,7 @@
       "ИНДЕЙКА|Целое": { per100: 15 },
       "ИНДЕЙКА": { per100: 16 },
       "БАРАНЬЯ ПЕЧЕНЬ|Мелкое": { per100: 18 },
+      "БАРАНЬЯ ПЕЧЕНЬ|Среднее": { per100: 17 },
       "БАРАНЬЯ ПЕЧЕНЬ|Целое": { per100: 16 },
       "БАРАНЬЯ ПЕЧЕНЬ": { per100: 17 },
       // присыпки: пакеты 20/50/100
@@ -1646,10 +1653,12 @@
       "БАНАНЫ": { per100: 10 },
       "ЯБЛОКИ": { per100: 9 },
       "ГРУШИ": { per100: 10 },
+      "КЛУБНИКА": { per100: 10 },
       "МОРКОВЬ": { per100: 10 },
       "ТЫКВА": { per100: 12 },
       "БАТАТ": { per100: 11 },
       "КАБАЧОК": { per100: 12 },
+      "СВЕКЛА": { per100: 10 },
       // погрызушки 1 шт
       "КОПЫТО шт.": { perPiece: 9 },
       "КОЛЕНИ шт.": { perPiece: 6 },
@@ -1657,6 +1666,7 @@
       "ЛОП ХРЯЩ шт.": { perPiece: 4 },
       "УТИНЫЕ ШЕИ шт.": { perPiece: 3 },
       "ПЕРЕПЁЛКИ шт.": { perPiece: 4 },
+      "ГУБЫ шт.": { perPiece: 4 },
       "ТРАХЕЯ|МАЛ": { perPiece: 4 },
       "ТРАХЕЯ|СРЕД": { perPiece: 7 },
       "ТРАХЕЯ|БОЛ": { perPiece: 12 },
@@ -1682,23 +1692,43 @@
     };
 
     function retailLookupKey_(name, sub) {
-      var n = String(name || "").toUpperCase().trim()
-        .replace(/Ё/g, "Е");
-      // restore ё for catalog keys we use with ё
+      var n = String(name || "").toUpperCase().trim().replace(/Ё/g, "Е");
       var mapN = {
         "ЛЕГКОЕ": "ЛЁГКОЕ",
         "БАРАНЬЕ ЛЕГКОЕ": "БАРАНЬЕ ЛЁГКОЕ",
         "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО",
         "ПЕРЕПЕЛКИ ШТ.": "ПЕРЕПЁЛКИ шт.",
-        "ПЕРЕПЕЛКИ ШТ": "ПЕРЕПЁЛКИ шт."
+        "ПЕРЕПЕЛКИ ШТ": "ПЕРЕПЁЛКИ шт.",
+        "КАБАЧКИ": "КАБАЧОК",
+        "ГРУШЫ": "ГРУШИ",
+        "РУБЕЦ С": "СВЕТЛЫЙ РУБЕЦ"
       };
       if (mapN[n]) n = mapN[n];
-      // catalog uses mixed case for шт.
       ["КОПЫТО шт.", "КОЛЕНИ шт.", "НОСЫ шт.", "ЛОП ХРЯЩ шт.", "УТИНЫЕ ШЕИ шт.", "ПЕРЕПЁЛКИ шт.", "ГУБЫ шт."].forEach(function (k) {
         if (n === k.toUpperCase().replace(/Ё/g, "Е")) n = k;
       });
       if (n === "КРОШКА РУБЕЦ" || n.indexOf("КРОШКА РУБ") === 0) n = "КРОШКА РУБЕЦ";
       var s = String(sub || "").trim();
+      var su = s.toUpperCase().replace(/Ё/g, "Е");
+      if (/БЫЧИЙ КОРЕН|ТРАХЕ|СТАНОВ/.test(n)) {
+        if (/ОЧЕНЬ\s*МАЛ|ОЧ\s*МАЛ/.test(su)) s = "ОЧ МАЛ";
+        else if (/ОГРОМ|РОГАЛ|ОГР/.test(su)) s = "ОГР";
+        else if (/БОЛЬШ|БОЛ/.test(su)) s = "БОЛ";
+        else if (/ПАЛОЧ|ПАЛК/.test(su)) s = "ПАЛК";
+        else if (/ПЛАСТ/.test(su)) s = "ПЛАСТ";
+        else if (/СРЕД/.test(su)) s = "СРЕД";
+        else if (/МАЛ/.test(su)) s = "МАЛ";
+      } else if (/УХО|УШК/.test(n)) {
+        s = /ПОЛОВИН/.test(su) ? "ПОЛОВИНКА" : (s ? "Обычное" : "");
+      } else if (/АОРТ/.test(n)) {
+        s = /ПОЛОВИН/.test(su) ? "ПОЛОВИНКА" : (s ? "Обычная" : "");
+      } else if (s) {
+        if (/МЕЛК/.test(su)) s = "Мелкое";
+        else if (/КРУПН/.test(su)) s = "Крупное";
+        else if (/БОЛЬШ|ПОЛОСК/.test(su)) s = "Большое";
+        else if (/ЦЕЛ|ЛОМТ/.test(su)) s = "Целое";
+        else if (/СРЕД|КУСОЧ|КУБИК/.test(su)) s = "Среднее";
+      }
       return { name: n, sub: s, key: n + (s ? "|" + s : "") };
     }
 
@@ -1844,17 +1874,16 @@
         if (hint) { hint.style.display = "none"; hint.textContent = ""; }
         return;
       }
+      // лёгкий запрос: только факт-стоимость; полный suggest — по кнопке «Состав из ПП»
       try {
-        var day = (document.getElementById("day") && document.getElementById("day").value) || "";
-        var date = (document.getElementById("deliveryDate") && document.getElementById("deliveryDate").value) || "";
-        var res = await apiGet({ action: "getPpOrderSuggest", nick: nick, day: day, date: date });
+        var res = await apiGet({ action: "getPpFactCost", nick: nick }, { timeoutMs: 12000, cacheTtlMs: 20000 });
         if (res && res.status === "success") {
           var inp = document.getElementById("orderPriceInput");
           if (inp && res.factCost != null) inp.value = String(res.factCost);
-          if (inp) inp.placeholder = "N=" + (res.deliveriesN || "?");
+          if (inp) inp.placeholder = "N=" + (res.deliveries || "?");
           if (hint) {
-            hint.textContent = res.hint || "";
-            hint.style.display = res.hint ? "block" : "none";
+            hint.textContent = res.deliveries ? ("Доставок в месяц: N=" + res.deliveries) : "";
+            hint.style.display = hint.textContent ? "block" : "none";
           }
         }
       } catch (e) {}
@@ -2175,7 +2204,7 @@
       var q = (document.getElementById("client").value || "").trim();
       if (orderType === "pp" && q.length >= 2) {
         clearTimeout(onClientNameInput._ppT);
-        onClientNameInput._ppT = setTimeout(refreshPpFactPrice, 450);
+        onClientNameInput._ppT = setTimeout(refreshPpFactPrice, 900);
       }
       if (q.length < 1) { hideClientSuggest(); return; }
       // моментально из локальной памяти
@@ -2485,13 +2514,27 @@
     window.clearIgPriceChecklist = clearIgPriceChecklist;
 
     /** JSONP GET */
-    function apiGet(params) {
+    var _apiGetMem = Object.create(null);
+    function apiGet(params, opts) {
+      opts = opts || {};
+      var timeoutMs = opts.timeoutMs || 22000;
+      var cacheTtlMs = opts.cacheTtlMs || 0;
+      var cacheKey = "";
+      if (cacheTtlMs > 0) {
+        try {
+          cacheKey = Object.keys(params).sort().map(function (k) {
+            return k + "=" + params[k];
+          }).join("&");
+          var hit = _apiGetMem[cacheKey];
+          if (hit && hit.exp > Date.now()) return Promise.resolve(hit.res);
+        } catch (eC) { cacheKey = ""; }
+      }
       return new Promise((resolve, reject) => {
         const cb = "cb_" + Math.round(Math.random() * 1e9);
         const timer = setTimeout(() => {
           cleanup();
           reject(new Error("Таймаут ответа сервера"));
-        }, 45000);
+        }, timeoutMs);
         function cleanup() {
           clearTimeout(timer);
           delete window[cb];
@@ -2500,6 +2543,9 @@
         }
         window[cb] = function (res) {
           cleanup();
+          if (cacheKey && cacheTtlMs > 0) {
+            _apiGetMem[cacheKey] = { exp: Date.now() + cacheTtlMs, res: res };
+          }
           resolve(res);
         };
         const q = Object.keys(params).map(k => k + "=" + encodeURIComponent(params[k])).join("&");
@@ -2814,24 +2860,20 @@
       try {
         await apiPost(bookingPayload);
         // В лист недели — только если дата доставки уже на «Прием заказов» / «Будущая неделя».
-        // (apiPost не возвращает тело из‑за CORS — проверяем отдельным GET)
         var dateOnWeek = false;
         try {
-          var resolved = await apiGet({ action: "resolveDayForDate", date: deliveryDate });
+          var resolved = await apiGet(
+            { action: "resolveDayForDate", date: deliveryDate },
+            { timeoutMs: 12000, cacheTtlMs: 60000 }
+          );
           dateOnWeek = !!(resolved && resolved.dayName);
         } catch (eRes) {}
         if (day && dateOnWeek) {
           try { await apiPost(payload); } catch (eWeek) {}
         }
-        await new Promise(r => setTimeout(r, 500));
-        let found = null;
-        try {
-          if (day && dateOnWeek) {
-            const check = await apiGet({ action: "getClients", day: day });
-            found = (check.clients || []).find(c => String(c.name).toUpperCase() === clientName.toUpperCase());
-          }
-        } catch (eCheck) {}
-        const inWeek = found && found.basket && found.basket.length > 0;
+        // без sleep + без повторного getClients — это главный тормоз после «Сохранить»
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+        const inWeek = !!(day && dateOnWeek && basket.length);
         const savedItems = basket.length;
         try {
           rememberClientProfile({
@@ -2858,7 +2900,7 @@
         if (dateOnWeek && inWeek) {
           celebrateSuccess("save");
           showToast((isEdit ? "Заказ обновлён" : "Заказ сохранён") +
-            " (" + found.basket.length + " поз.)" +
+            " (" + savedItems + " поз.)" +
             (orderPrice != null ? (" · " + orderPrice + " BYN") : ""));
         } else {
           showToast("Бронь на " + deliveryDate +
@@ -2974,7 +3016,7 @@
         const params = { action: "getClients" };
         if (day) params.day = day;
         if (dateStr) params.date = dateStr;
-        const res = await apiGet(params);
+        const res = await apiGet(params, { timeoutMs: 22000, cacheTtlMs: dateStr ? 0 : 8000 });
         if (res.day) {
           const daySel = document.getElementById("viewDaySelect");
           if (daySel) {
@@ -3053,10 +3095,12 @@
       const viewDay = document.getElementById("viewDaySelect").value;
       const cutDay = document.getElementById("cuttingDaySelect").value;
       const courDay = document.getElementById("courierDaySelect").value;
-      if (dayHint && viewDay === dayHint) await loadClientsForDay();
-      else if (viewDay) await loadClientsForDay();
-      if (cutDay && (!dayHint || cutDay === dayHint)) await loadCutting();
-      if (courDay && (!dayHint || courDay === dayHint)) await loadCourier();
+      var jobs = [];
+      if (dayHint && viewDay === dayHint) jobs.push(loadClientsForDay());
+      else if (viewDay) jobs.push(loadClientsForDay());
+      if (cutDay && (!dayHint || cutDay === dayHint)) jobs.push(loadCutting());
+      if (courDay && (!dayHint || courDay === dayHint)) jobs.push(loadCourier());
+      if (jobs.length) await Promise.all(jobs);
     }
 
     function toggleOrderDetail(index, event) {
@@ -3547,7 +3591,7 @@
         const screen = document.getElementById("cuttingScreen");
         if (!screen || !screen.classList.contains("active")) return;
         loadCutting(true);
-      }, 15000);
+      }, 30000);
     }
 
     function stopCuttingPoll() {
@@ -6523,13 +6567,22 @@
         "РУБЕЦ ТЕРПЫЙ": "РУБЕЦ Т",
         "ТЁРПЫЙ РУБЕЦ": "РУБЕЦ Т",
         "СВЕТЛЫЙ РУБЕЦ": "СВЕТЛЫЙ РУБЕЦ",
+        "РУБЕЦ С": "СВЕТЛЫЙ РУБЕЦ",
         "КРОШКА РУБЦА": "КРОШКА РУБЕЦ",
         "КОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
         "БЫЧИЙКОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
         "БЫЧИЙ КОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
         "ЛЕГКОЕ": "ЛЁГКОЕ",
         "ЛЁГКОЕ": "ЛЁГКОЕ",
-        "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО"
+        "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО",
+        "УШКО": "УХО Г",
+        "УШКО ГОВЯЖЬЕ": "УХО Г",
+        "УХО": "УХО Г",
+        "КАБАЧКИ": "КАБАЧОК",
+        "ГРУШЫ": "ГРУШИ",
+        "БАРАНЬЯ ПЕЧЕНЬ": "БАРАНЬЯ ПЕЧЕНЬ",
+        "ЛОПАТЧНЫЙ ХРЯЩ": "ЛОП ХРЯЩ шт.",
+        "ЛОПАТОЧНЫЙ ХРЯЩ": "ЛОП ХРЯЩ шт."
       };
       if (aliases[up]) return aliases[up];
       return up;
