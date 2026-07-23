@@ -1046,7 +1046,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.24";
+    const APP_VERSION = "v7.10.25";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1092,6 +1092,21 @@
     let priceDogCount = 1;
     let priceActiveDog = 1;
     let priceMode = "pp";
+    function makeEmptyPriceModeStore() {
+      return {
+        baskets: { 1: [], 2: [] },
+        dogCount: 1,
+        activeDog: 1,
+        lastMessage: "",
+        apiCache: null,
+        packCounts: { small: 0, medium: 0, large: 0, legs: 0 },
+        note: ""
+      };
+    }
+    var priceByMode = {
+      pp: makeEmptyPriceModeStore(),
+      retail: makeEmptyPriceModeStore()
+    };
     let postOfficeSuggestTimer = null;
     let postOfficeSuggestSeq = 0;
     let addressSuggestTimer = null;
@@ -1265,7 +1280,7 @@
       warehouseScreen: "Склад\n• Сырое/сухое, коэффициенты, снабжение.",
       subsScreen: "Подписки\n• «В заказ» и доукомплект из месяца подставляют состав с листа (ПП — с учётом слота).",
       statsScreen: "Статистика\n• Месяц, воронка БП, CAC, аудит, экспорт.",
-      priceScreen: "Расчёт\n• ПП: себест×коэф + 11 + 6×N + пакеты + фракции (свет/доставки на человека).\n• 2 собаки: два состава, 11 и 6×N один раз.\n• Розница — шаблон «Давайте подытожим…».",
+      priceScreen: "Расчёт\n• ПП и розница — отдельные составы (не смешиваются).\n• 2 собаки: два состава, 11 и 6×N один раз.\n• Розница — шаблон «Давайте подытожим…».",
       peopleScreen: "Люди\n• Роли назначают только владельцы."
     };
 
@@ -7604,9 +7619,67 @@
     }
     window.copyPriceMessage = copyPriceMessage;
 
+    function priceModeKey(mode) {
+      return (mode === "retail") ? "retail" : "pp";
+    }
+
+    function stashPriceModeState(mode) {
+      stashPriceActiveBasket();
+      var key = priceModeKey(mode != null ? mode : priceMode);
+      if (!priceByMode[key]) priceByMode[key] = makeEmptyPriceModeStore();
+      var s = priceByMode[key];
+      s.baskets = {
+        1: priceBaskets[1] || [],
+        2: priceBaskets[2] || []
+      };
+      s.dogCount = priceDogCount;
+      s.activeDog = priceActiveDog;
+      s.lastMessage = priceLastMessage || "";
+      s.apiCache = pricePpApiCache;
+      s.packCounts = {
+        small: pricePackCounts.small || 0,
+        medium: pricePackCounts.medium || 0,
+        large: pricePackCounts.large || 0,
+        legs: pricePackCounts.legs || 0
+      };
+      var noteEl = document.getElementById("priceClientNote");
+      s.note = noteEl ? String(noteEl.value || "") : (s.note || "");
+    }
+
+    function loadPriceModeState(mode) {
+      var key = priceModeKey(mode);
+      if (!priceByMode[key]) priceByMode[key] = makeEmptyPriceModeStore();
+      var s = priceByMode[key];
+      priceBaskets = {
+        1: (s.baskets && s.baskets[1]) ? s.baskets[1] : [],
+        2: (s.baskets && s.baskets[2]) ? s.baskets[2] : []
+      };
+      s.baskets = priceBaskets;
+      priceDogCount = s.dogCount === 2 ? 2 : 1;
+      priceActiveDog = (priceDogCount >= 2 && s.activeDog === 2) ? 2 : 1;
+      priceLastMessage = s.lastMessage || "";
+      pricePpApiCache = s.apiCache || null;
+      pricePackCounts = s.packCounts || { small: 0, medium: 0, large: 0, legs: 0 };
+      if (!pricePackCounts.small && pricePackCounts.small !== 0) {
+        pricePackCounts = { small: 0, medium: 0, large: 0, legs: 0 };
+      }
+      var noteEl = document.getElementById("priceClientNote");
+      if (noteEl) noteEl.value = s.note || "";
+      loadPriceActiveBasket();
+      try { renderPricePackCounters(); } catch (e0) {}
+      updatePriceDogUi();
+    }
+
     function setPriceMode(mode) {
       if (mode === "bp") mode = "pp";
-      priceMode = mode;
+      if (mode !== "retail") mode = "pp";
+      if (mode === priceMode) {
+        // уже этот режим — только обновить UI
+      } else {
+        stashPriceModeState(priceMode);
+        priceMode = mode;
+        loadPriceModeState(mode);
+      }
       var pp = document.getElementById("priceModePp");
       var bp = document.getElementById("priceModeBp");
       var ret = document.getElementById("priceModeRet");
@@ -7616,10 +7689,22 @@
       if (ret) ret.classList.toggle("active", mode === "retail");
       if (extras) extras.style.display = mode === "retail" ? "none" : "";
       try { renderPriceBasket(); } catch (e) {}
-      if (allPriceItems().length) refreshPriceLive();
-      else {
+      if (priceLastMessage) {
+        // восстановить готовое сообщение режима без пересчёта с нуля
         var box = document.getElementById("priceResult");
-        if (box) box.innerHTML = '<p class="muted">Набери состав и нажми «Собрать сообщение»</p>';
+        if (box && allPriceItems().length) {
+          refreshPriceLive();
+        } else if (box) {
+          box.innerHTML =
+            '<div class="card" style="white-space:pre-wrap;font-size:14px;line-height:1.45;">' +
+            escapeHtml(priceLastMessage) + "</div>" +
+            '<button type="button" class="btn-action btn-blue" style="margin-top:8px;" onclick="copyPriceMessage()">Копировать сообщение</button>';
+        }
+      } else if (allPriceItems().length) {
+        refreshPriceLive();
+      } else {
+        var emptyBox = document.getElementById("priceResult");
+        if (emptyBox) emptyBox.innerHTML = '<p class="muted">Набери состав и нажми «Собрать сообщение»</p>';
       }
     }
     window.setPriceMode = setPriceMode;
