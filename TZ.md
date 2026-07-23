@@ -229,12 +229,12 @@
 
 См. **[NATIVE.md](./NATIVE.md)**. Пока веб дорабатывается в TG — нативка не трогает `app.html` / `Code.gs`.
 
-- [~] Каркас Capacitor в `native/` + Android + **iOS** + sync `app.html` → `www/`
-- [~] Скорость: SWR-кэш API (`native-perf.js`), prefetch, splash, хаптик
-- [~] Мост телефона: `BoinyaNative` (notify / Live Activity API); Swift stub острова
+- [x] Каркас Capacitor в `native/` + Android + **iOS (SPM)** + sync `app.html` → `www/` (`scripts/sync-native.sh`)
+- [x] Скорость: SWR-кэш API (`native-perf.js`), prefetch, splash, хаптик (оверлеи в `native/overlays/js/`)
+- [x] Мост телефона: `BoinyaNative` (notify / Live Activity API); Swift stub `BoinyaNativeStub.swift`
 - [ ] Сборка/установка на iPhone с Mac (Xcode Signing)
 - [ ] ActivityKit + Widget Extension (Dynamic Island UI) на Mac
-- [ ] Когда владелец скажет «веб готов / накати» — полный re-sync свежего веба
+- [ ] Когда владелец скажет «веб готов / накати» — полный re-sync свежего веба (`bash scripts/sync-native.sh && cd native && npx cap sync`)
 - [ ] Push (APNs) — после Live Activities
 
 ---
@@ -248,7 +248,7 @@
 - [x] I обучение + репорты (накопление + FAB)  
 - [ ] G этап 2  
 - [ ] A напоминания (логика finish / партнёры / прайс / Instagram)  
-- [~] N натив (каркас; накат после готовности веба)  
+- [x] N натив (каркас Capacitor готов; Signing / Island / APNs / re-sync по готовности веба)  
 
 ---
 

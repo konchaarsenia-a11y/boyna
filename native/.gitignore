@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.DS_Store
+
+# Generated web copy (rebuilt by scripts/sync-native.sh)
+www/
+ios/App/App/public/
+android/app/src/main/assets/public/
+
+# iOS
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/DerivedData/
+ios/App/App/public/
+*.xcuserdata/
+xcuserdata/
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/captures/
+*.apk
+*.aab
+*.iml
+.idea/

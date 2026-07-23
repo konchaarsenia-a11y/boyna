@@ -1,79 +1,75 @@
-# Нативное приложение (параллельно с веб)
+# Нативное приложение (Capacitor)
 
-Веб (`app.html` + `Code.gs`) и нативка идут **параллельно**. Нативка **не правит** веб — только sync-снимок + слой `native/bridge/`.
+Параллельно с Telegram Mini App. **Исходный веб не трогаем:** корневые `app.html` и `Code.gs` остаются для TG / Apps Script. UI-правки нативки — только в `native/overlays/` + `scripts/sync-native.sh`.
 
-## Зачем натив
-
-Не «просто обертка», а доступ к телефону: **Dynamic Island / Live Activities**, локальные уведомления, хаптик, быстрый кэш без Telegram.
-
-## Скорость (уже в оболочке)
-
-| Механизм | Эффект |
-|---|---|
-| Вшитый `www/` (не remote URL) | Старт без скачивания UI |
-| `native-perf.js` SWR-кэш JSONP | Повторный `getClients` / нарезка / курьер — мгновенно из кэша, сеть обновляет фон |
-| dns-prefetch / preconnect к Apps Script | Чуть быстрее первый запрос |
-| Capacitor Splash + safe-area | Меньше дёрганья UI |
-| Инвалидация кэша на save/delete/cut | Без «протухших» данных после записи |
-
-Плагины: Preferences, Haptics, Local Notifications, Network.
-
-## Телефон (мост `BoinyaNative`)
-
-```js
-BoinyaNative.haptic('light'|'medium'|'success')
-BoinyaNative.notify({ title, body })
-BoinyaNative.startCuttingActivity({ day, total, done })
-BoinyaNative.updateCuttingActivity({ done, total, label })
-BoinyaNative.endCuttingActivity()
-```
-
-- Старт/финиш нарезки уже мягко хукаются (`startCutting` / `finishCutting`).
-- **Остров:** Swift-заготовки `BoinyaLiveActivityPlugin.swift` + `CuttingActivityAttributes.swift` — на Mac добавить в target Xcode, Capability «Live Activities», Widget Extension для UI острова.
-
-## Папка
+## Структура
 
 ```
 native/
-  bridge/           ← shim + perf + device (источник; копируется в www)
-  scripts/sync-from-web.ps1
-  scripts/bootstrap-ios.sh
-  ios/ android/
+  package.json              # Capacitor + плагины
+  capacitor.config.json     # appId: ru.boinya.konveyer
+  overlays/                 # слой поверх sync-снимка (источник правды)
+    css/ native-theme.css
+    js/  telegram-shim.js, boinya-native.js, native-perf.js, …
+    assets/
+  www/                      # КОПИЯ веба (gitignore, собирается sync)
+  ios/                      # Xcode, SPM (без CocoaPods)
+  android/                  # каркас
+scripts/sync-native.sh      # app.html → www/index.html + inject оверлеев
 ```
 
-## Sync
-
-```powershell
-cd native
-npm run sync:web
-npx cap sync
-```
-
-## iPhone (Mac M3)
+## Быстрый старт
 
 ```bash
+export PATH="$HOME/.local/node/bin:$PATH"   # если Node в ~/.local/node
 cd native
-./scripts/bootstrap-ios.sh
+npm install
+npm run sync          # или: bash ../scripts/sync-native.sh
+npx cap sync
+npx cap open ios      # Xcode
 ```
 
-Xcode → Team → iPhone → ▶.
+В Xcode: Signing (Team) → iPhone → ▶.
 
-## Когда веб готов
+## Sync после правок веба
 
-«веб готов, накати» → re-sync + проверка кэша/хаптика; на Mac — добить ActivityKit для острова.
+```bash
+bash scripts/sync-native.sh
+cd native && npx cap sync
+```
+
+Копируется свежий `app.html` → `native/www/index.html`, плюс `assets/`, `maps.html`, `yandex-route.html`.  
+В копии Telegram CDN заменяется на локальные шимы. **Корневой `app.html` не меняется.**
 
 ## Auth / линк с ботом (GBI)
 
-В `Code.gs` нативный агент добавляет:
+В `Code.gs` (точечный merge с Mac, см. `MERGE_NATIVE_AUTH.md` + `native/CODE_GS_NATIVE_AUTH.snippet.gs`):
 
 - `/start gbi_<token>` в `handleTelegramUpdate_`
 - actions `getNativeLinkInfo`, `pollNativeAuth`
 
 Веб-агент **не откатывает и не удаляет** это. Лист **Доступы** и `getMyAccess` общие с Mini App.
 
+## Мост BoinyaNative
+
+`window.BoinyaNative` — haptic / openUrl / notify / Live Activity.  
+iOS: ActivityKit + Widget Extension (Dynamic Island) в target Xcode.
+
+## iOS без CocoaPods
+
+Проект на **Swift Package Manager** (`ios/App/CapApp-SPM`).  
+Если `npx cap add ios` ругается на CocoaPods — шаблон уже развёрнут; достаточно `npx cap sync ios`.
+
 ## Не делать
 
-- Секреты / provisioning в git  
-- `finishFullWeekProduction` без ОК  
-- Живые клиенты — только `zzz_test`
+- Секреты / provisioning в git
+- Править корневой `app.html` «под натив»
 - Ломать shared `Code.gs`-контракты нативки (см. Handoff в [AGENTS.md](./AGENTS.md))
+- Живые клиенты — только `zzz_test`
+
+## Что дальше (TZ §N)
+
+- [x] Signing на iPhone
+- [x] ActivityKit + Widget (Dynamic Island) — manager day
+- [ ] Push (APNs)
+- [ ] Полная Android-сборка
