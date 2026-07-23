@@ -928,6 +928,27 @@
               <input type="number" id="pricePpUnder" value="0" min="0" step="0.01" inputmode="decimal" placeholder="0">
             </div>
           </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label>Наценка за фракции дрессуры (BYN / 100 г)</label>
+            <div class="seg-row" style="gap:6px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:70px;">
+                <div class="muted" style="font-size:11px;margin-bottom:2px;">целое</div>
+                <input type="number" id="priceFracWhole" value="0" step="0.1" inputmode="decimal">
+              </div>
+              <div style="flex:1;min-width:70px;">
+                <div class="muted" style="font-size:11px;margin-bottom:2px;">крупный</div>
+                <input type="number" id="priceFracLarge" value="1" step="0.1" inputmode="decimal">
+              </div>
+              <div style="flex:1;min-width:70px;">
+                <div class="muted" style="font-size:11px;margin-bottom:2px;">средний</div>
+                <input type="number" id="priceFracMedium" value="2" step="0.1" inputmode="decimal">
+              </div>
+              <div style="flex:1;min-width:70px;">
+                <div class="muted" style="font-size:11px;margin-bottom:2px;">мелкий</div>
+                <input type="number" id="priceFracSmall" value="3" step="0.1" inputmode="decimal">
+              </div>
+            </div>
+          </div>
           <div class="form-group">
             <label>Примечание для клиента (опционально)</label>
             <textarea id="priceClientNote" rows="3" placeholder="Напр.: учли тонкую нарезку, заменили становую на трахею…"></textarea>
@@ -999,7 +1020,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.20";
+    const APP_VERSION = "v7.10.21";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1215,7 +1236,7 @@
       warehouseScreen: "Склад\n• Сырое/сухое, коэффициенты, снабжение.",
       subsScreen: "Подписки\n• «В заказ» и доукомплект из месяца подставляют состав с листа (ПП — с учётом слота).",
       statsScreen: "Статистика\n• Месяц, воронка БП, CAC, аудит, экспорт.",
-      priceScreen: "Расчёт\n• ПП: себест×коэф + 11 + 6×N + пакеты + под них.\n• Жевалки — за шт; пакеты вручную.\n• Розница — готовое сообщение с суммой.",
+      priceScreen: "Расчёт\n• ПП: себест×коэф + 11 + 6×N + пакеты + под них + наценка фракций.\n• Фракции дрессуры: целое/крупный/средний/мелкий за 100г — правятся.\n• Розница — готовое сообщение с суммой.",
       peopleScreen: "Люди\n• Роли назначают только владельцы."
     };
 
@@ -7100,7 +7121,7 @@
     window.openSubInOrder = openSubInOrder;
 
     var priceLastMessage = "";
-    /** ПП: (сумма себест) × коэф + 11 + 6×N + пакеты + под них */
+    /** ПП: (сумма себест) × коэф + 11 + 6×N + пакеты + под них + наценка фракций */
     var PRICE_PP_FIXED_BYN = 11;
     var PRICE_PP_DELIVERY_PER = 6;
     var PRICE_PP_COEF_DEFAULT = 2.3;
@@ -7116,6 +7137,58 @@
       var el = document.getElementById(id);
       var v = el ? Number(el.value) : 0;
       return isFinite(v) && v > 0 ? v : 0;
+    }
+
+    function getPriceFracRates() {
+      function num(id, def) {
+        var el = document.getElementById(id);
+        var v = el ? Number(el.value) : def;
+        return isFinite(v) ? v : def;
+      }
+      return {
+        whole: num("priceFracWhole", 0),
+        large: num("priceFracLarge", 1),
+        medium: num("priceFracMedium", 2),
+        small: num("priceFracSmall", 3)
+      };
+    }
+
+    /** Ключ размера фракции дрессуры → whole|large|medium|small|"" */
+    function dressuraFractionSizeKey(sub) {
+      var fu = String(sub || "").toUpperCase().replace(/\s+/g, " ").trim();
+      if (!fu) return "";
+      if (/^ЦЕЛ/.test(fu)) return "whole";
+      if (/^БОЛЬ|^КРУП|^БОЛ\b/.test(fu) || fu === "БОЛ") return "large";
+      if (/^СРЕД/.test(fu)) return "medium";
+      if (/^МЕЛК|^МАЛ/.test(fu) && !/ОЧ/.test(fu)) return "small";
+      if (/КУБИК/.test(fu) && /МЕЛК/.test(fu)) return "small";
+      if (/КУБИК/.test(fu) && /КРУП/.test(fu)) return "large";
+      return "";
+    }
+
+    /** Наценка за фракции: все позиции дрессуры с фракцией, (г/100)×ставка */
+    function calcDressuraFractionMarkup(list, rates) {
+      var r = rates || getPriceFracRates();
+      var sum = 0;
+      var details = [];
+      (list || []).forEach(function (it) {
+        if ((it.cat || "") !== "dressura") return;
+        var main = it.main || it.name || "";
+        var sub = it.sub || "";
+        var size = dressuraFractionSizeKey(sub);
+        if (!size) return;
+        var rate = r[size];
+        if (!isFinite(rate)) rate = 0;
+        var grams = Number(it.val != null ? it.val : it.value) || 0;
+        if (grams <= 0) return;
+        var add = (grams / 100) * rate;
+        sum += add;
+        if (add !== 0) {
+          details.push(prettyProductName(main) + " " + (humanFraction(main, sub) || sub) +
+            ": " + grams + "г → +" + (Math.round(add * 100) / 100));
+        }
+      });
+      return { total: Math.round(sum * 100) / 100, details: details };
     }
 
     /** Пересчёт себест. с учётом шт (API до деплоя мог делить жевалки на 100). */
@@ -7357,10 +7430,13 @@
           if (box) box.innerHTML = '<p class="muted">Ошибка расчёта подписки</p>';
           return null;
         }
-        // себест (шт правильно) × коэф + 11 + 6×N + пакеты + под них
+        // себест × коэф + 11 + 6×N + пакеты + под них + наценка фракций
         var costSum = recalcPpCostSum(res, list);
         var deliveryByn = PRICE_PP_DELIVERY_PER * deliveriesN;
-        var subTotal = costSum * coef + PRICE_PP_FIXED_BYN + deliveryByn + packagesByn + underByn;
+        var fracRates = getPriceFracRates();
+        var fracMark = calcDressuraFractionMarkup(list, fracRates);
+        var subTotal = costSum * coef + PRICE_PP_FIXED_BYN + deliveryByn +
+          packagesByn + underByn + fracMark.total;
         var msg = composePpClientMessage(list, deliveriesN, clientNote, retail.total, subTotal);
         renderPriceMessageBox(msg,
           '<div class="card" style="margin-bottom:8px;font-size:13px;"><b>ПП</b><br>' +
@@ -7369,9 +7445,17 @@
           " + 6×" + deliveriesN + "(" + deliveryByn + ")" +
           (packagesByn ? (" + пакеты " + packagesByn) : "") +
           (underByn ? (" + под них " + underByn) : "") +
+          (fracMark.total ? (" + фракции " + fracMark.total) : "") +
           " → <b>" + roundRub(subTotal) + " BYN/мес</b>" +
+          (fracMark.details.length
+            ? ('<div class="muted" style="margin-top:4px;font-size:12px;">' +
+              escapeHtml(fracMark.details.join("; ")) + "</div>")
+            : "") +
           "<br>розница <b>" + roundRub(retail.total) + " BYN</b></div>");
-        return { pp: res, retail: retail, subTotal: subTotal, coef: coef, costSum: costSum, message: msg };
+        return {
+          pp: res, retail: retail, subTotal: subTotal, coef: coef,
+          costSum: costSum, fracMark: fracMark, message: msg
+        };
       } catch (e) {
         if (box) box.innerHTML = '<p class="muted">Ошибка сети</p>';
         return null;
