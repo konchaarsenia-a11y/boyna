@@ -539,6 +539,8 @@
     .pack-type-cell.off { opacity:0.35; text-decoration:line-through; }
     .pack-type-cell .n { display:block; font-size:20px; font-weight:700; color:var(--accent-color); }
     .pack-type-cell .l { display:block; font-size:10px; color:var(--text-muted); margin-top:2px; }
+    .pack-type-cell .fracs { display:block; margin-top:6px; font-size:10px; line-height:1.35; color:var(--text-muted); text-align:left; }
+    .pack-type-cell .fracs b { color:var(--text-main, #eee); font-weight:600; }
     .tel-link { color:var(--accent-color); text-decoration:none; font-weight:600; }
     .save-load-overlay {
       display:none; position:fixed; inset:0; z-index:10002; background:rgba(0,0,0,.82);
@@ -593,7 +595,7 @@
   <div class="app">
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
-        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.28</div>
+        <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.29</div>
         <div class="nav-tabs" id="navTabs">
           <button type="button" class="tab-link active" data-screen="orderScreen" onclick="switchTab('orderScreen')">Заказ</button>
           <button type="button" class="tab-link" data-screen="cuttingScreen" onclick="switchTab('cuttingScreen')">Нарезка</button>
@@ -1110,7 +1112,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.28";
+    const APP_VERSION = "v7.10.29";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -6705,20 +6707,49 @@
       return String(name || "").toLowerCase().indexOf(String(needle || "").toLowerCase()) >= 0;
     }
 
-    /** Граммы лёгкое/сердце/почки/рубец по корзине (крошку лёгкого не считаем). */
+    /** Граммы + фракции лёгкое/сердце/почки/рубец (крошку лёгкого не считаем). */
     function sumAssemblyOrgansFromBasket(basket) {
-      var out = { light: 0, heart: 0, kidney: 0, rumen: 0 };
+      function emptyOrg() { return { total: 0, byFrac: {} }; }
+      var out = { light: emptyOrg(), heart: emptyOrg(), kidney: emptyOrg(), rumen: emptyOrg() };
       (basket || []).forEach(function (g) {
         var n = String(g.name || g.main || "");
         var v = Number(g.val != null ? g.val : g.value) || 0;
         if (v <= 0) return;
         if (assemblyItemNameIs(n, "крошка") && (assemblyItemNameIs(n, "лёгк") || assemblyItemNameIs(n, "легк"))) return;
-        if (assemblyItemNameIs(n, "лёгк") || assemblyItemNameIs(n, "легк")) out.light += v;
-        else if (assemblyItemNameIs(n, "сердц")) out.heart += v;
-        else if (assemblyItemNameIs(n, "почк")) out.kidney += v;
-        else if (assemblyItemNameIs(n, "рубец")) out.rumen += v;
+        var key = "";
+        if (assemblyItemNameIs(n, "лёгк") || assemblyItemNameIs(n, "легк")) key = "light";
+        else if (assemblyItemNameIs(n, "сердц")) key = "heart";
+        else if (assemblyItemNameIs(n, "почк")) key = "kidney";
+        else if (assemblyItemNameIs(n, "рубец")) key = "rumen";
+        if (!key) return;
+        var sub = String(g.sub || "").trim() || "—";
+        out[key].total += v;
+        out[key].byFrac[sub] = (out[key].byFrac[sub] || 0) + v;
       });
       return out;
+    }
+
+    function mergeAssemblyOrgan(dst, src) {
+      dst.total += Number(src.total) || 0;
+      Object.keys(src.byFrac || {}).forEach(function (sub) {
+        dst.byFrac[sub] = (dst.byFrac[sub] || 0) + (Number(src.byFrac[sub]) || 0);
+      });
+    }
+
+    function renderAssemblyOrganCell(org, label) {
+      var fracOrder = ["Мелкое", "Среднее", "Крупное", "Большое", "Целое", "ОЧ МАЛ", "МАЛ", "СРЕД", "БОЛ", "ОГР"];
+      var keys = Object.keys(org.byFrac || {}).sort(function (a, b) {
+        var ia = fracOrder.indexOf(a); var ib = fracOrder.indexOf(b);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b, "ru");
+      });
+      var fracs = keys.map(function (k) {
+        return '<div>' + escapeHtml(k) + ': <b>' + org.byFrac[k] + '</b></div>';
+      }).join("");
+      return '<div class="pack-type-cell" style="cursor:default;flex:1 1 21%;min-width:72px">' +
+        '<span class="n">' + (Number(org.total) || 0) + '</span>' +
+        '<span class="l">' + escapeHtml(label) + '</span>' +
+        (fracs ? '<div class="fracs">' + fracs + '</div>' : '<div class="fracs muted">—</div>') +
+        "</div>";
     }
 
     function renderAssemblyView() {
@@ -6746,9 +6777,12 @@
 
       var rawTotals = {};
       COUNTER_ORDER.forEach(function (k) { rawTotals[k] = 0; });
-      var lightFracGrams = {};
-      var lightGramsTotal = 0;
-      var organs = { light: 0, heart: 0, kidney: 0, rumen: 0 };
+      var organs = {
+        light: { total: 0, byFrac: {} },
+        heart: { total: 0, byFrac: {} },
+        kidney: { total: 0, byFrac: {} },
+        rumen: { total: 0, byFrac: {} }
+      };
 
       pending.forEach(function (c) {
         (c.packs || []).forEach(function (p) {
@@ -6757,19 +6791,12 @@
           if (!packTypesEnabled.hasOwnProperty(key)) packTypesEnabled[key] = true;
           rawTotals[key] = (rawTotals[key] || 0) + (Number(p.bags) || 0);
         });
-        (c.lightByFraction || []).forEach(function (lf) {
-          var sub = lf.sub || "Среднее";
-          lightFracGrams[sub] = (lightFracGrams[sub] || 0) + (Number(lf.val) || 0);
-          lightGramsTotal += Number(lf.val) || 0;
-        });
         var og = sumAssemblyOrgansFromBasket(c.basket);
-        organs.light += og.light;
-        organs.heart += og.heart;
-        organs.kidney += og.kidney;
-        organs.rumen += og.rumen;
+        mergeAssemblyOrgan(organs.light, og.light);
+        mergeAssemblyOrgan(organs.heart, og.heart);
+        mergeAssemblyOrgan(organs.kidney, og.kidney);
+        mergeAssemblyOrgan(organs.rumen, og.rumen);
       });
-      // если у клиентов нет lightByFraction — fallback на organs.light
-      if (!lightGramsTotal && organs.light) lightGramsTotal = organs.light;
 
       // фраза всегда полная; «Итого» — только включённые форматы
       var enabledTotal = 0;
@@ -6793,21 +6820,12 @@
           '<span class="l">' + COUNTER_LABEL[k] + '</span></div>';
       }).join("");
 
-      var lightOrder = ["Мелкое", "Среднее", "Крупное", "Большое", "Целое"];
-      var lightKeys = Object.keys(lightFracGrams).sort(function (a, b) {
-        var ia = lightOrder.indexOf(a); var ib = lightOrder.indexOf(b);
-        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
-      });
-      var lightLines = lightKeys.map(function (k) {
-        return '<div class="pack-line">' + escapeHtml(k) + ': <b>' + lightFracGrams[k] + ' г</b></div>';
-      }).join("") || '<div class="muted">Нет лёгкого у несобранных</div>';
-
       var organCells =
-        '<div class="pack-type-row" style="margin-top:8px;">' +
-        '<div class="pack-type-cell"><span class="n">' + organs.light + '</span><span class="l">лёгкое г</span></div>' +
-        '<div class="pack-type-cell"><span class="n">' + organs.heart + '</span><span class="l">сердце г</span></div>' +
-        '<div class="pack-type-cell"><span class="n">' + organs.kidney + '</span><span class="l">почки г</span></div>' +
-        '<div class="pack-type-cell"><span class="n">' + organs.rumen + '</span><span class="l">рубец г</span></div>' +
+        '<div class="pack-type-row" style="margin-top:8px;align-items:stretch;">' +
+        renderAssemblyOrganCell(organs.light, "лёгкое г") +
+        renderAssemblyOrganCell(organs.heart, "сердце г") +
+        renderAssemblyOrganCell(organs.kidney, "почки г") +
+        renderAssemblyOrganCell(organs.rumen, "рубец г") +
         "</div>";
 
       var clientsHtml = clientsSorted.map(function (c, idx) {
@@ -6862,9 +6880,6 @@
         '<div class="total-summary-badge" style="margin-top:6px;">Собрано: <span style="color:var(--success-color)">' + doneAsm + "</span> / " + totalAsm + "</div>" +
         '<div style="margin-top:12px;"><b>Дрессура для нарезки (несобранные)</b></div>' +
         organCells +
-        '<div style="margin-top:10px;"><b>Лёгкое по фракциям</b></div>' +
-        lightLines +
-        (lightGramsTotal ? '<div class="pack-line" style="margin-top:4px;">Всего лёгкого: <b>' + lightGramsTotal + " г</b></div>" : "") +
         "</div></div>" +
         '<div class="section-title">По клиентам · отметь кого собрали</div>' +
         clientsHtml;
