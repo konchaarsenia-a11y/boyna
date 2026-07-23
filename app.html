@@ -918,6 +918,16 @@
             <label>Коэффициент</label>
             <input type="number" id="pricePpCoef" value="2.3" min="0.1" max="10" step="0.1" inputmode="decimal">
           </div>
+          <div class="seg-row" style="gap:8px;">
+            <div class="form-group" style="flex:1;margin:0;">
+              <label>Пакеты (BYN)</label>
+              <input type="number" id="pricePpPackages" value="0" min="0" step="0.01" inputmode="decimal" placeholder="0">
+            </div>
+            <div class="form-group" style="flex:1;margin:0;">
+              <label>Под них (BYN)</label>
+              <input type="number" id="pricePpUnder" value="0" min="0" step="0.01" inputmode="decimal" placeholder="0">
+            </div>
+          </div>
           <div class="form-group">
             <label>Примечание для клиента (опционально)</label>
             <textarea id="priceClientNote" rows="3" placeholder="Напр.: учли тонкую нарезку, заменили становую на трахею…"></textarea>
@@ -989,7 +999,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.19";
+    const APP_VERSION = "v7.10.20";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1205,7 +1215,7 @@
       warehouseScreen: "Склад\n• Сырое/сухое, коэффициенты, снабжение.",
       subsScreen: "Подписки\n• «В заказ» и доукомплект из месяца подставляют состав с листа (ПП — с учётом слота).",
       statsScreen: "Статистика\n• Месяц, воронка БП, CAC, аудит, экспорт.",
-      priceScreen: "Расчёт\n• ПП: себест × коэф + 11 + N (коэф можно править).\n• Розница — готовое сообщение с суммой.\n• Считает только состав этой вкладки.",
+      priceScreen: "Расчёт\n• ПП: себест×коэф + 11 + 6×N + пакеты + под них.\n• Жевалки — за шт; пакеты вручную.\n• Розница — готовое сообщение с суммой.",
       peopleScreen: "Люди\n• Роли назначают только владельцы."
     };
 
@@ -7090,8 +7100,9 @@
     window.openSubInOrder = openSubInOrder;
 
     var priceLastMessage = "";
-    /** ПП: (сумма себест) × коэф + 11 + N доставок */
+    /** ПП: (сумма себест) × коэф + 11 + 6×N + пакеты + под них */
     var PRICE_PP_FIXED_BYN = 11;
+    var PRICE_PP_DELIVERY_PER = 6;
     var PRICE_PP_COEF_DEFAULT = 2.3;
 
     function getPricePpCoef() {
@@ -7099,6 +7110,39 @@
       var v = el ? Number(el.value) : PRICE_PP_COEF_DEFAULT;
       if (!isFinite(v) || v <= 0) v = PRICE_PP_COEF_DEFAULT;
       return v;
+    }
+
+    function getPricePpExtraByn(id) {
+      var el = document.getElementById(id);
+      var v = el ? Number(el.value) : 0;
+      return isFinite(v) && v > 0 ? v : 0;
+    }
+
+    /** Пересчёт себест. с учётом шт (API до деплоя мог делить жевалки на 100). */
+    function recalcPpCostSum(res, list) {
+      var meta = {};
+      (list || []).forEach(function (it) {
+        var n = String(it.name || it.main || "").trim();
+        var s = String(it.sub || "").trim();
+        meta[n + "|" + s] = it;
+        meta[n] = it;
+      });
+      var sum = 0;
+      var used = false;
+      (res && res.lines ? res.lines : []).forEach(function (L) {
+        var it = meta[L.name + "|" + (L.sub || "")] || meta[L.name] || {};
+        var cat = it.cat || "";
+        var piece = L.piece === true ||
+          cat === "chew" || cat === "chews" ||
+          /шт/i.test(String(L.name || "")) ||
+          unitForItem(cat, L.name) === "шт";
+        var unit = Number(L.unitPrice != null ? L.unitPrice : L.per100) || 0;
+        var val = Number(L.val) || 0;
+        sum += piece ? (unit * val) : ((val / 100) * unit);
+        used = true;
+      });
+      if (used) return Math.round(sum * 100) / 100;
+      return Number(res && res.cost) || 0;
     }
 
     function prettyProductName(name) {
@@ -7299,6 +7343,8 @@
         var nEl = document.getElementById("priceDeliveriesN");
         var deliveriesN = Math.max(1, Number(nEl && nEl.value) || 1);
         var coef = getPricePpCoef();
+        var packagesByn = getPricePpExtraByn("pricePpPackages");
+        var underByn = getPricePpExtraByn("pricePpUnder");
         var noteEl = document.getElementById("priceClientNote");
         var clientNote = noteEl ? noteEl.value : "";
         var retail = calcRetailBasketTotal(list);
@@ -7311,16 +7357,21 @@
           if (box) box.innerHTML = '<p class="muted">Ошибка расчёта подписки</p>';
           return null;
         }
-        // себестоимости → сумма × коэф + 11 + N
-        var costSum = Number(res.cost) || 0;
-        var subTotal = costSum * coef + PRICE_PP_FIXED_BYN + deliveriesN;
+        // себест (шт правильно) × коэф + 11 + 6×N + пакеты + под них
+        var costSum = recalcPpCostSum(res, list);
+        var deliveryByn = PRICE_PP_DELIVERY_PER * deliveriesN;
+        var subTotal = costSum * coef + PRICE_PP_FIXED_BYN + deliveryByn + packagesByn + underByn;
         var msg = composePpClientMessage(list, deliveriesN, clientNote, retail.total, subTotal);
         renderPriceMessageBox(msg,
-          '<div class="card" style="margin-bottom:8px;"><b>ПП</b> · себест. ' + costSum +
-          " × " + coef + " + " + PRICE_PP_FIXED_BYN + " + N(" + deliveriesN + ")" +
+          '<div class="card" style="margin-bottom:8px;font-size:13px;"><b>ПП</b><br>' +
+          "себест. " + costSum + " × " + coef +
+          " + " + PRICE_PP_FIXED_BYN +
+          " + 6×" + deliveriesN + "(" + deliveryByn + ")" +
+          (packagesByn ? (" + пакеты " + packagesByn) : "") +
+          (underByn ? (" + под них " + underByn) : "") +
           " → <b>" + roundRub(subTotal) + " BYN/мес</b>" +
-          " · розница <b>" + roundRub(retail.total) + " BYN</b></div>");
-        return { pp: res, retail: retail, subTotal: subTotal, coef: coef, message: msg };
+          "<br>розница <b>" + roundRub(retail.total) + " BYN</b></div>");
+        return { pp: res, retail: retail, subTotal: subTotal, coef: coef, costSum: costSum, message: msg };
       } catch (e) {
         if (box) box.innerHTML = '<p class="muted">Ошибка сети</p>';
         return null;

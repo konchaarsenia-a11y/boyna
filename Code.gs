@@ -6110,7 +6110,15 @@ function readPriceCosts_(mode) {
     if (!map) continue;
     var key = map.name + (map.sub ? " / " + map.sub : "");
     var price = Number(String(costRow[c] || "").replace(",", ".")) || 0;
-    costs[key] = { per100: price, name: map.name, sub: map.sub, grams: map.grams };
+    costs[key] = {
+      per100: price,
+      unitPrice: price,
+      name: map.name,
+      sub: map.sub,
+      grams: map.grams !== false && map.cat !== "chew",
+      cat: map.cat || "",
+      piece: map.grams === false || map.cat === "chew"
+    };
   }
   return { costs: costs, sheet: sheetName };
 }
@@ -6162,6 +6170,7 @@ function handleCalcPrice(json, callback, fromPost) {
     var name = String(it.name || it.main || "").trim();
     var sub = String(it.sub || "").trim();
     var val = Number(it.val != null ? it.val : it.value) || 0;
+    var cat = String(it.cat || "").trim();
     if (!name || val <= 0) continue;
     var key = name + (sub ? " / " + sub : "");
     var info = priceInfo.costs[key];
@@ -6173,10 +6182,23 @@ function handleCalcPrice(json, callback, fromPost) {
         }
       }
     }
-    var per100 = info ? info.per100 : 0;
-    var cost = (val / 100) * per100;
+    var unitPrice = info ? Number(info.unitPrice != null ? info.unitPrice : info.per100) || 0 : 0;
+    var piece = false;
+    if (info && info.piece) piece = true;
+    else if (cat === "chew" || cat === "chews") piece = true;
+    else if (/шт/i.test(name)) piece = true;
+    else if (info && info.grams === false) piece = true;
+    var cost = piece ? (unitPrice * val) : ((val / 100) * unitPrice);
     totalCost += cost;
-    lines.push({ name: name, sub: sub, val: val, per100: per100, cost: Math.round(cost * 100) / 100 });
+    lines.push({
+      name: name,
+      sub: sub,
+      val: val,
+      per100: unitPrice,
+      unitPrice: unitPrice,
+      piece: piece,
+      cost: Math.round(cost * 100) / 100
+    });
   }
   var markup = 2.3;
   var total = Math.round(totalCost * markup * 100) / 100;
