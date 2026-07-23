@@ -1,32 +1,32 @@
 /**
- * ?????-???????? ? Google Apps Script
- * ???????? ?????? ? ???????????: Code.gs
- * ????? ??????: ???????? ???? ? Deploy ? New version
+ * Бойня-Конвейер — Google Apps Script
+ * Источник правды в репозитории: Code.gs
+ * После правок: вставить сюда → Deploy → New version
  *
- * ???????: PropertiesService
+ * Секреты: PropertiesService
  *   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
- *   YANDEX_MAPS_API_KEY ? ?? ?????????? (???????). ????????? ??????? ???????? ????????? (Photon/OSM).
- * ???? ???: ????????? setupSecrets() ?? ????????? (????????? ???????? ?????? ? ?????????),
- * ???? Project Settings ? Script properties.
+ *   YANDEX_MAPS_API_KEY — НЕ обязателен (платный). Подсказки адресов работают бесплатно (Photon/OSM).
+ * Один раз: выполнить setupSecrets() из редактора (заполнить значения внутри и запустить),
+ * либо Project Settings → Script properties.
  */
 
 var DAY_BLOCKS = {
-  "???????????": { nick: 3, start: 4, end: 59, addr: 60, note: 61, sheet: "manager" },
-  "???????": { nick: 64, start: 65, end: 120, addr: 121, note: 122, sheet: "manager" },
-  "?????": { nick: 125, start: 126, end: 181, addr: 182, note: 183, sheet: "manager" },
-  "???????": { nick: 186, start: 187, end: 242, addr: 243, note: 244, sheet: "manager" },
-  "???????": { nick: 247, start: 248, end: 303, addr: 304, note: 305, sheet: "manager" },
-  "??????? ??????": { nick: 3, start: 4, end: 59, addr: 60, note: 61, sheet: "future" }
+  "ПОНЕДЕЛЬНИК": { nick: 3, start: 4, end: 59, addr: 60, note: 61, sheet: "manager" },
+  "ВТОРНИК": { nick: 64, start: 65, end: 120, addr: 121, note: 122, sheet: "manager" },
+  "СРЕДА": { nick: 125, start: 126, end: 181, addr: 182, note: 183, sheet: "manager" },
+  "ЧЕТВЕРГ": { nick: 186, start: 187, end: 242, addr: 243, note: 244, sheet: "manager" },
+  "ПЯТНИЦА": { nick: 247, start: 248, end: 303, addr: 304, note: 305, sheet: "manager" },
+  "БУДУЩАЯ НЕДЕЛЯ": { nick: 3, start: 4, end: 59, addr: 60, note: 61, sheet: "future" }
 };
 
 var MANAGER_DATE_CELLS = { 0: "A1", 1: "A62", 2: "A123", 3: "A184", 4: "A245" };
 
-/** ????????? ?????? ? ????????? ???? ???, ????? ???????? ???????? ?? ???? ??? ???????? ???????. */
+/** Заполнить токены и выполнить ОДИН раз, затем очистить литералы из кода или оставить пустыми. */
 function setupSecrets() {
   var props = PropertiesService.getScriptProperties();
-  // ???????? ???? ???????? ????? ?????? ????????, ????? ????? ??????? ?????? setProperty:
-  // props.setProperty("TELEGRAM_BOT_TOKEN", "???_?????");
-  // props.setProperty("TELEGRAM_CHAT_ID", "???_CHAT_ID");
+  // Вставьте свои значения перед первым запуском, затем можно удалить строки setProperty:
+  // props.setProperty("TELEGRAM_BOT_TOKEN", "ВАШ_ТОКЕН");
+  // props.setProperty("TELEGRAM_CHAT_ID", "ВАШ_CHAT_ID");
   Logger.log("Properties keys: " + JSON.stringify(props.getKeys()));
 }
 
@@ -37,8 +37,8 @@ function getDayBlock(dayName) {
 
 function getTargetSheet(ss, block) {
   if (!block) return null;
-  if (block.sheet === "future") return ss.getSheetByName("??????? ??????");
-  return ss.getSheetByName("????? ???????");
+  if (block.sheet === "future") return ss.getSheetByName("Будущая неделя");
+  return ss.getSheetByName("Прием заказов");
 }
 
 function jsonp(callback, obj) {
@@ -46,7 +46,7 @@ function jsonp(callback, obj) {
   return ContentService.createTextOutput(cb + "(" + JSON.stringify(obj) + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
-/** ??? ?? ????? ?????? ??????? + ???????? ScriptCache ????? ???????? */
+/** Кэш на время одного запроса + короткий ScriptCache между вызовами */
 var _memoCrmSheets_ = {};
 
 function cacheGetJson_(key) {
@@ -73,7 +73,7 @@ function cachePutJson_(key, obj, ttlSec) {
 function bustClientsCache_() {
   try {
     var cache = CacheService.getScriptCache();
-    var days = ["???????????", "???????", "?????", "???????", "???????", "??????? ??????"];
+    var days = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "БУДУЩАЯ НЕДЕЛЯ"];
     for (var i = 0; i < days.length; i++) cache.remove("GC:" + days[i]);
   } catch (e) {}
 }
@@ -173,9 +173,9 @@ function getWarehouseRowForCuttingRow_(cRow) {
 }
 
 function recalculateCuttingForDate_(ss, dateText) {
-  var cutting = ss.getSheetByName("???????");
-  var manager = ss.getSheetByName("????? ???????");
-  var future = ss.getSheetByName("??????? ??????");
+  var cutting = ss.getSheetByName("Нарезка");
+  var manager = ss.getSheetByName("Прием заказов");
+  var future = ss.getSheetByName("Будущая неделя");
   var tz = ss.getSpreadsheetTimeZone();
   var itemMap = getCuttingItemMap_();
   var totals = [];
@@ -196,14 +196,14 @@ function recalculateCuttingForDate_(ss, dateText) {
 
   var matrixRows = sourceSheet === future ? 60 : 310;
   var matrix = sourceSheet ? sourceSheet.getRange(1, 3, matrixRows, 15).getValues() : null;
-  // ??????? ? [?? ??????] ? ?????????? ? ?? ?????? ? ???? ????? ???
+  // колонки с [НЕ РЕЗАТЬ] в примечании — не входят в план резки дня
   var skipCols = {};
   if (matrix) {
     var noteRowIdx = (sourceSheet === future ? 61 : (61 + offset)) - 1;
     if (noteRowIdx >= 0 && noteRowIdx < matrix.length) {
       for (var sc = 0; sc < 15; sc++) {
         var nv = String(matrix[noteRowIdx][sc] || "");
-        if (/\[?? ??????\]/i.test(nv)) skipCols[sc] = true;
+        if (/\[НЕ РЕЗАТЬ\]/i.test(nv)) skipCols[sc] = true;
       }
     }
   }
@@ -243,7 +243,7 @@ function restoreCuttingState_(cutting, memorySheet, dateText, tz) {
   for (var i = 0; i < 58; i++) {
     var row = saved[i] || [];
     surplus.push([row[0] === undefined || row[0] === null ? "" : row[0]]);
-    // ??????: [surplus, _, laid, done, outNext]; ?????? done ?????? ? [3]
+    // формат: [surplus, _, laid, done, outNext]; старый done всегда в [3]
     laid.push([asBool_(row[2])]);
     done.push([asBool_(row[3])]);
     outNext.push([asBool_(row[4])]);
@@ -272,13 +272,13 @@ function saveCuttingState_(cutting, memorySheet, dateText, tz) {
   saveMemoryJson_(memorySheet, dateText, packed, tz);
 }
 
-// ===================== onEdit: ??????? ???? =====================
+// ===================== onEdit: Нарезка дата =====================
 
 function onEdit(e) {
   var ss = e.source;
   var sheet = ss.getActiveSheet();
   var range = e.range;
-  if (sheet.getName() !== "???????" || range.getA1Notation() !== "A1") return;
+  if (sheet.getName() !== "Нарезка" || range.getA1Notation() !== "A1") return;
 
   var sheetMemory = getMemoryCuttingSheet_();
   var tz = ss.getSpreadsheetTimeZone();
@@ -289,26 +289,26 @@ function onEdit(e) {
   recalculateCuttingForDate_(ss, newDateText);
 }
 
-// ===================== ????????? ?????? =====================
+// ===================== Завершить неделю =====================
 
 function finishFullWeekProduction() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetCourier = ss.getSheetByName("????????");
-  var sheetManager = ss.getSheetByName("????? ???????");
-  var sheetWarehouse = ss.getSheetByName("?????");
-  var sheetArchive = ss.getSheetByName("?????");
-  var sheetFuture = ss.getSheetByName("??????? ??????");
-  var sheetCutting = ss.getSheetByName("???????");
+  var sheetCourier = ss.getSheetByName("Доставки");
+  var sheetManager = ss.getSheetByName("Прием заказов");
+  var sheetWarehouse = ss.getSheetByName("Склад");
+  var sheetArchive = ss.getSheetByName("Архив");
+  var sheetFuture = ss.getSheetByName("Будущая неделя");
+  var sheetCutting = ss.getSheetByName("Нарезка");
   var tz = ss.getSpreadsheetTimeZone();
 
   if (!sheetCourier || !sheetManager || !sheetWarehouse || !sheetCutting) {
-    Browser.msgBox("? ?????? ??????!");
+    Browser.msgBox("❌ Ошибка листов!");
     return;
   }
 
   var dateVal = sheetCourier.getRange("A1").getValue();
   if (!dateVal) {
-    Browser.msgBox("? ?????? ????!");
+    Browser.msgBox("❌ Ошибка даты!");
     return;
   }
 
@@ -323,8 +323,8 @@ function finishFullWeekProduction() {
   ];
 
   if (!sheetArchive) {
-    sheetArchive = ss.insertSheet("?????");
-    sheetArchive.appendRow(["???? ????????", "???????? ????????", "??????? ??????", "????? (?? / ??)"]);
+    sheetArchive = ss.insertSheet("Архив");
+    sheetArchive.appendRow(["Дата закрытия", "Успешных клиентов", "Позиция товара", "Объём (гр / шт)"]);
   }
 
   var weeklyDispatchedItems = {};
@@ -458,7 +458,7 @@ function finishFullWeekProduction() {
   var itemsKeys = Object.keys(weeklyDispatchedItems);
   if (itemsKeys.length > 0) {
     itemsKeys.forEach(function (pName) {
-      sheetArchive.appendRow([formattedDate, successClientsCount / 5 + " ???.", pName, weeklyDispatchedItems[pName]]);
+      sheetArchive.appendRow([formattedDate, successClientsCount / 5 + " чел.", pName, weeklyDispatchedItems[pName]]);
     });
   }
 
@@ -476,7 +476,7 @@ function finishFullWeekProduction() {
   nextCourierDate.setDate(nextCourierDate.getDate() + 7);
   sheetCourier.getRange("A1").setValue(Utilities.formatDate(nextCourierDate, tz, "dd.MM.yyyy"));
 
-  // ??????? ???? ?????? ?????: ???? + ?????? + ????? + ??????????
+  // Очистка всех блоков Пн–Пт: ники + товары + адрес + примечание
   Object.keys(DAY_BLOCKS).forEach(function (dayKey) {
     var b = DAY_BLOCKS[dayKey];
     if (b.sheet !== "manager") return;
@@ -486,7 +486,7 @@ function finishFullWeekProduction() {
     sheetManager.getRange(b.note, 3, 1, 15).clearContent();
   });
 
-  // ??????? ? �??????? ??????� ??????? ????? ? ?????????? (C3:Q61)
+  // Перенос с «Будущей недели» включая адрес и примечание (C3:Q61)
   if (sheetFuture) {
     var futureData = sheetFuture.getRange("C3:Q61").getValues();
     sheetManager.getRange("C3:Q61").setValues(futureData);
@@ -515,7 +515,7 @@ function finishFullWeekProduction() {
   }
 
   sendTelegramSnabNotification();
-  Browser.msgBox("?? ????? ???????!");
+  Browser.msgBox("🎉 СМЕНА ЗАКРЫТА!");
 }
 
 // ===================== HTTP API =====================
@@ -524,7 +524,7 @@ function doPost(e) {
   var callback = (e.parameter && e.parameter.callback) || "jsonp_callback";
   try {
     var json = JSON.parse(e.postData.contents);
-    // ???????? ??????? Telegram (???? webhook ??????? ?? ???? ?? URL)
+    // Входящие апдейты Telegram (если webhook смотрит на этот же URL)
     if (json && (json.message || json.callback_query || json.edited_message)) {
       handleTelegramUpdate_(json);
       return ContentService.createTextOutput("ok");
@@ -538,7 +538,7 @@ function doPost(e) {
 function doGet(e) {
   var callback = e.parameter.callback || "callback";
   if (!e.parameter.action) {
-    return ContentService.createTextOutput('{"status":"online","msg":"?????? ???"}').setMimeType(ContentService.MimeType.TEXT);
+    return ContentService.createTextOutput('{"status":"online","msg":"Бэкенд Жив"}').setMimeType(ContentService.MimeType.TEXT);
   }
 
   var action = e.parameter.action;
@@ -552,7 +552,7 @@ function doGet(e) {
     deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : ""
   };
 
-  // getClients ? ?????? ??????
+  // getClients — только чтение
   if (action === "getClients") {
     return handleGetClients(
       payload.day,
@@ -737,7 +737,7 @@ function doGet(e) {
     }, callback, false);
   }
 
-  // delete / move ???????? ? ????? GET (JSONP ?? mini-app)
+  // delete / move доступны и через GET (JSONP из mini-app)
   if (action === "deleteClient" || action === "moveClient") {
     payload.cutRaw = e.parameter.cutRaw;
     return handleApiAction(payload, callback, false);
@@ -754,7 +754,7 @@ function handleApiAction(json, callback, fromPost) {
     return handleDeleteClient(ss, json, callback);
   }
   if (action === "moveClient") {
-    // ??? move: day ? doPost = newDay; ? GET ???????? newDay ????????
+    // для move: day в doPost = newDay; в GET передаём newDay отдельно
     if (!json.day && json.newDay) json.day = json.newDay;
     return handleMoveClient(ss, json, callback);
   }
@@ -905,8 +905,8 @@ function handleApiAction(json, callback, fromPost) {
 
 function handleGetCutting(dayName, callback) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var cutting = ss.getSheetByName("???????");
-  var warehouse = ss.getSheetByName("?????");
+  var cutting = ss.getSheetByName("Нарезка");
+  var warehouse = ss.getSheetByName("Склад");
   var memory = getMemoryCuttingSheet_();
   var dateValue = getDayDate_(ss, dayName);
   var tz = ss.getSpreadsheetTimeZone();
@@ -927,10 +927,10 @@ function handleGetCutting(dayName, callback) {
     if (dry <= 0) continue;
     var name = names[i][0] == null ? "" : String(names[i][0]).trim();
     var row = i + 3;
-    var piece = /??/i.test(name);
+    var piece = /шт/i.test(name);
     var state = activeState ? activeState[i] : (savedState && savedState[i] ? savedState[i] : []);
     var surplus = Number(state[0]) || 0;
-    // active C3:G = [C,D,E,F,G] ? laid=E[2], done=F[3], outNext=G[4]
+    // active C3:G = [C,D,E,F,G] → laid=E[2], done=F[3], outNext=G[4]
     // memory packed = [surplus,"",laid,done,outNext]
     var laid = asBool_(state[2]);
     var done = asBool_(state[3]);
@@ -951,7 +951,7 @@ function handleGetCutting(dayName, callback) {
       row: row,
       name: name,
       dry: dry,
-      unit: piece ? "??" : "??",
+      unit: piece ? "шт" : "гр",
       raw: raw,
       surplus: surplus,
       done: done,
@@ -972,7 +972,7 @@ function handleGetCutting(dayName, callback) {
   });
 }
 
-/** ??????? ? [?? ??????] ? ?????? ??? ????? �???????? ??? ???????�. */
+/** Клиенты с [НЕ РЕЗАТЬ] — объёмы для блока «напилено под перенос». */
 function collectTransferOnlyCutting_(ss, dayName) {
   var data = getClientsData_(ss, dayName);
   if (data.status !== "success") return { clients: [], lines: [] };
@@ -1020,7 +1020,7 @@ function handleStartCuttingSession(json, callback, fromPost) {
   }
   var startedAt = Number(json.startedAt) || Date.now();
   var existing = getCuttingSession_();
-  // ???? ??? ???? ?? ???? ???? ? ?? ?????????? ??????
+  // если уже идёт на этот день — не сбрасываем таймер
   if (existing.active && String(existing.day) === day && existing.startedAt) {
     startedAt = existing.startedAt;
   }
@@ -1061,7 +1061,7 @@ function handleUpdateCutting(ss, json, callback, fromPost) {
     return fromPost ? jsonpText(callback, busy) : jsonp(callback, busy);
   }
   try {
-    var cutting = ss.getSheetByName("???????");
+    var cutting = ss.getSheetByName("Нарезка");
     var memory = getMemoryCuttingSheet_();
     var tz = ss.getSpreadsheetTimeZone();
     var row = Number(json.row);
@@ -1074,15 +1074,15 @@ function handleUpdateCutting(ss, json, callback, fromPost) {
     var oldDate = formatSheetDate(cutting.getRange("A1").getValue(), tz);
     var dateText = formatSheetDate(dateValue, tz);
 
-    // ?????: ?? ?????? restore ?? ?????? ???? ? ????? ???????????? ??????? ??????????.
-    // Restore ?????? ??? ????? ???? ?? ????? �???????�.
+    // Важно: НЕ делать restore на каждый клик — иначе параллельные галочки затираются.
+    // Restore только при смене даты на листе «Нарезка».
     if (oldDate !== dateText) {
       if (oldDate) saveCuttingState_(cutting, memory, oldDate, tz);
       cutting.getRange("A1").setValue(dateValue);
       restoreCuttingState_(cutting, memory, dateText, tz);
       recalculateCuttingForDate_(ss, dateText);
     } else {
-      // ???? ??? ??????? ? ?????? ???????? ?????, ????? E/F/G ?? ???????
+      // дата уже активна — только пересчёт плана, флаги E/F/G не трогаем
       recalculateCuttingForDate_(ss, dateText);
     }
 
@@ -1116,7 +1116,7 @@ function handleUpdateCutting(ss, json, callback, fromPost) {
   }
 }
 
-/** ?? ????? �????????� ???? ???????? ? ?????? 3, ??????? ? ?????? 2. ??????? C ????? �?????� ? ???? ??? ?? ?????. */
+/** На листе «Доставки» ники клиентов в строке 3, галочки в строке 2. Столбец C часто «итого» — ищем ник по имени. */
 function findCourierClientCol_(courierSheet, clientName) {
   if (!courierSheet) return -1;
   var nicks = courierSheet.getRange(3, 3, 1, 16).getValues()[0];
@@ -1124,7 +1124,7 @@ function findCourierClientCol_(courierSheet, clientName) {
     var nick = String(nicks[i] || "").trim();
     if (!nick) continue;
     var up = nick.toUpperCase();
-    if (up === "????? ?? ????" || up === "?????" || up === "???? ??????") continue;
+    if (up === "ИТОГО НА ДЕНЬ" || up === "ИТОГО" || up === "ФАКТ СНЯТОЕ") continue;
     if (nicksMatch_(nick, clientName)) return i + 3; // 1-based column
   }
   return -1;
@@ -1141,7 +1141,7 @@ function memFlagEntry_(memFlags, clientName) {
 
 function handleGetCourier(dayName, callback) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var courier = ss.getSheetByName("????????");
+  var courier = ss.getSheetByName("Доставки");
   var memory = getMemoryCourierSheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var dateValue = getDayDate_(ss, dayName);
@@ -1157,7 +1157,7 @@ function handleGetCourier(dayName, callback) {
   var memFlags = getMemoryJson_(memory, dateText, tz) || {};
   var sheetActive = courier && formatSheetDate(courier.getRange("A1").getValue(), tz) === dateText;
 
-  // ???? read ?????/??????? ?????? N�getRange
+  // один read ников/галочек вместо N×getRange
   var courierNicks = [];
   var courierDone = [];
   if (sheetActive) {
@@ -1171,7 +1171,7 @@ function handleGetCourier(dayName, callback) {
       var nick = String(courierNicks[i] || "").trim();
       if (!nick) continue;
       var up = nick.toUpperCase();
-      if (up === "????? ?? ????" || up === "?????" || up === "???? ??????") continue;
+      if (up === "ИТОГО НА ДЕНЬ" || up === "ИТОГО" || up === "ФАКТ СНЯТОЕ") continue;
       if (nicksMatch_(nick, name)) return i;
     }
     return -1;
@@ -1205,7 +1205,7 @@ function handleGetCourier(dayName, callback) {
     try {
       deliveriesN = lookupPpDeliveries_(client.name) || 0;
     } catch (eN) {}
-    // ??????? resolve ?????? ??? ???????? ??
+    // тяжёлый resolve только для реальных ПП
     if (deliveriesN >= 1) {
       try {
         var resolved = resolvePpDeliverySlot_(ss, client.name, dateValue, tz, delivered);
@@ -1222,9 +1222,9 @@ function handleGetCourier(dayName, callback) {
           else if (typeof pe === "string") paidCycle = pe;
         }
         if (deliveriesN >= 2) {
-          ppHint = "?? " + deliverySlot + "/" + deliveriesN + (deliverySlot >= 2 ? " � ???????" : "");
+          ppHint = "ПП " + deliverySlot + "/" + deliveriesN + (deliverySlot >= 2 ? " · остаток" : "");
         } else if (deliveriesN === 1) {
-          ppHint = "?? N=1";
+          ppHint = "ПП N=1";
         }
         if (deliveriesN >= 2) {
           if (paidCycle === "yes") askPaid = false;
@@ -1259,7 +1259,7 @@ function handleGetCourier(dayName, callback) {
 function handleSetDelivered(ss, json, callback) {
   var block = getDayBlock(json.day);
   var targetSheet = getTargetSheet(ss, block);
-  var courier = ss.getSheetByName("????????");
+  var courier = ss.getSheetByName("Доставки");
   var memory = getMemoryCourierSheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var dateValue = getDayDate_(ss, json.day);
@@ -1287,7 +1287,7 @@ function handleSetDelivered(ss, json, callback) {
   if (courier && formatSheetDate(courier.getRange("A1").getValue(), tz) === dateText && courierCol > 0) {
     courier.getRange(2, courierCol).setValue(delivered);
   }
-  if (!memory) memory = getMemoryCourierSheet_() || ss.insertSheet("??????_????????");
+  if (!memory) memory = getMemoryCourierSheet_() || ss.insertSheet("Память_Доставок");
   var values = getMemoryJson_(memory, dateText, tz);
   if (!values || Object.prototype.toString.call(values) === "[object Array]") {
     values = {};
@@ -1308,7 +1308,7 @@ function handleSetDelivered(ss, json, callback) {
     wStore[memKey] = { paid: paidVal, updated: dateText };
     saveMemoryJson_(memory, wKey, wStore, tz);
   }
-  // ???????? ???? ??: ???? 1/2 + ?????? ??????? + ??????
+  // Месячный цикл ПП: слот 1/2 + снимок состава + оплата
   if (delivered) {
     try {
       recordPpDeliveryCycle_(ss, json.day, json.client, dateValue, tz, paidVal || null);
@@ -1328,7 +1328,7 @@ function handleSetAssembled(ss, json, callback) {
   var assembled = json.assembled === true || String(json.assembled).toLowerCase() === "true";
   var dateText = formatSheetDate(dateValue, tz);
   var memKey = clientMatchKey_(want) || normalizeClientKey_(want);
-  if (!memory) memory = getMemoryCourierSheet_() || ss.insertSheet("??????_????????");
+  if (!memory) memory = getMemoryCourierSheet_() || ss.insertSheet("Память_Доставок");
   var values = getMemoryJson_(memory, dateText, tz);
   if (!values || Object.prototype.toString.call(values) === "[object Array]") values = {};
   var prevMem = memFlagEntry_(values, want) || values[memKey] || {};
@@ -1346,26 +1346,26 @@ function handleSetAssembled(ss, json, callback) {
   return jsonpText(callback, { status: "success", assembled: assembled });
 }
 
-/** ???????????? ???? ??? ??????: ???????, ?/?, ????????? ???????. */
+/** Нормализация ника для поиска: пробелы, ё/е, невидимые символы. */
 function normalizeClientKey_(s) {
   return String(s || "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .trim()
     .replace(/\s+/g, " ")
     .toUpperCase()
-    .replace(/?/g, "?");
+    .replace(/Ё/g, "Е");
 }
 
 /**
- * Instagram/???????? ?? ??????. ?? ???????? ????????????? ??? ?
- * ??? ??????????? ????????? raw/display, ??? ????????? ? clientMatchKey_.
+ * Instagram/латиница из строки. Не обрезает кириллическое имя —
+ * для отображения используй raw/display, для сравнения — clientMatchKey_.
  */
 function extractInstagramNick_(raw) {
   var s = String(raw || "").replace(/\s+/g, " ").trim();
   if (!s) return "";
   var at = s.match(/@([A-Za-z0-9._]{2,})/);
   if (at) return at[1];
-  // ?????? ?????? ????????/????? ? ???????
+  // убрать хвосты сегмента/мусор в скобках
   s = s.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
   var parts = s.split(/\s+/);
   for (var i = parts.length - 1; i >= 0; i--) {
@@ -1375,10 +1375,10 @@ function extractInstagramNick_(raw) {
   return "";
 }
 
-/** ???? ???????? ???????: @handle / ????????, ????? ?????? ???. */
+/** Ключ личности клиента: @handle / латиница, иначе полное имя. */
 function clientMatchKey_(raw) {
   var ex = extractInstagramNick_(raw);
-  var base = ex || String(raw || "").replace(/\s*\b(???|??|??|?)\b\s*/gi, " ").replace(/\s+/g, " ").trim();
+  var base = ex || String(raw || "").replace(/\s*\b(АФК|ПП|БП|Р)\b\s*/gi, " ").replace(/\s+/g, " ").trim();
   return normalizeClientKey_(base);
 }
 
@@ -1391,16 +1391,16 @@ function nicksMatch_(a, b) {
   return !!(na && nb && na === nb);
 }
 
-/** ??? ??? ?????? ? ????/?????: ?????? ?????? ??????, ?? ?????????? handle. */
+/** Ник для записи в лист/бронь: полная первая строка, не обрезанный handle. */
 function displayClientNick_(raw) {
   var s = String(raw || "").replace(/\s+/g, " ").trim();
   if (!s) return "";
-  s = s.replace(/\s*\b(???|??|??|?)\b\s*$/i, "").trim();
+  s = s.replace(/\s*\b(АФК|ПП|БП|Р)\b\s*$/i, "").trim();
   s = s.replace(/\s{2,}/g, " ");
   return s || extractInstagramNick_(raw) || String(raw || "").trim();
 }
 
-/** ???????? ????? ??????? ?? ???? (??? ??? ???? ???) ??? cancelled. */
+/** Пометить брони клиента на дату (или все даты дня) как cancelled. */
 function cancelBookingsForClient_(ss, clientName, deliveryDate) {
   var tz = ss.getSpreadsheetTimeZone();
   var want = normalizeClientKey_(clientName);
@@ -1446,7 +1446,7 @@ function handleDeleteClient(ss, json, callback) {
     var targetSheet = getTargetSheet(ss, block);
     if (targetSheet) {
       var nicksRowValues = targetSheet.getRange(block.nick, 3, 1, 15).getValues()[0];
-      // ??? ??????? ? ???? ????? (????????? ????)
+      // все столбцы с этим ником (дубликаты тоже)
       for (var i = 0; i < 15; i++) {
         var currentNick = normalizeClientKey_(nicksRowValues[i]);
         if (currentNick && currentNick === want) {
@@ -1462,15 +1462,15 @@ function handleDeleteClient(ss, json, callback) {
 
   var bookRes = { cancelled: 0 };
   try {
-    // ?????? ?? ???? ??? ? ?? ??????? ????? ?????? ??? ???? ?? ????
+    // только на дату дня — не трогаем брони других дат того же ника
     if (deliveryDate) {
       bookRes = cancelBookingsForClient_(ss, json.client, deliveryDate);
     }
   } catch (eBook) {}
 
-  // ?????????? ??????? ?? ???? ??? ? ?????? ???/????, ???? ????
+  // курьерская галочка на дату дня — убрать ник/флаг, если есть
   try {
-    var courier = ss.getSheetByName("????????");
+    var courier = ss.getSheetByName("Доставки");
     if (courier && deliveryDate) {
       var dateText = formatSheetDate(deliveryDate, tz);
       if (formatSheetDate(courier.getRange("A1").getValue(), tz) === dateText) {
@@ -1497,7 +1497,7 @@ function handleDeleteClient(ss, json, callback) {
       day: dayName || ""
     });
   }
-  // ??? ??? ?? ? ??????, ?? ? ?????? ? ?? ?????? (????????? ???????? / ?????????? UI)
+  // уже нет ни в неделе, ни в бронях — не ошибка (повторное удаление / рассинхрон UI)
   bustClientsCache_();
   return jsonp(callback, {
     status: "success",
@@ -1531,10 +1531,10 @@ function handleMoveClient(ss, json, callback) {
   var oldAddressValue = sourceSheet.getRange(srcBlock.addr, oldClientCol).getValue();
   var oldNoteValue = sourceSheet.getRange(srcBlock.note, oldClientCol).getValue();
   var noteStr = String(oldNoteValue || "");
-  noteStr = noteStr.replace(/\s*\[?? ??????\]/gi, "").replace(/\s*\[??????\]/gi, "").trim();
+  noteStr = noteStr.replace(/\s*\[НЕ РЕЗАТЬ\]/gi, "").replace(/\s*\[РЕЗАТЬ\]/gi, "").trim();
   var cutRaw = !(json.cutRaw === false || json.cutRaw === "0" || json.cutRaw === 0 || json.cutRaw === "false");
-  if (!cutRaw) noteStr = (noteStr ? noteStr + " " : "") + "[?? ??????]";
-  else noteStr = (noteStr ? noteStr + " " : "") + "[??????]";
+  if (!cutRaw) noteStr = (noteStr ? noteStr + " " : "") + "[НЕ РЕЗАТЬ]";
+  else noteStr = (noteStr ? noteStr + " " : "") + "[РЕЗАТЬ]";
 
   var newClientCol = -1;
   var tgtNicks = targetSheet.getRange(dstBlock.nick, 3, 1, 15).getValues()[0];
@@ -1569,7 +1569,7 @@ function handleMoveClient(ss, json, callback) {
 }
 
 /**
- * ?????????? ?????? ? ?????? ??????? (sub).
+ * Сохранение заказа с учётом фракции (sub).
  * orderItem: { name|main, sub, val|value, cat }
  */
 function handleSaveOrder(ss, json, callback) {
@@ -1598,16 +1598,16 @@ function handleSaveOrder(ss, json, callback) {
   }
   if (clientCol === -1) return jsonpText(callback, { status: "no_free_columns" });
 
-  // ??????? ??????? + ????? + ??????????
+  // очистка товаров + адрес + примечание
   targetSheet.getRange(block.start, clientCol, block.note - block.start + 1, 1).clearContent();
   if (json.address) targetSheet.getRange(block.addr, clientCol).setValue(json.address);
-  // GEO/TEL ?? ????? ? ?????????? ? ??????? ?????? ? ???????/???? phone
+  // GEO/TEL не пишем в примечание — телефон только в профиле/поле phone
   var cleanNote = stripGeoTagsFromNote_(String(json.note || "").replace(/\[TEL:[^\]]+\]/gi, "").replace(/\s{2,}/g, " ").trim());
-  // ???? ?????? (???????/???????/??) ? ??? ? ?????????? ???????
+  // цена заказа (розница/партнёр/ПП) — тег в примечании столбца
   var op = json.orderPrice;
   if (op != null && op !== "" && !isNaN(Number(op))) {
-    cleanNote = String(cleanNote || "").replace(/\[????:[^\]]*\]/gi, "").replace(/\s{2,}/g, " ").trim();
-    cleanNote = ("[????: " + Number(op) + " BYN]" + (cleanNote ? " " + cleanNote : "")).trim();
+    cleanNote = String(cleanNote || "").replace(/\[ЦЕНА:[^\]]*\]/gi, "").replace(/\s{2,}/g, " ").trim();
+    cleanNote = ("[ЦЕНА: " + Number(op) + " BYN]" + (cleanNote ? " " + cleanNote : "")).trim();
   }
   if (cleanNote) targetSheet.getRange(block.note, clientCol).setValue(cleanNote);
 
@@ -1635,20 +1635,20 @@ function handleSaveOrder(ss, json, callback) {
 
   try {
     var perm = String(json.permanentNote || "").trim();
-    var profileNote = perm || ""; // ?????????? ? ? ???????/????????; ??????? ?? ???????? ??????? ??????
+    var profileNote = perm || ""; // постоянные — в Клиенты/Контакты; разовые не затирают профиль пустым
     var src = String(json.orderType || json.source || "saveOrder");
     upsertClientProfile_(ss, json.client, json.address, json.phone || extractPhoneFromNote_(cleanNote), profileNote, src, json.basket || []);
   } catch (eProf) {}
 
   try { ensureBpAndSurveyFromOrder_(json); } catch (eBp) {}
   bustClientsCache_();
-  // Telegram-???????? ?????? ?? ????? ?? ?????? save ? ?????? ???????? ??????
+  // Telegram-проверку склада не зовём на каждый save — сильно тормозит запись
   return jsonpText(callback, { status: "success" });
 }
 
-/** ????????????? ??????? ????-???? ?? ??????? ????? (? ????????). */
+/** Сопоставление позиции мини-аппа со строкой листа (с фракцией). */
 function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
-  var nameU = normalizeProductAlias_(String(rawName || "").toUpperCase().replace(/\s*??\.?/g, "").trim());
+  var nameU = normalizeProductAlias_(String(rawName || "").toUpperCase().replace(/\s*ШТ\.?/g, "").trim());
   if (nameU.indexOf(" / ") > -1) {
     var parts = nameU.split(" / ");
     nameU = parts[0].trim();
@@ -1674,16 +1674,16 @@ function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
     } else {
       sheetFrac = extractEmbeddedFraction(sheetFull);
       sheetBase = sheetFull
-        .replace(/\s*??\.?/g, "")
-        .replace(/\s*?? ???/g, "")
-        .replace(/\s*?????????/g, "")
-        .replace(/\s*????/g, "")
-        .replace(/\s*?????/g, "")
-        .replace(/\s*???/g, "")
-        .replace(/\s*???/g, "")
-        .replace(/\s*????/g, "")
-        .replace(/\s*???/g, "")
-        .replace(/\s*???????/g, "")
+        .replace(/\s*ШТ\.?/g, "")
+        .replace(/\s*ОЧ МАЛ/g, "")
+        .replace(/\s*ПОЛОВИНКА/g, "")
+        .replace(/\s*ПАЛК/g, "")
+        .replace(/\s*ПЛАСТ/g, "")
+        .replace(/\s*ОГР/g, "")
+        .replace(/\s*МАЛ/g, "")
+        .replace(/\s*СРЕД/g, "")
+        .replace(/\s*БОЛ/g, "")
+        .replace(/\s*КРУПНОЕ/g, "")
         .trim();
     }
     sheetBase = normalizeProductAlias_(sheetBase);
@@ -1700,7 +1700,7 @@ function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
     var score = 1;
     if (subNorm) {
       if (sheetFrac && sheetFrac === subNorm) score = 10;
-      // ?????? ??????? ?? ?????? ? ?? ??????? ????? indexOf (�???� ? �?? ???�)
+      // разная фракция на строке — не матчить через indexOf («МАЛ» ⊂ «ОЧ МАЛ»)
       else if (sheetFrac && sheetFrac !== subNorm) score = 0;
       else if (!sheetFrac && sheetFull.indexOf(subNorm) > -1) score = 8;
       else if (!sheetFrac) score = 2;
@@ -1717,22 +1717,22 @@ function findSheetRowForItem(itemsInSheet, rawName, rawSub) {
   return bestScore > 0 ? bestIdx : -1;
 }
 
-/** ???????? / ???????? ????????? ? ??????? */
+/** Опечатки / варианты написания в таблице */
 function normalizeProductAlias_(nameU) {
   var n = String(nameU || "").trim();
   var aliases = {
-    "?????": "?????",
-    "?????": "?????",
-    "????": "?????",
-    "??????": "??????",
-    "?????": "??????",
-    "?????": "??????",
-    "????????": "???????",
-    "???????": "???????",
-    "?????": "????? ?",
-    "??????": "????? ??????",
-    "???????????": "????? ??????",
-    "??????": "??????"
+    "ГРУШЫ": "ГРУШИ",
+    "ГРУША": "ГРУШИ",
+    "ГРУШ": "ГРУШИ",
+    "ЯБЛОКО": "ЯБЛОКИ",
+    "ЯБЛОК": "ЯБЛОКИ",
+    "БАНАН": "БАНАНЫ",
+    "МОРКОВКА": "МОРКОВЬ",
+    "МОРКОВИ": "МОРКОВЬ",
+    "РУБЕЦ": "РУБЕЦ Т",
+    "КОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
+    "БЫЧИЙКОРЕНЬ": "БЫЧИЙ КОРЕНЬ",
+    "ЛЕГКОЕ": "ЛЁГКОЕ"
   };
   if (aliases[n]) return aliases[n];
   return n;
@@ -1740,37 +1740,37 @@ function normalizeProductAlias_(nameU) {
 
 function normalizeFraction(s) {
   if (!s) return "";
-  var u = String(s).trim().toUpperCase().replace(/\s+/g, " ").replace(/?/g, "?");
-  // ??????? �????? ??????� ? ????? �???� ?????? �?? ???� ??????????
-  if (u === "?? ???" || u === "????? ??????" || /??\s*???|?????\s*(???|????)|?????\s*(???|????)/.test(u)) return "?? ???";
-  if (u === "??????" || u === "???" || u === "?????????" || u === "?????????" || u === "??????" || u === "??????") return "???";
-  if (u === "???????" || u === "????" || u === "???????") return "????";
-  if (u === "???????" || u === "???" || u === "???????") return "???";
-  if (u === "???????") return "???????";
-  if (u === "?????" || u === "???") return "?????";
-  if (u === "?????????") return "?????????";
-  if (u === "????") return "????";
-  if (u === "?????") return "?????";
-  if (u === "???") return "???";
-  if (u === "???????" || u === "???????") return "";
+  var u = String(s).trim().toUpperCase().replace(/\s+/g, " ").replace(/Ё/g, "Е");
+  // сначала «очень мелкое» — иначе «МАЛ» внутри «ОЧ МАЛ» перехватит
+  if (u === "ОЧ МАЛ" || u === "ОЧЕНЬ МЕЛКОЕ" || /ОЧ\s*МАЛ|ОЧЕНЬ\s*(МАЛ|МЕЛК)|СУПЕР\s*(МАЛ|МЕЛК)/.test(u)) return "ОЧ МАЛ";
+  if (u === "МЕЛКОЕ" || u === "МАЛ" || u === "МАЛЕНЬКИЙ" || u === "МАЛЕНЬКОЕ" || u === "МЕЛКИЙ" || u === "МЕЛКАЯ") return "МАЛ";
+  if (u === "СРЕДНЕЕ" || u === "СРЕД" || u === "СРЕДНИЙ") return "СРЕД";
+  if (u === "БОЛЬШОЕ" || u === "БОЛ" || u === "БОЛЬШОЙ") return "БОЛ";
+  if (u === "КРУПНОЕ") return "КРУПНОЕ";
+  if (u === "ЦЕЛОЕ" || u === "ЦЕЛ") return "ЦЕЛОЕ";
+  if (u === "ПОЛОВИНКА") return "ПОЛОВИНКА";
+  if (u === "ПАЛК") return "ПАЛК";
+  if (u === "ПЛАСТ") return "ПЛАСТ";
+  if (u === "ОГР") return "ОГР";
+  if (u === "ОБЫЧНОЕ" || u === "ОБЫЧНАЯ") return "";
   return u;
 }
 
 function extractEmbeddedFraction(sheetFull) {
-  var u = String(sheetFull || "").toUpperCase().replace(/?/g, "?");
+  var u = String(sheetFull || "").toUpperCase().replace(/Ё/g, "Е");
   if (!u) return "";
-  // �?? ???� ?????? �???� ? ????? ??? ?????????? ?????
-  if (u.indexOf("?? ???") > -1 || /?????\s*(???|????)|?????\s*(???|????)/.test(u)) return "?? ???";
-  if (u.indexOf("?????????") > -1) return "?????????";
-  if (u.indexOf("????") > -1) return "????";
-  if (u.indexOf("?????") > -1) return "?????";
-  if (u.indexOf("???") > -1) return "???";
-  // \b ? JS ?? ???????? ? ?????????? ? ??????? ?? ??-??????
-  if (/(^|[^?-?A-Z0-9])???([^?-?A-Z0-9]|$)/.test(u) || u.indexOf(" ??????") > -1 || /????/.test(u)) return "???";
-  if (u.indexOf("????") > -1) return "????";
-  if (u.indexOf("???") > -1 || u.indexOf("???????") > -1) return "???";
-  if (u.indexOf("?????") > -1) return "???????";
-  if (u.indexOf("???") > -1) return "?????";
+  // «ОЧ МАЛ» раньше «МАЛ» — иначе МАЛ перехватит кусок
+  if (u.indexOf("ОЧ МАЛ") > -1 || /ОЧЕНЬ\s*(МАЛ|МЕЛК)|СУПЕР\s*(МАЛ|МЕЛК)/.test(u)) return "ОЧ МАЛ";
+  if (u.indexOf("ПОЛОВИНКА") > -1) return "ПОЛОВИНКА";
+  if (u.indexOf("ПАЛК") > -1) return "ПАЛК";
+  if (u.indexOf("ПЛАСТ") > -1) return "ПЛАСТ";
+  if (u.indexOf("ОГР") > -1) return "ОГР";
+  // \b в JS не работает с кириллицей — граница по не-буквам
+  if (/(^|[^А-ЯA-Z0-9])МАЛ([^А-ЯA-Z0-9]|$)/.test(u) || u.indexOf(" МЕЛКОЕ") > -1 || /МЕЛК/.test(u)) return "МАЛ";
+  if (u.indexOf("СРЕД") > -1) return "СРЕД";
+  if (u.indexOf("БОЛ") > -1 || u.indexOf("БОЛЬШОЕ") > -1) return "БОЛ";
+  if (u.indexOf("КРУПН") > -1) return "КРУПНОЕ";
+  if (u.indexOf("ЦЕЛ") > -1) return "ЦЕЛОЕ";
   return "";
 }
 
@@ -1796,7 +1796,7 @@ function handleGetClients(dayName, callback, dateStr) {
     for (var i = 0; i < data.clients.length; i++) delete data.clients[i].col;
     data.day = resolvedDay;
     data.date = deliveryDate ? dateKey_(deliveryDate, tz) : "";
-    // ???? ???? ? ?????? ????, ?? ???? ????? ?? ???? ? ?????? ?????
+    // если день в неделе пуст, но есть брони на дату — отдать брони
     if (deliveryDate && (!data.clients || !data.clients.length)) {
       var fromBookings = clientsFromBookings_(ss, deliveryDate);
       if (fromBookings.length) {
@@ -1878,9 +1878,9 @@ function getClientsData_(ss, dayName) {
         nameClean !== "" &&
         nameClean !== "0" &&
         checkUpper !== "0" &&
-        checkUpper !== "????? ?? ????" &&
-        checkUpper !== "?????" &&
-        checkUpper !== "???? ??????" &&
+        checkUpper !== "ИТОГО НА ДЕНЬ" &&
+        checkUpper !== "ИТОГО" &&
+        checkUpper !== "ФАКТ СНЯТОЕ" &&
         nameClean.length > 1
       ) {
         var clientBasket = [];
@@ -1914,7 +1914,7 @@ function getClientsData_(ss, dayName) {
         var rawAddr = addressesMatrix && addressesMatrix[0] ? addressesMatrix[0][colIdx] : "";
         var rawNote = notesMatrix && notesMatrix[0] ? notesMatrix[0][colIdx] : "";
         var noteStr = rawNote != null ? String(rawNote).trim() : "";
-        // ????????: GEO ?? ?????? ?????????? ? ???? ???_????????, ?? ?????? ???????
+        // Миграция: GEO из старых примечаний → лист Гео_Клиентов, из ячейки убираем
         var legacyGeo = parseGeoTagsFromNote_(noteStr);
         if (legacyGeo) noteStr = stripGeoTagsFromNote_(noteStr);
         var geoObj = geoIndex[nameClean.toUpperCase()] || legacyGeo || null;
@@ -1934,7 +1934,7 @@ function getClientsData_(ss, dayName) {
           geo: geoObj || null,
           basket: clientBasket,
           col: colIdx,
-          noCut: /\[?? ??????\]/i.test(noteStr)
+          noCut: /\[НЕ РЕЗАТЬ\]/i.test(noteStr)
         });
       }
     }
@@ -1942,56 +1942,56 @@ function getClientsData_(ss, dayName) {
   return { status: "success", clients: clientsDataList };
 }
 
-/** ?????? ?????? ????? ?????? ????? ? name/sub/cat/unit ??? mini-app. */
+/** Единый разбор имени строки листа → name/sub/cat/unit для mini-app. */
 function parseSheetItemName(currentItemName, rIdx) {
   var upper = currentItemName.toUpperCase();
   var cat = "other";
-  var unit = "??";
+  var unit = "гр";
 
-  // ????????? ?? ??????? ??????????????? ????? (?????? 0 = ?????? 4)
-  // 0?11 ????????-???????? ? � / �; ??????? ?? ??.; ? ?.?.
-  if (currentItemName.indexOf("??.") > -1 || currentItemName.indexOf("??") > -1) {
-    unit = "??";
+  // Ориентиры по строкам понедельничного блока (индекс 0 = строка 4)
+  // 0–11 дрессура-подобные с « / »; жевалки со шт.; и т.д.
+  if (currentItemName.indexOf("шт.") > -1 || currentItemName.indexOf("ШТ") > -1) {
+    unit = "шт";
   }
 
-  var vegList = ["??????", "??????", "?????", "?????", "???????", "?????", "?????"];
-  if (upper.indexOf("??????") > -1) {
+  var vegList = ["БАНАНЫ", "ЯБЛОКИ", "ГРУШИ", "ГРУШЫ", "МОРКОВЬ", "ТЫКВА", "БАТАТ"];
+  if (upper.indexOf("КРОШКА") > -1) {
     cat = "powder";
-    unit = "??";
+    unit = "гр";
   } else if (vegList.indexOf(upper) > -1 || vegList.some(function (v) { return upper === v; })) {
     cat = "veg";
-    unit = "??";
+    unit = "гр";
   } else if (
-    upper.indexOf("??????") === 0 ||
-    upper.indexOf("??????") === 0 ||
-    upper.indexOf("?????") === 0 ||
-    upper.indexOf("????? ?") === 0 ||
-    upper.indexOf("???????") === 0
+    upper.indexOf("ЛЁГКОЕ") === 0 ||
+    upper.indexOf("СЕРДЦЕ") === 0 ||
+    upper.indexOf("ПОЧКИ") === 0 ||
+    upper.indexOf("РУБЕЦ Т") === 0 ||
+    upper.indexOf("БАРАНЬЕ") === 0
   ) {
     if (currentItemName.indexOf(" / ") > -1) {
       cat = "dressura";
-      unit = "??";
+      unit = "гр";
     } else {
       cat = "chew";
-      unit = unit === "??" ? "??" : "??";
+      unit = unit === "шт" ? "шт" : "гр";
     }
   } else if (
-    upper.indexOf("?????") > -1 ||
-    upper.indexOf("??????") > -1 ||
-    upper.indexOf("?????") > -1 ||
-    upper.indexOf("???") > -1 ||
-    upper.indexOf("????") > -1 ||
-    upper.indexOf("????????") > -1 ||
-    upper.indexOf("??????") > -1 ||
-    upper.indexOf("??????") > -1 ||
-    upper.indexOf("?????????") > -1 ||
-    upper.indexOf("???") > -1 ||
-    upper.indexOf("??????") > -1 ||
-    upper.indexOf("????") > -1 ||
-    upper.indexOf("??????") > -1
+    upper.indexOf("БЫЧИЙ") > -1 ||
+    upper.indexOf("ТРАХЕЯ") > -1 ||
+    upper.indexOf("АОРТА") > -1 ||
+    upper.indexOf("УХО") > -1 ||
+    upper.indexOf("НОСЫ") > -1 ||
+    upper.indexOf("СТАНОВАЯ") > -1 ||
+    upper.indexOf("КОЛЕНИ") > -1 ||
+    upper.indexOf("КОПЫТО") > -1 ||
+    upper.indexOf("ПЕРЕПЁЛКИ") > -1 ||
+    upper.indexOf("ЛОП") > -1 ||
+    upper.indexOf("УТИНЫЕ") > -1 ||
+    upper.indexOf("ГУБЫ") > -1 ||
+    upper.indexOf("КНИЖКА") > -1
   ) {
     cat = "chew";
-    unit = "??";
+    unit = "шт";
   }
 
   var cleanNameOnly = currentItemName;
@@ -2001,24 +2001,24 @@ function parseSheetItemName(currentItemName, rIdx) {
     var splitIdx = currentItemName.indexOf(" / ");
     cleanNameOnly = currentItemName.substring(0, splitIdx).trim();
     var subText = currentItemName.substring(splitIdx + 3).trim();
-    // ????????: ????????? ??????/???????/? ??? ? ?????; ??????? ? ???????????
-    if (/^(??????|???????|???????|???????|?????)$/i.test(subText)) frac = subText;
+    // дрессура: оставляем Мелкое/Среднее/… как в листе; жевалки — нормализуем
+    if (/^(Мелкое|Среднее|Большое|Крупное|Целое)$/i.test(subText)) frac = subText;
     else frac = normalizeFraction(subText) || subText;
   } else {
     frac = extractEmbeddedFraction(upper);
     cleanNameOnly = currentItemName
-      .replace(/\s*??\.?/gi, "")
-      .replace(/\s*??\.?/g, "")
-      .replace(/\s*?? ???/gi, "")
-      .replace(/\s*?????????/gi, "")
-      .replace(/\s*????/gi, "")
-      .replace(/\s*?????/gi, "")
-      .replace(/\s*???/gi, "")
-      .replace(/\s*???/gi, "")
-      .replace(/\s*????/gi, "")
-      .replace(/\s*???/gi, "")
-      .replace(/\s*???????/gi, "")
-      .replace(/\s*?????/gi, "")
+      .replace(/\s*шт\.?/gi, "")
+      .replace(/\s*ШТ\.?/g, "")
+      .replace(/\s*ОЧ МАЛ/gi, "")
+      .replace(/\s*ПОЛОВИНКА/gi, "")
+      .replace(/\s*ПАЛК/gi, "")
+      .replace(/\s*ПЛАСТ/gi, "")
+      .replace(/\s*ОГР/gi, "")
+      .replace(/\s*МАЛ/gi, "")
+      .replace(/\s*СРЕД/gi, "")
+      .replace(/\s*БОЛ/gi, "")
+      .replace(/\s*КРУПНОЕ/gi, "")
+      .replace(/\s*ЦЕЛОЕ/gi, "")
       .trim();
   }
 
@@ -2028,16 +2028,16 @@ function parseSheetItemName(currentItemName, rIdx) {
 // ===================== Telegram =====================
 
 function checkLiveDeficitAndNotify() {
-  sendTelegramSnabNotificationInternal("?? *??????????? ??????? ????? ?? ??????!*");
+  sendTelegramSnabNotificationInternal("🚨 *ОПЕРАТИВНЫЙ ДЕФИЦИТ СЫРЬЯ НА СКЛАДЕ!*");
 }
 
 function sendTelegramSnabNotification() {
-  sendTelegramSnabNotificationInternal("?? *???? ????????? ?? ????? ??????*");
+  sendTelegramSnabNotificationInternal("🚨 *ПЛАН СНАБЖЕНИЯ НА НОВУЮ НЕДЕЛЮ*");
 }
 
 function sendTelegramSnabNotificationInternal(headerText) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetWarehouse = ss.getSheetByName("?????");
+  var sheetWarehouse = ss.getSheetByName("Склад");
   if (!sheetWarehouse) return;
 
   var names = sheetWarehouse.getRange("A2:A35").getValues();
@@ -2051,8 +2051,8 @@ function sendTelegramSnabNotificationInternal(headerText) {
     if (itemName !== "" && needToBuy > 0) {
       hasDeficit = true;
       var rowNum = i + 2;
-      var unit = rowNum >= 15 && rowNum <= 25 ? " ??." : " ??";
-      messageLines.push("? " + itemName + ": " + needToBuy.toFixed(1) + unit);
+      var unit = rowNum >= 15 && rowNum <= 25 ? " шт." : " кг";
+      messageLines.push("• " + itemName + ": " + needToBuy.toFixed(1) + unit);
     }
   }
 
@@ -2062,11 +2062,11 @@ function sendTelegramSnabNotificationInternal(headerText) {
   var token = props.getProperty("TELEGRAM_BOT_TOKEN");
   var chatId = props.getProperty("TELEGRAM_CHAT_ID");
   if (!token || !chatId) {
-    Logger.log("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID ?? ?????? ? Script Properties");
+    Logger.log("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID не заданы в Script Properties");
     return;
   }
 
-  var fullMessage = headerText + "\n" + messageLines.join("\n") + "\n\n?? _?????-???????? v4.0_";
+  var fullMessage = headerText + "\n" + messageLines.join("\n") + "\n\n🏭 _Бойня-Конвейер v4.0_";
   UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
     method: "post",
     contentType: "application/json",
@@ -2082,8 +2082,8 @@ function getTelegramToken_() {
 function telegramSendText_(chatId, text) {
   var token = getTelegramToken_();
   var id = chatId != null ? String(chatId).trim() : "";
-  if (!token) return { ok: false, error: "no_token_or_chat", message: "no_token", description: "??? TELEGRAM_BOT_TOKEN ? Script Properties" };
-  if (!id) return { ok: false, error: "no_token_or_chat", message: "no_chat", description: "?????? chat id ???????" };
+  if (!token) return { ok: false, error: "no_token_or_chat", message: "no_token", description: "Нет TELEGRAM_BOT_TOKEN в Script Properties" };
+  if (!id) return { ok: false, error: "no_token_or_chat", message: "no_chat", description: "Пустой chat id курьера" };
   var res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
     method: "post",
     contentType: "application/json",
@@ -2103,9 +2103,9 @@ function telegramSendText_(chatId, text) {
 
 function getCouriersSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName("???????_??");
+  var sh = ss.getSheetByName("Курьеры_ТГ");
   if (!sh) {
-    sh = ss.insertSheet("???????_??");
+    sh = ss.insertSheet("Курьеры_ТГ");
     sh.getRange(1, 1, 1, 4).setValues([["chatId", "name", "username", "updatedAt"]]);
     sh.hideSheet();
   }
@@ -2146,12 +2146,12 @@ function handleTelegramUpdate_(update) {
     upsertCourier_(chat.id, name, from.username || "");
     var text = String(msg.text || "");
     if (/^\/start/i.test(text)) {
-      telegramSendText_(chat.id, "??????! ?? ? ?????? ???????? ?????. ????? ??????? ??????? ??????? ? ?????? ????.");
+      telegramSendText_(chat.id, "Привет! Ты в списке курьеров Бойни. Когда сменщик пришлёт маршрут — придёт сюда.");
     }
   } catch (eTg) {
     try {
       if (update && update.callback_query && update.callback_query.id) {
-        telegramAnswerCallback_(update.callback_query.id, "?????? ?????????");
+        telegramAnswerCallback_(update.callback_query.id, "Ошибка обработки");
       }
     } catch (eAns) {}
   }
@@ -2190,7 +2190,7 @@ function handleGetCouriers(callback, fromPost) {
 function handleSendCourierRoute(json, callback, fromPost) {
   var chatId = json.telegramId || json.chatId || json.id;
   var text = json.text || "";
-  // ??????? ????? ? ????? ticket ? CacheService (POST prepare ? GET send)
+  // Длинный текст — через ticket в CacheService (POST prepare → GET send)
   if (json.ticket) {
     try {
       var cached = CacheService.getScriptCache().get("route_" + String(json.ticket));
@@ -2198,11 +2198,11 @@ function handleSendCourierRoute(json, callback, fromPost) {
     } catch (e) {}
   }
   if (!chatId) {
-    var noChat = { status: "error", message: "no_chat", description: "?????? chat id ???????" };
+    var noChat = { status: "error", message: "no_chat", description: "Пустой chat id курьера" };
     return fromPost ? jsonpText(callback, noChat) : jsonp(callback, noChat);
   }
   if (!text) {
-    var noText = { status: "error", message: "need_id_and_text", description: "??? ?????? ???????? (ticket ?? ?????? ? ????????? ? ?????????)" };
+    var noText = { status: "error", message: "need_id_and_text", description: "Нет текста маршрута (ticket не найден — подождите и повторите)" };
     return fromPost ? jsonpText(callback, noText) : jsonp(callback, noText);
   }
   var result = telegramSendText_(chatId, text);
@@ -2243,8 +2243,8 @@ function handleTelegramStatus(callback, fromPost) {
 }
 
 /**
- * ????????? ??????? ? ????????? (Photon + Nominatim).
- * ??????? ???? ??????? ?? ?????. YANDEX_MAPS_API_KEY ????? ?? ????????.
+ * Подсказки адресов — бесплатно (Photon + Nominatim).
+ * Платный ключ Яндекса не нужен. YANDEX_MAPS_API_KEY можно не задавать.
  */
 function handleSuggestAddress(json, callback, fromPost) {
   var text = String(json.text || json.q || "").trim();
@@ -2269,7 +2269,7 @@ function handleSuggestAddress(json, callback, fromPost) {
       Logger.log("nominatim suggest err: " + e2);
     }
   }
-  // ???????????: ???? ????? ???? ??????? ??? ???? ? ????????/??????? ?????? ?????
+  // Опционально: если вдруг ключ Яндекса уже есть — дополним/заменим пустой ответ
   if (!results.length) {
     var key = PropertiesService.getScriptProperties().getProperty("YANDEX_MAPS_API_KEY") || "";
     if (key) {
@@ -2285,12 +2285,12 @@ function handleSuggestAddress(json, callback, fromPost) {
   return fromPost ? jsonpText(callback, body) : jsonp(callback, body);
 }
 
-/** ?????????? ???????? Photon (OSM), ?????? ???????? ????? ?????? */
+/** Бесплатный геокодер Photon (OSM), хорошо понимает улицы Минска */
 function photonSuggest_(text) {
   var q = String(text || "").trim();
   if (!q) return [];
-  if (!/?????|????????|?????|?????|?????|???????|?????/i.test(q)) {
-    q = q + ", ?????";
+  if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(q)) {
+    q = q + ", Минск";
   }
   var url = "https://photon.komoot.io/api/?limit=7&lang=ru&lat=53.9&lon=27.56&q=" + encodeURIComponent(q);
   var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
@@ -2307,9 +2307,9 @@ function photonSuggest_(text) {
     var lon = Number(coords[0]);
     var lat = Number(coords[1]);
     if (!isFinite(lat) || !isFinite(lon)) continue;
-    // ???????????? ???????? ??????? + ??????? (~80 ??), ????? ?? ?????? ????? ?????? ??? ?????
+    // ограничиваем примерно Минском + область (~80 км), чтобы не тащить чужие города без нужды
     if (Math.abs(lat - 53.9) > 1.2 || Math.abs(lon - 27.56) > 1.5) {
-      if (!/?????|?????|?????|???????|?????|???????|??????|????????/i.test(q)) continue;
+      if (!/брест|гродн|гомел|витебск|могил|борисов|жодино|молодечн/i.test(q)) continue;
     }
     var p = f.properties || {};
     var street = String(p.street || "").trim();
@@ -2322,8 +2322,8 @@ function photonSuggest_(text) {
     else if (street) title = street;
     else if (p.name && house) title = String(p.name).trim() + ", " + house;
     else title = [p.name, p.street, p.housenumber].filter(Boolean).join(", ");
-    // ??? ??????/??????/??????
-    title = String(title || "").replace(/,\s*(????????|Belarus|?????|Minsk|??????? ???????).*$/i, "").trim();
+    // без района/города/страны
+    title = String(title || "").replace(/,\s*(Беларусь|Belarus|Минск|Minsk|Минская область).*$/i, "").trim();
     if (!title) continue;
     var keyDup = lat.toFixed(5) + "," + lon.toFixed(5);
     if (seen[keyDup]) continue;
@@ -2342,8 +2342,8 @@ function photonSuggest_(text) {
 
 function yandexGeocodeSuggest_(text, key) {
   var q = text;
-  if (!/?????|????????|?????|?????|?????|???????|?????/i.test(text)) {
-    q = "?????, " + text;
+  if (!/минск|беларусь|брест|гродн|гомел|витебск|могил/i.test(text)) {
+    q = "Минск, " + text;
   }
   var url = "https://geocode-maps.yandex.ru/1.x/?apikey=" + encodeURIComponent(key) +
     "&format=json&lang=ru_RU&results=7&geocode=" + encodeURIComponent(q);
@@ -2377,7 +2377,7 @@ function yandexGeocodeSuggest_(text, key) {
 
 function nominatimSuggest_(text) {
   var q = text;
-  if (!/?????|????????|?????|?????/i.test(text)) q = "?????, " + text;
+  if (!/минск|беларусь|брест|гродн/i.test(text)) q = "Минск, " + text;
   var url = "https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=by&q=" +
     encodeURIComponent(q);
   var res = UrlFetchApp.fetch(url, {
@@ -2405,7 +2405,7 @@ function nominatimSuggest_(text) {
   return out;
 }
 
-/* ========== GEO ??? ?????????? ========== */
+/* ========== GEO вне примечания ========== */
 
 function stripGeoTagsFromNote_(note) {
   return String(note || "")
@@ -2415,7 +2415,7 @@ function stripGeoTagsFromNote_(note) {
     .trim();
 }
 
-/** ????????? ??????????: [TO:mgr,cut,cour]. ??? ???? ? ????????? ? ??????? (??? ??????). */
+/** Аудитория примечания: [TO:mgr,cut,cour]. Без тега — менеджеру и курьеру (как раньше). */
 function parseNoteAudience_(note) {
   var m = String(note || "").match(/\[TO:([^\]]+)\]/i);
   if (!m) return ["mgr", "cour"];
@@ -2456,18 +2456,18 @@ function noteVisibleForRole_(note, role) {
 
 function cleanNoteText_(note) {
   return stripNoteAudienceTag_(stripGeoTagsFromNote_(String(note || "")
-    .replace(/\[?????????\]/gi, "")
-    .replace(/\[????????\]/gi, "")
-    .replace(/\[??????\]/gi, "")
-    .replace(/\[?????????:[^\]]*\]/gi, "")
+    .replace(/\[ЕВРОПОЧТА\]/gi, "")
+    .replace(/\[БЕЛПОЧТА\]/gi, "")
+    .replace(/\[КУРЬЕР\]/gi, "")
+    .replace(/\[ОТДЕЛЕНИЕ:[^\]]*\]/gi, "")
     .replace(/\[NOTE:[^\]]+\]/gi, "")
     .replace(/\[TEL:[^\]]+\]/gi, "")
     .replace(/\[PAID:[^\]]+\]/gi, "")
     .replace(/\+?375[\d\s\-]{9,}/g, "")
-  )).replace(/\s*\|\|\s*/g, " � ").replace(/\s{2,}/g, " ").trim();
+  )).replace(/\s*\|\|\s*/g, " · ").replace(/\s{2,}/g, " ").trim();
 }
 
-/** ????? ?????????? ?????? ??? ???? (????????? [NOTE:roles|once|perm]). */
+/** Текст примечания только для роли (поддержка [NOTE:roles|once|perm]). */
 function noteTextForRole_(note, role) {
   var raw = String(note || "");
   if (/\[NOTE:/i.test(raw)) {
@@ -2484,7 +2484,7 @@ function noteTextForRole_(note, role) {
       var t = String(m[3] || "").replace(/\[TEL:[^\]]+\]/gi, "").replace(/\+?375[\d\s\-]{9,}/g, "").trim();
       if (t) bits.push(t);
     }
-    return bits.join(" � ");
+    return bits.join(" · ");
   }
   if (!noteVisibleForRole_(raw, role)) return "";
   var t2 = cleanNoteText_(raw);
@@ -2508,7 +2508,7 @@ function collectDayRoleNotes_(ss, dayName, role) {
   return out;
 }
 
-/** monday-row (4..59) ? cutting row (3..48) */
+/** monday-row (4..59) → cutting row (3..48) */
 function getProductRowToCuttingRowMap_() {
   var itemMap = getCuttingItemMap_();
   var rev = {};
@@ -2521,8 +2521,8 @@ function getProductRowToCuttingRowMap_() {
 }
 
 /**
- * ??? ?????? ??????? ???????: ??????? ?????? ?? ???????? ? ??????????? ?????????.
- * ??????: ????? 10 ??, ? ??????? 3 + �???????� ? noted=3, groups=[{text, qty, clients}].
+ * Для каждой позиции нарезки: сколько объёма от клиентов с примечанием нарезчику.
+ * Пример: всего 10 шт, у клиента 3 + «толстые» → noted=3, groups=[{text, qty, clients}].
  */
 function collectCuttingRowNotes_(ss, dayName) {
   var block = getDayBlock(dayName);
@@ -2547,7 +2547,7 @@ function collectCuttingRowNotes_(ss, dayName) {
     var nick = nicks[col] != null ? String(nicks[col]).trim() : "";
     if (!nick || nick.length <= 1) continue;
     var upper = nick.toUpperCase();
-    if (upper === "????? ?? ????" || upper === "?????" || upper === "???? ??????") continue;
+    if (upper === "ИТОГО НА ДЕНЬ" || upper === "ИТОГО" || upper === "ФАКТ СНЯТОЕ") continue;
     var rawNote = notes[col] != null ? String(notes[col]).trim() : "";
     if (!noteVisibleForRole_(rawNote, "cut")) continue;
     var text = noteTextForRole_(rawNote, "cut");
@@ -2599,7 +2599,7 @@ function parseGeoTagsFromNote_(note) {
   };
 }
 
-/** ????? �??????� ????-????: ???, ?????? ???????/????????, ?????. ???????? = active (?????, ????, ??????). */
+/** Книга «данных» мини-аппа: гео, память нарезки/доставок, итоги. Чистовик = active (склад, люди, неделя). */
 function getDataSpreadsheet_() {
   var id = PropertiesService.getScriptProperties().getProperty("DATA_SPREADSHEET_ID");
   if (id) {
@@ -2610,9 +2610,9 @@ function getDataSpreadsheet_() {
 
 function getGeoSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = findSheetByBaseName_(ss, "???_????????");
+  var sh = findSheetByBaseName_(ss, "Гео_Клиентов");
   if (!sh) {
-    sh = ss.insertSheet("???_????????");
+    sh = ss.insertSheet("Гео_Клиентов");
     sh.getRange(1, 1, 1, 5).setValues([["day", "client", "lat", "lon", "yandexUrl"]]);
   }
   return sh;
@@ -2670,7 +2670,7 @@ function getClientGeo_(ss, dayName, clientName) {
   return null;
 }
 
-/** ?????? geo ???: ???? read ?? getClients ?????? N */
+/** Индекс geo дня: один read на getClients вместо N */
 function buildDayGeoIndex_(dayName) {
   var out = {};
   try {
@@ -2695,13 +2695,13 @@ function buildDayGeoIndex_(dayName) {
   return out;
 }
 
-/* ========== ??????? ??????? + ???? ========== */
+/* ========== Дефицит нарезки + пуши ========== */
 
 function getDeficitSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = findSheetByBaseName_(ss, "???????_???????");
+  var sh = findSheetByBaseName_(ss, "Дефицит_Нарезки");
   if (!sh) {
-    sh = ss.insertSheet("???????_???????");
+    sh = ss.insertSheet("Дефицит_Нарезки");
     sh.getRange(1, 1, 1, 8).setValues([[
       "id", "day", "item", "row", "status", "created", "notifyFrom", "lastNotify"
     ]]);
@@ -2725,7 +2725,7 @@ function nextMorningDate_(tz) {
 }
 
 function newDeficitId_() {
-  // ???????? ????????? id ? Sheets ?? ????????? ? ????? / scientific notation
+  // Короткий текстовый id — Sheets не превратит в число / scientific notation
   return "d" + Utilities.getUuid().replace(/-/g, "").slice(0, 12);
 }
 
@@ -2735,10 +2735,10 @@ function normalizeDeficitId_(v) {
 
 function isOpenDeficitStatus_(status) {
   var s = String(status || "").trim().toLowerCase();
-  return s === "open" || s === "??????";
+  return s === "open" || s === "открыт";
 }
 
-/** ???? ????? Deploy URL /exec ???????? ? ?????? ? Telegram ??????. ??????????? webhook ????. */
+/** Если после Deploy URL /exec сменился — кнопки в Telegram молчат. Подтягиваем webhook сами. */
 function ensureTelegramWebhookUrl_() {
   var token = getTelegramToken_();
   if (!token) return;
@@ -2772,14 +2772,14 @@ function handleRegisterCuttingDeficit(ss, json, callback, fromPost) {
   var tz = ss.getSpreadsheetTimeZone() || "Europe/Minsk";
   var notifyFrom = nextMorningDate_(tz);
   var now = new Date();
-  var immediate = json.immediate !== false; // ?? ????????? ????? + ?????
+  var immediate = json.immediate !== false; // по умолчанию сразу + утром
   try { ensureTelegramWebhookUrl_(); } catch (eWh) {}
   for (var i = 0; i < items.length; i++) {
     var it = items[i] || {};
     var id = newDeficitId_();
     var itemName = String(it.name || "");
     var itemRow = Number(it.row) || 0;
-    // ?? ?????? ?????: ???? ??? ???? open ?? ???+??????/????? ? ?????????, ?? append
+    // Не плодим дубли: если уже есть open по дню+строке/имени — обновляем, не append
     var existing = findOpenDeficitRow_(sh, day, itemRow, itemName);
     var rowVals = [id, day, itemName, itemRow, "open", now, notifyFrom, ""];
     if (existing > 0) {
@@ -2871,7 +2871,7 @@ function parseReadyRows_(ready, readyRowsStr) {
 }
 
 function handleFinishCutting(ss, json, callback, fromPost) {
-  // ticket (POST cache) ? ???????? ????; ???????? ? flags ? GET
+  // ticket (POST cache) — запасной путь; основной — flags в GET
   if (json.ticket) {
     try {
       var cached = CacheService.getScriptCache().get("finish_" + String(json.ticket));
@@ -2905,7 +2905,7 @@ function handleFinishCutting(ss, json, callback, fromPost) {
   }
 
   try {
-    var cutting = ss.getSheetByName("???????");
+    var cutting = ss.getSheetByName("Нарезка");
     var memory = getMemoryCuttingSheet_();
     var tz = ss.getSpreadsheetTimeZone();
     var dateValue = getDayDate_(ss, day);
@@ -2922,7 +2922,7 @@ function handleFinishCutting(ss, json, callback, fromPost) {
     }
     recalculateCuttingForDate_(ss, dateText);
 
-    // ?????? ??????? ? ??????? ? ??????? ???????? ?????? (????????/????????)
+    // Снимок галочек с клиента — главный источник правды (выложено/нарезано)
     var i;
     if (snapshot.length) {
       for (i = 0; i < snapshot.length; i++) {
@@ -2961,7 +2961,7 @@ function handleFinishCutting(ss, json, callback, fromPost) {
         row: rowNum,
         name: names[i][0] == null ? "" : String(names[i][0]).trim(),
         dry: dry,
-        unit: /??/i.test(String(names[i][0] || "")) ? "??" : "??",
+        unit: /шт/i.test(String(names[i][0] || "")) ? "шт" : "гр",
         done: asBool_(st[3]),
         laid: asBool_(st[2]),
         outNext: asBool_(st[4]),
@@ -3004,7 +3004,7 @@ function handlePrepareFinishCutting(json, callback, fromPost) {
   try {
     var raw = JSON.stringify(json);
     if (raw.length > 95000) {
-      // ???????: ??? ???? ? snapshot
+      // ужимаем: без имён в snapshot
       var lean = {
         day: json.day,
         ready: json.ready || [],
@@ -3033,9 +3033,9 @@ function handlePrepareFinishCutting(json, callback, fromPost) {
 
 function getCuttingCompletionSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = findSheetByBaseName_(ss, "?????_???????");
+  var sh = findSheetByBaseName_(ss, "Итоги_Нарезки");
   if (!sh) {
-    sh = ss.insertSheet("?????_???????");
+    sh = ss.insertSheet("Итоги_Нарезки");
     sh.getRange(1, 1, 1, 3).setValues([["date", "day", "json"]]);
   }
   return sh;
@@ -3043,18 +3043,18 @@ function getCuttingCompletionSheet_() {
 
 function getMemoryCuttingSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = findSheetByBaseName_(ss, "??????_???????");
+  var sh = findSheetByBaseName_(ss, "Память_Нарезки");
   if (!sh) {
-    sh = ss.insertSheet("??????_???????");
+    sh = ss.insertSheet("Память_Нарезки");
   }
   return sh;
 }
 
 function getMemoryCourierSheet_() {
   var ss = getDataSpreadsheet_();
-  var sh = findSheetByBaseName_(ss, "??????_????????");
+  var sh = findSheetByBaseName_(ss, "Память_Доставок");
   if (!sh) {
-    sh = ss.insertSheet("??????_????????");
+    sh = ss.insertSheet("Память_Доставок");
   }
   return sh;
 }
@@ -3118,13 +3118,13 @@ function getCuttingCompletion_(dateText) {
 function handleSetupTelegramWebhook(callback, fromPost) {
   var token = getTelegramToken_();
   if (!token) {
-    var no = { status: "error", message: "no_token", description: "??? TELEGRAM_BOT_TOKEN" };
+    var no = { status: "error", message: "no_token", description: "Нет TELEGRAM_BOT_TOKEN" };
     return fromPost ? jsonpText(callback, no) : jsonp(callback, no);
   }
   var url = "";
   try { url = ScriptApp.getService().getUrl(); } catch (e) {}
   if (!url) {
-    var noUrl = { status: "error", message: "no_webapp_url", description: "??????? Deploy ???-??????????" };
+    var noUrl = { status: "error", message: "no_webapp_url", description: "Сначала Deploy веб-приложения" };
     return fromPost ? jsonpText(callback, noUrl) : jsonp(callback, noUrl);
   }
   var res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/setWebhook", {
@@ -3139,7 +3139,7 @@ function handleSetupTelegramWebhook(callback, fromPost) {
   return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
 }
 
-/** ???? ??? ?? ?????????: ????????? setupTelegramWebhookManual() ????? Deploy */
+/** Один раз из редактора: выполнить setupTelegramWebhookManual() после Deploy */
 function setupTelegramWebhookManual() {
   var r = handleSetupTelegramWebhook("cb", true);
   Logger.log(r.getContent());
@@ -3188,7 +3188,7 @@ function telegramAnswerCallback_(callbackId, text) {
     contentType: "application/json",
     payload: JSON.stringify({
       callback_query_id: callbackId,
-      text: String(text || "??").slice(0, 180),
+      text: String(text || "Ок").slice(0, 180),
       show_alert: false
     }),
     muteHttpExceptions: true
@@ -3201,7 +3201,7 @@ function telegramEditDeficitDone_(cq, day, item) {
   if (!token) return;
   var chatId = cq.message.chat.id;
   var messageId = cq.message.message_id;
-  var doneText = "? ??????? ? ???????????\n" + day + " � " + item;
+  var doneText = "✅ Куплено и заготовлено\n" + day + " · " + item;
   try {
     var res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/editMessageText", {
       method: "post",
@@ -3218,7 +3218,7 @@ function telegramEditDeficitDone_(cq, day, item) {
     try { body = JSON.parse(res.getContentText()); } catch (eP) {}
     if (body && body.ok) return;
   } catch (eEdit) {}
-  // fallback: ???? ?? ????? ??????
+  // fallback: хотя бы снять кнопку
   try {
     UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/editMessageReplyMarkup", {
       method: "post",
@@ -3246,10 +3246,10 @@ function sendDeficitPushForRow_(rowValues) {
   if (!id) return;
   var day = String(rowValues[1] || "");
   var item = String(rowValues[2] || "");
-  var text = "?? ??????? ???????\n????: " + day + "\n???????: " + item +
-    "\n\n????? ?????? ? ??????????. ????? ?????? ? ????? ?????? ????.";
+  var text = "⚠️ Дефицит нарезки\nДень: " + day + "\nПозиция: " + item +
+    "\n\nНужно купить и заготовить. Когда готово — нажми кнопку ниже.";
   var markup = {
-    inline_keyboard: [[{ text: "? ??????? ? ???????????", callback_data: "defdone:" + id }]]
+    inline_keyboard: [[{ text: "✅ Куплено и заготовлено", callback_data: "defdone:" + id }]]
   };
   var participants = listBotParticipants_();
   for (var i = 0; i < participants.length; i++) {
@@ -3260,8 +3260,8 @@ function sendDeficitPushForRow_(rowValues) {
 function notifyOutNextStock_(info) {
   var day = String((info && info.day) || "");
   var item = String((info && info.name) || "");
-  var text = "? ????????????? ?????\n????: " + day + "\n???????: " + item +
-    "\n\n?? ??????? ??????? ???????, ?? ????????? ? ??? ???. ???????? ???????.";
+  var text = "❗ Заканчивается запас\nДень: " + day + "\nПозиция: " + item +
+    "\n\nНа текущую нарезку хватает, на следующую — уже нет. Закупите заранее.";
   var participants = listBotParticipants_();
   for (var i = 0; i < participants.length; i++) {
     telegramSendMarkup_(participants[i], text, null);
@@ -3279,7 +3279,7 @@ function tickCuttingDeficit_() {
     if (notifyFrom && now.getTime() < notifyFrom.getTime()) continue;
     var last = parseDeficitDate_(data[i][7]);
     if (last && (now.getTime() - last.getTime()) < 29 * 60 * 1000) continue;
-    // ?????? ?????? ??? ?????????? id ? ????????????? ???????? id, ????? ?????? ????? ?? ?????????
+    // Старые строки без текстового id — перевыпустить короткий id, иначе кнопка может не матчиться
     var id = normalizeDeficitId_(data[i][0]);
     if (!id || !/^d[a-f0-9]{8,}$/i.test(id)) {
       id = newDeficitId_();
@@ -3321,7 +3321,7 @@ function closeDeficitRowsById_(sh, id) {
   return closed;
 }
 
-/** ??????? ??? open ? ??? ?? ????+???????? (????? ?? ????????? finishCutting). */
+/** Закрыть все open с тем же днём+позицией (дубли от повторных finishCutting). */
 function closeSiblingOpenDeficits_(sh, day, item, rowNum) {
   var rows = sh.getDataRange().getValues();
   var wantDay = String(day || "").trim().toUpperCase();
@@ -3343,14 +3343,14 @@ function markCuttingDoneLight_(day, rowNum) {
   if (!(rowNum >= 3 && rowNum <= 48)) return;
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var cutting = ss.getSheetByName("???????");
+    var cutting = ss.getSheetByName("Нарезка");
     if (!cutting) return;
     var dateValue = getDayDate_(ss, day);
     if (!dateValue) return;
     var tz = ss.getSpreadsheetTimeZone();
     var dateText = formatSheetDate(dateValue, tz);
     var cur = formatSheetDate(cutting.getRange("A1").getValue(), tz);
-    // ?????? ???? ?? ????? ??? ?????? ???? ? ?? ?????? ??????? restore ??? ??????
+    // Только если на листе уже нужный день — не делаем тяжёлый restore под колбэк
     if (cur === dateText) {
       cutting.getRange("E" + rowNum).setValue(true);
       cutting.getRange("F" + rowNum).setValue(true);
@@ -3366,23 +3366,23 @@ function handleDeficitCallback_(cq) {
   var data = String((cq && cq.data) || "");
   var m = data.match(/^defdone:(.+)$/);
   if (!m) {
-    telegramAnswerCallback_(cq && cq.id, "??????????? ??????");
+    telegramAnswerCallback_(cq && cq.id, "Неизвестная кнопка");
     return;
   }
   var id = normalizeDeficitId_(m[1]);
-  var answerText = "??";
+  var answerText = "Ок";
   var sh = getDeficitSheet_();
   var closed = closeDeficitRowsById_(sh, id);
   var hit = closed.length ? closed[0] : null;
 
   if (!hit) {
-    // ????????? ???????? ????/??????? ?? ?????? ????????? ? ??????? open-?????
+    // Попробуем вытащить день/позицию из текста сообщения и закрыть open-дубли
     var fallbackDay = "";
     var fallbackItem = "";
     try {
       var msgText = String((cq.message && cq.message.text) || "");
-      var dayM = msgText.match(/????:\s*(.+)/i);
-      var itemM = msgText.match(/???????:\s*(.+)/i);
+      var dayM = msgText.match(/День:\s*(.+)/i);
+      var itemM = msgText.match(/Позиция:\s*(.+)/i);
       if (dayM) fallbackDay = String(dayM[1] || "").trim();
       if (itemM) fallbackItem = String(itemM[1] || "").trim();
     } catch (eFb) {}
@@ -3390,20 +3390,20 @@ function handleDeficitCallback_(cq) {
       closeSiblingOpenDeficits_(sh, fallbackDay, fallbackItem, 0);
       SpreadsheetApp.flush();
       telegramEditDeficitDone_(cq, fallbackDay, fallbackItem);
-      answerText = "???????: " + fallbackItem;
+      answerText = "Закрыто: " + fallbackItem;
     } else {
-      telegramEditDeficitDone_(cq, "?", "??? ??????? ??? ?? ???????");
-      answerText = "??? ??????? ??? ?? ???????";
+      telegramEditDeficitDone_(cq, "—", "уже закрыто или не найдено");
+      answerText = "Уже закрыто или не найдено";
     }
     telegramAnswerCallback_(cq.id, answerText);
     return;
   }
 
-  // ??????? ????????? ?????? ? ??????? ?????? ? ??? ???????? updateCutting (?? ??? ?????? ??????)
+  // Сначала закрываем статус и снимаем кнопку — без тяжёлого updateCutting (он мог вешать колбэк)
   closeSiblingOpenDeficits_(sh, hit.day, hit.item, hit.rowNum);
   SpreadsheetApp.flush();
   telegramEditDeficitDone_(cq, hit.day, hit.item);
-  telegramAnswerCallback_(cq.id, "??????? ? ???????????: " + hit.item);
+  telegramAnswerCallback_(cq.id, "Куплено и заготовлено: " + hit.item);
   markCuttingDoneLight_(hit.day, hit.rowNum);
   try {
     if (cq.from) {
@@ -3414,7 +3414,7 @@ function handleDeficitCallback_(cq) {
 
 
 
-/* ========== ????? ??????? (????) + ?????????????? D-1 ========== */
+/* ========== Брони заказов (дата) + материализация D-1 ========== */
 
 var BOOKINGS_HEADERS_ = [
   "id", "date", "client", "subId", "address", "note", "basketJson",
@@ -3423,9 +3423,9 @@ var BOOKINGS_HEADERS_ = [
 
 function getBookingsSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName("?????_???????");
+  var sh = ss.getSheetByName("Брони_Заказов");
   if (!sh) {
-    sh = ss.insertSheet("?????_???????");
+    sh = ss.insertSheet("Брони_Заказов");
     sh.getRange(1, 1, 1, BOOKINGS_HEADERS_.length).setValues([BOOKINGS_HEADERS_]);
     sh.setFrozenRows(1);
   }
@@ -3460,16 +3460,16 @@ function isoDateKey_(d, tz) {
 function findDayNameForDate_(ss, deliveryDate) {
   var tz = ss.getSpreadsheetTimeZone();
   var want = dateKey_(deliveryDate, tz);
-  var manager = ss.getSheetByName("????? ???????");
+  var manager = ss.getSheetByName("Прием заказов");
   if (!manager) return null;
-  var names = ["???????????", "???????", "?????", "???????", "???????"];
+  var names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
   for (var i = 0; i < 5; i++) {
     var cell = manager.getRange(MANAGER_DATE_CELLS[i]).getValue();
     if (formatSheetDate(cell, tz) === want) return names[i];
   }
-  var future = ss.getSheetByName("??????? ??????");
+  var future = ss.getSheetByName("Будущая неделя");
   if (future && formatSheetDate(future.getRange("A1").getValue(), tz) === want) {
-    return "??????? ??????";
+    return "Будущая неделя";
   }
   return null;
 }
@@ -3480,9 +3480,9 @@ function addDaysDate_(d, n) {
   return x;
 }
 
-/** ???? �??????�: ?????? 12? ?? ????? ??? ?????????? D?1 (= ? 12:00 D?1 ? ?????). */
+/** Окно «поздно»: меньше 12ч до конца дня подготовки D−1 (= с 12:00 D−1 и далее). */
 function isLateChangeForDelivery_(deliveryDate, now) {
-  // ????? ??? ?????????? = ??????? ?????? ??? ???????? D
+  // конец дня подготовки = полночь начала дня доставки D
   var prepDayEnd = addDaysDate_(deliveryDate, 0);
   var windowStart = new Date(prepDayEnd.getTime() - 12 * 60 * 60 * 1000);
   return now.getTime() >= windowStart.getTime();
@@ -3510,8 +3510,8 @@ function diffBasketIncrease_(oldBasket, newBasket) {
     var prev = a[k] || 0;
     var next = b[k] || 0;
     if (next > prev) {
-      var unit = /??/i.test(k) ? "??" : "?";
-      lines.push("+" + (next - prev) + " " + unit + " � " + k);
+      var unit = /шт/i.test(k) ? "шт" : "г";
+      lines.push("+" + (next - prev) + " " + unit + " · " + k);
     }
   }
   return lines;
@@ -3588,8 +3588,8 @@ function handleSaveBooking(ss, json, callback, fromPost) {
   var basket = json.basket || [];
   var note = stripGeoTagsFromNote_(json.note || "");
   if (json.orderPrice != null && json.orderPrice !== "" && !isNaN(Number(json.orderPrice))) {
-    note = String(note || "").replace(/\[????:[^\]]*\]/gi, "").replace(/\s{2,}/g, " ").trim();
-    note = ("[????: " + Number(json.orderPrice) + " BYN]" + (note ? " " + note : "")).trim();
+    note = String(note || "").replace(/\[ЦЕНА:[^\]]*\]/gi, "").replace(/\s{2,}/g, " ").trim();
+    note = ("[ЦЕНА: " + Number(json.orderPrice) + " BYN]" + (note ? " " + note : "")).trim();
   }
   if (json.phone) note = applyTelTag_(note, json.phone);
   if (json.subId) note = ("[SUB:" + String(json.subId).trim() + "] " + note).trim();
@@ -3701,12 +3701,12 @@ function writeBasketToDayColumn_(ss, dayName, client, address, note, basket, opt
   }
   if (clientCol === -1) return { ok: false, message: "no_free_columns" };
 
-  // ??? ??????? ??? ? ?? ??????????????? ? ???????? handle
+  // уже стоящий ник — не переименовывать в короткий handle
   if (!created) {
     var curNick = String(targetSheet.getRange(block.nick, clientCol).getValue() || "").trim();
     if (!curNick) targetSheet.getRange(block.nick, clientCol).setValue(displayNick);
     else if (displayNick.length > curNick.length && nicksMatch_(curNick, displayNick)) {
-      // ???? ?? ?????? ?????? ????? ?????? ??? ? ???????
+      // если из месяца пришло более полное имя — обновим
       targetSheet.getRange(block.nick, clientCol).setValue(displayNick);
     }
   }
@@ -3725,7 +3725,7 @@ function writeBasketToDayColumn_(ss, dayName, client, address, note, basket, opt
     return n && v > 0;
   });
 
-  // ?????? ????? + ? ??? ??? ???? ?????? ? ?????? ?????/???????/note, ?????? ?? ???????
+  // Пустая бронь + в дне уже есть состав → только адрес/телефон/note, состав НЕ трогаем
   if (!basketItems.length && hasQty && !opts.forceClear) {
     try {
       var curAddr = String(targetSheet.getRange(block.addr, clientCol).getValue() || "").trim();
@@ -3739,7 +3739,7 @@ function writeBasketToDayColumn_(ss, dayName, client, address, note, basket, opt
     return { ok: true, col: clientCol, preserved: true, created: created };
   }
 
-  // ?????? ????? + ?????? ???? ? ???????? (???/?????/note), ??? clear ?????????
+  // Пустая бронь + пустой день → оболочка (ник/адрес/note), без clear продуктов
   if (!basketItems.length && !hasQty) {
     if (address) targetSheet.getRange(block.addr, clientCol).setValue(address);
     var shellNote = stripGeoTagsFromNote_(note || "");
@@ -3747,18 +3747,18 @@ function writeBasketToDayColumn_(ss, dayName, client, address, note, basket, opt
     return { ok: true, col: clientCol, shell: true, created: created };
   }
 
-  // ???? ?????? ? ????? ? ????? (?? ???????? ????? ???? ??? onlyMissing+??? ???? qty)
+  // Есть состав в броне — пишем (не затираем чужой день при onlyMissing+уже есть qty)
   if (basketItems.length && hasQty && opts.skipIfHasQty) {
     return { ok: true, col: clientCol, skipped: true, created: false };
   }
 
   targetSheet.getRange(block.start, clientCol, block.note - block.start + 1, 1).clearContent();
-  // ??? ??? ????????? clear'?? ? ???????
+  // ник мог стереться clear'ом — вернуть
   targetSheet.getRange(block.nick, clientCol).setValue(
     String(targetSheet.getRange(block.nick, clientCol).getValue() || "").trim() || displayNick
   );
-  // clearContent ???? ?????? ?? start ?? note ???????????? ? nick ???? start, OK.
-  // ?? addr/note ?????? ????????? ? ????? ??????:
+  // clearContent выше чистит от start до note включительно — nick выше start, OK.
+  // Но addr/note внутри диапазона — пишем заново:
   if (address) targetSheet.getRange(block.addr, clientCol).setValue(address);
   var cleanNote2 = stripGeoTagsFromNote_(note || "");
   if (cleanNote2) targetSheet.getRange(block.note, clientCol).setValue(cleanNote2);
@@ -3826,7 +3826,7 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
     var existingDay = idKey ? alreadyInWeek[idKey] : null;
     var bookingBasketLen = (b.basket || []).length;
 
-    // already on day: ?? ?????? ?????; ?????? ????? ?? ?????????? ?????? ???????
+    // already on day: не плодим дубли; пустую броню не накатываем поверх состава
     if (onlyMissing && existingDay) {
       if (bookingBasketLen && !(existingDay.basketLen > 0)) {
         var fillRes = writeBasketToDayColumn_(ss, dayName, existingDay.name || b.client, b.address, b.note, b.basket, {
@@ -3844,7 +3844,7 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
           };
         }
       } else {
-        // ????????? ?????? ????????, ?????? ?????????
+        // подтянуть только контакты, состав сохранить
         var metaRes = writeBasketToDayColumn_(ss, dayName, existingDay.name || b.client, b.address, b.note, [], {});
         if (metaRes.ok) preserved++;
         sh.getRange(b.rowIndex, 9).setValue("pulled");
@@ -3905,11 +3905,11 @@ function handleEnsureDayMaterialized(json, callback, fromPost) {
   return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
 }
 
-/** ???? ????? ??????? ???????????? ?????? ?? �????? ???????�. */
+/** Даты Пн–Пт текущей операционной недели из «Прием заказов». */
 function getWeekDayDates_(ss) {
   var tz = ss.getSpreadsheetTimeZone();
-  var manager = ss.getSheetByName("????? ???????");
-  var names = ["???????????", "???????", "?????", "???????", "???????"];
+  var manager = ss.getSheetByName("Прием заказов");
+  var names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
   var out = [];
   if (!manager) return out;
   for (var i = 0; i < 5; i++) {
@@ -3942,7 +3942,7 @@ function materializeCurrentWeek_(ss, opts) {
     results.push(r);
   }
   if (opts.includeFuture === true || opts.includeFuture === "1" || opts.includeFuture === "true") {
-    var future = ss.getSheetByName("??????? ??????");
+    var future = ss.getSheetByName("Будущая неделя");
     if (future) {
       var tz = ss.getSpreadsheetTimeZone();
       var fd = parseFlexibleDate_(future.getRange("A1").getValue(), tz);
@@ -4035,11 +4035,11 @@ function notifyCuttersVolumeIncrease_(deliveryDate, client, lines) {
     "\n\nChange within 12h before prep-day end.";
   // Russian header for cutters:
   text =
-    "??????: ?????????? ?????? ???????\n" +
-    "????????: " + dateKey_(deliveryDate, tz) + "\n" +
-    "??????: " + client + "\n\n" +
+    "Срочно: увеличение объёма нарезки\n" +
+    "Доставка: " + dateKey_(deliveryDate, tz) + "\n" +
+    "Клиент: " + client + "\n\n" +
     lines.join("\n") +
-    "\n\n?????? ????? ??? ?? 12? ?? ????? ??? ??????????.";
+    "\n\nПравка менее чем за 12ч до конца дня подготовки.";
   var ids = getCutterNotifyChatIds_();
   for (var i = 0; i < ids.length; i++) {
     try { telegramSendText_(ids[i], text); } catch (e) {}
@@ -4055,7 +4055,7 @@ function getCutterNotifyChatIds_() {
   var raw = props.getProperty("CUTTER_TELEGRAM_IDS") || "";
   var ids = raw.split(/[,;\s]+/).map(function (s) { return String(s || "").trim(); }).filter(Boolean);
   try {
-    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("???????");
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Доступы");
     if (sh && sh.getLastRow() > 1) {
       var data = sh.getDataRange().getValues();
       for (var i = 1; i < data.length; i++) {
@@ -4096,56 +4096,56 @@ function setupBookingTriggersManual() {
   handleSetupBookingTriggers("cb", true);
 }
 
-/* ========== CRM ????????? ?????? ? ?????_??????? ========== */
+/* ========== CRM календарь месяца → Брони_Заказов ========== */
 
 var CRM_SPREADSHEET_ID_DEFAULT_ = "12caHgzEa2f8DkpQilwKCddxrLXVmI0-CBX1Qa-9fWng";
 var CRM_MONTH_NAMES_RU_ = [
-  "??????", "???????", "????", "??????", "???", "????",
-  "????", "??????", "????????", "???????", "??????", "???????"
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
 ];
 
 /**
- * ???? ?? ????????????? ????? ??? �??? (?????)� ? ????? Copy-to spreadsheet Google ??? ???????? ???????.
+ * Лист по каноническому имени или «Имя (копия)» — после Copy-to spreadsheet Google так называет вкладки.
  */
 function findSheetByBaseName_(ss, baseName) {
   if (!ss || !baseName) return null;
   var exact = ss.getSheetByName(baseName);
   if (exact) return exact;
-  var copyRu = ss.getSheetByName(baseName + " (?????)");
+  var copyRu = ss.getSheetByName(baseName + " (копия)");
   if (copyRu) return copyRu;
   var copyEn = ss.getSheetByName(baseName + " (copy)");
   if (copyEn) return copyEn;
-  var want = String(baseName).toUpperCase().replace(/?/g, "?");
+  var want = String(baseName).toUpperCase().replace(/ё/g, "Е");
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
-    var n = String(sheets[i].getName() || "").toUpperCase().replace(/?/g, "?");
-    if (n === want || n === want + " (?????)" || n === want + " (COPY)") return sheets[i];
+    var n = String(sheets[i].getName() || "").toUpperCase().replace(/ё/g, "Е");
+    if (n === want || n === want + " (КОПИЯ)" || n === want + " (COPY)") return sheets[i];
   }
   return null;
 }
 
 function hasLocalCrmSheets_(ss) {
-  return !!(findSheetByBaseName_(ss, "????????") || findSheetByBaseName_(ss, "??") ||
-    findSheetByBaseName_(ss, "???") || findSheetByBaseName_(ss, "??") ||
-    findSheetByBaseName_(ss, "????") || findSheetByBaseName_(ss, "??????") ||
-    findSheetByBaseName_(ss, "??????"));
+  return !!(findSheetByBaseName_(ss, "Контакты") || findSheetByBaseName_(ss, "ПП") ||
+    findSheetByBaseName_(ss, "АФК") || findSheetByBaseName_(ss, "БП") ||
+    findSheetByBaseName_(ss, "Июль") || findSheetByBaseName_(ss, "Январь") ||
+    findSheetByBaseName_(ss, "Август"));
 }
 
 /**
- * ???? ??? ? Script Editor: ?????? ??????? � (?????)� ? CRM-?????? ? ?????????
- * (?????? ???? ????????????? ????? ??? ??? ? ?????? ?? ????????).
+ * Один раз в Script Editor: убрать суффикс « (копия)» у CRM-листов в чистовике
+ * (только если канонического имени ещё нет — ничего не затирает).
  */
 function renameCrmCopiesToCanonical() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var bases = ["????????", "??", "???", "??", "????????"].concat(CRM_MONTH_NAMES_RU_);
+  var bases = ["Контакты", "ПП", "АФК", "БП", "Опросник"].concat(CRM_MONTH_NAMES_RU_);
   var renamed = [];
   var skipped = [];
   for (var i = 0; i < bases.length; i++) {
     var base = bases[i];
-    var copy = ss.getSheetByName(base + " (?????)") || ss.getSheetByName(base + " (copy)");
+    var copy = ss.getSheetByName(base + " (копия)") || ss.getSheetByName(base + " (copy)");
     if (!copy) continue;
     if (ss.getSheetByName(base)) {
-      skipped.push(base + " (?????) ? ????? ??? ????");
+      skipped.push(base + " (копия) — канон уже есть");
       continue;
     }
     copy.setName(base);
@@ -4163,13 +4163,13 @@ function getCrmSpreadsheetId_() {
 
 function getCrmSpreadsheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  // ????????: CRM ????? (? ?.?. ????? �? (?????)� ????? ????????)
+  // Чистовик: CRM здесь (в т.ч. листы «… (копия)» после переноса)
   if (hasLocalCrmSheets_(ss)) return ss;
   var forceExternal = PropertiesService.getScriptProperties().getProperty("CRM_FORCE_EXTERNAL");
   if (forceExternal === "1" || forceExternal === "true") {
     return SpreadsheetApp.openById(getCrmSpreadsheetId_());
   }
-  // ?????? ????? ? ?????? ???? ? ????????? CRM ???
+  // старая книга — только если в чистовике CRM нет
   try {
     return SpreadsheetApp.openById(getCrmSpreadsheetId_());
   } catch (e) {
@@ -4181,9 +4181,9 @@ var CLIENTS_HEADERS_ = ["nick", "address", "phone", "note", "updatedAt", "source
 
 function getClientsProfilesSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName("???????");
+  var sh = ss.getSheetByName("Клиенты");
   if (!sh) {
-    sh = ss.insertSheet("???????");
+    sh = ss.insertSheet("Клиенты");
     sh.getRange(1, 1, 1, CLIENTS_HEADERS_.length).setValues([CLIENTS_HEADERS_]);
     sh.setFrozenRows(1);
   }
@@ -4208,8 +4208,8 @@ function upsertClientProfile_(ss, nick, address, phone, note, source, lastBasket
     .replace(/\[TEL:[^\]]+\]/gi, "")
     .replace(/\[GEO:[^\]]+\]/gi, "")
     .replace(/\[YMAPS:[^\]]+\]/gi, "")
-    .replace(/\[?? ??????\]/gi, "")
-    .replace(/\[??????\]/gi, "")
+    .replace(/\[НЕ РЕЗАТЬ\]/gi, "")
+    .replace(/\[РЕЗАТЬ\]/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
   var basketJson = "";
@@ -4241,7 +4241,7 @@ function upsertClientProfile_(ss, nick, address, phone, note, source, lastBasket
 function ensureClientsBasketCol_(sh) {
   try {
     var h = String(sh.getRange(1, 7).getValue() || "").trim();
-    if (h.toLowerCase().indexOf("basket") < 0 && h.toLowerCase().indexOf("??????") < 0) {
+    if (h.toLowerCase().indexOf("basket") < 0 && h.toLowerCase().indexOf("состав") < 0) {
       sh.getRange(1, 7).setValue("lastBasket");
     }
   } catch (e) {}
@@ -4263,7 +4263,7 @@ function applyTelTag_(note, phone) {
 }
 
 function handleFindClientMatch(json, callback, fromPost) {
-  // ??????? ????? ?????? ?? ????? �???????� (??? ?????? ??????/CRM)
+  // быстрый поиск только по листу «Клиенты» (без обхода недели/CRM)
   var q = String(json.q || json.client || json.nick || "").trim();
   if (q.length < 1) {
     var empty = { status: "success", match: null, matches: [] };
@@ -4305,7 +4305,7 @@ function handleFindClientMatch(json, callback, fromPost) {
           address: String(data[r][1] || ""),
           phone: String(data[r][2] || ""),
           note: String(data[r][3] || ""),
-          source: String(data[r][5] || "???????"),
+          source: String(data[r][5] || "Клиенты"),
           basket: bask,
           score: score
         });
@@ -4367,8 +4367,8 @@ function parseCrmCalendarCell_(text) {
   if (/^\d+$/.test(lines[0]) && lines.length === 1) return null;
   var startIdx = 0;
   var nickLine = lines[0];
-  // �?????� / �??????� / �????????� ? ????? ????????, ?? ???; ??? ?? ????????? ??????
-  if (/^(?????|??????|????????)\b/i.test(nickLine)) {
+  // «варка» / «только» / «написать» — метка партнёра, не ник; ник на следующей строке
+  if (/^(варка|только|написать)\b/i.test(nickLine)) {
     if (lines.length < 2) return null;
     startIdx = 1;
     nickLine = lines[1];
@@ -4377,27 +4377,27 @@ function parseCrmCalendarCell_(text) {
   var display = displayClientNick_(nickLine);
   if ((!display || display.length < 2) && extracted) display = extracted;
   if (!display || display.length < 2) return null;
-  if (/^(?????|??????|????????)$/i.test(display) && lines.length > startIdx + 1) {
+  if (/^(варка|только|написать)$/i.test(display) && lines.length > startIdx + 1) {
     nickLine = lines[startIdx + 1];
     extracted = extractInstagramNick_(nickLine);
     display = displayClientNick_(nickLine) || extracted;
     startIdx++;
   }
-  // ???????? ? ????????? �?????� ? ?????? ??? ??????
-  if (/\b?????\b/i.test(nickLine) && display !== nickLine) {
+  // партнёры с припиской «варка» — полное имя строки
+  if (/\bварка\b/i.test(nickLine) && display !== nickLine) {
     display = displayClientNick_(nickLine) || nickLine;
   }
   var segment = "";
   var address = "";
   var phone = "";
   var noteBits = [];
-  if (/^?????\b/i.test(lines[0])) noteBits.push("?????");
+  if (/^варка\b/i.test(lines[0])) noteBits.push("варка");
   for (var i = startIdx + 1; i < lines.length; i++) {
     var ln = lines[i];
-    var segM = ln.match(/\b(???|??|??|?)\b/i);
+    var segM = ln.match(/\b(АФК|ПП|БП|Р)\b/i);
     if (segM && !segment) {
       segment = segM[1].toUpperCase();
-      var rest = ln.replace(/\b(???|??|??|?)\b/i, "").trim();
+      var rest = ln.replace(/\b(АФК|ПП|БП|Р)\b/i, "").trim();
       if (rest) noteBits.push(rest);
       continue;
     }
@@ -4405,7 +4405,7 @@ function parseCrmCalendarCell_(text) {
       phone = ln;
       continue;
     }
-    if (!address && /[?-??-?a-zA-Z]/.test(ln) && !/^\d+\s*$/.test(ln)) {
+    if (!address && /[а-яА-Яa-zA-Z]/.test(ln) && !/^\d+\s*$/.test(ln)) {
       address = ln;
       continue;
     }
@@ -4416,12 +4416,12 @@ function parseCrmCalendarCell_(text) {
     matchKey: clientMatchKey_(extracted || display),
     address: address,
     phone: phone,
-    segment: segment || (/?????/i.test(lines[0]) ? "?" : "??"),
+    segment: segment || (/варка/i.test(lines[0]) ? "Р" : "ПП"),
     note: noteBits.join("; ")
   };
 }
 
-/** ???? ??????: �????�, �???? 2026�, �???? (?????)� ? ??? ?????????????? ????????????. */
+/** Лист месяца: «Июль», «Июль 2026», «Июль (копия)» — без переименования существующих. */
 function resolveCrmMonthSheet_(crmSs, deliveryDate) {
   if (!crmSs || !deliveryDate) return null;
   var monthName = CRM_MONTH_NAMES_RU_[deliveryDate.getMonth()];
@@ -4436,14 +4436,14 @@ function resolveCrmMonthSheet_(crmSs, deliveryDate) {
     var sh = findSheetByBaseName_(crmSs, candidates[i]);
     if (sh) return sh;
   }
-  // ??????????????????? / �???? 26�
+  // регистронезависимый / «Июль 26»
   var sheets = crmSs.getSheets();
-  var wantBase = monthName.toUpperCase().replace(/?/g, "?");
+  var wantBase = monthName.toUpperCase().replace(/ё/g, "Е");
   var yearShort = String(year).slice(-2);
   var bestPlain = null;
   for (var s = 0; s < sheets.length; s++) {
     var title = String(sheets[s].getName() || "").trim();
-    var tU = title.toUpperCase().replace(/?/g, "?").replace(/\s*\(?????\)\s*$/, "").replace(/\s*\(COPY\)\s*$/, "");
+    var tU = title.toUpperCase().replace(/ё/g, "Е").replace(/\s*\(КОПИЯ\)\s*$/, "").replace(/\s*\(COPY\)\s*$/, "");
     if (tU === wantBase) { bestPlain = sheets[s]; continue; }
     if (tU.indexOf(wantBase) !== 0) continue;
     if (tU.indexOf(String(year)) >= 0 || tU.indexOf(yearShort) >= 0) return sheets[s];
@@ -4475,7 +4475,7 @@ function readCrmClientsForDate_(crmSs, deliveryDate) {
     if (headerDayNumber_(headers[c]) === dayNum) { col = c + 1; break; }
   }
   if (col < 0) return [];
-  // ?????: getRange(r1,c1,r2,c2) ? ?? lastRow ????????????, ?????? ?????? ???????
+  // важно: getRange(r1,c1,r2,c2) — до lastRow включительно, только нужный столбец
   var values = sh.getRange(2, col, lastRow, col).getValues();
   var out = [];
   var seen = {};
@@ -4491,7 +4491,7 @@ function readCrmClientsForDate_(crmSs, deliveryDate) {
 }
 
 /**
- * ?????????????? CRM ? ?????????: ??????, ???, ???????? ? ??? ????????? ??????.
+ * Инвентаризация CRM в чистовике: месяцы, дни, счётчики — без изменения данных.
  */
 function handleCrmInventory(json, callback, fromPost) {
   var active = SpreadsheetApp.getActiveSpreadsheet();
@@ -4506,8 +4506,8 @@ function handleCrmInventory(json, callback, fromPost) {
   for (var m = 0; m < CRM_MONTH_NAMES_RU_.length; m++) {
     var base = CRM_MONTH_NAMES_RU_[m];
     var matched = sheetNames.filter(function (n) {
-      var u = String(n).toUpperCase().replace(/?/g, "?");
-      var b = base.toUpperCase().replace(/?/g, "?");
+      var u = String(n).toUpperCase().replace(/ё/g, "Е");
+      var b = base.toUpperCase().replace(/ё/g, "Е");
       return u === b || u.indexOf(b) === 0;
     });
     matched.forEach(function (name) {
@@ -4552,24 +4552,24 @@ function handleCrmInventory(json, callback, fromPost) {
     status: "success",
     local: local,
     spreadsheetId: crmSs.getId(),
-    hasContacts: !!findSheetByBaseName_(crmSs, "????????"),
-    hasPP: !!findSheetByBaseName_(crmSs, "??"),
-    hasAFK: !!findSheetByBaseName_(crmSs, "???"),
-    hasBP: !!findSheetByBaseName_(crmSs, "??"),
-    contactsRows: countSheet("????????", 2),
-    ppRows: countSheet("??", 3),
-    afkRows: countSheet("???", 3),
-    bpRows: countSheet("??", 3),
+    hasContacts: !!findSheetByBaseName_(crmSs, "Контакты"),
+    hasPP: !!findSheetByBaseName_(crmSs, "ПП"),
+    hasAFK: !!findSheetByBaseName_(crmSs, "АФК"),
+    hasBP: !!findSheetByBaseName_(crmSs, "БП"),
+    contactsRows: countSheet("Контакты", 2),
+    ppRows: countSheet("ПП", 3),
+    afkRows: countSheet("АФК", 3),
+    bpRows: countSheet("БП", 3),
     clientsProfiles: Math.max(0, getClientsProfilesSheet_().getLastRow() - 1),
     months: months,
-    note: "???? ? ???????: ????????? ??????? = ????? ???; ??? = ?? ???? ????????. ????? �? (?????)� ???? ????????."
+    note: "Даты в месяцах: заголовок колонки = число дня; год = из даты доставки. Листы «… (копия)» тоже читаются."
   };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
 /**
- * ???????? ???? ?? ???????? + ??/???/?? + ????????? ??????? ? ???? �???????�.
- * ?????? upsert: ?????? ???? ?? ???????? ??? ???????????; ?????? ?? ???????.
+ * Заливает всех из Контакты + ПП/АФК/БП + календари месяцев в лист «Клиенты».
+ * Только upsert: пустые поля не затирают уже заполненные; никого не удаляет.
  */
 function seedCrmClientsIntoProfiles_() {
   var crmSs = getCrmSpreadsheet_();
@@ -4581,18 +4581,18 @@ function seedCrmClientsIntoProfiles_() {
     profilesAfter: 0
   };
 
-  var contacts = findSheetByBaseName_(crmSs, "????????");
+  var contacts = findSheetByBaseName_(crmSs, "Контакты");
   if (contacts && contacts.getLastRow() > 1) {
     var cdata = contacts.getDataRange().getValues();
     for (var c = 1; c < cdata.length; c++) {
       var nick = extractInstagramNick_(cdata[c][0]);
       if (!nick) continue;
-      upsertClientProfile_(SpreadsheetApp.getActiveSpreadsheet(), nick, cdata[c][3], cdata[c][4], cdata[c][6], "????????");
+      upsertClientProfile_(SpreadsheetApp.getActiveSpreadsheet(), nick, cdata[c][3], cdata[c][4], cdata[c][6], "Контакты");
       stats.fromContacts++;
     }
   }
 
-  ["??", "???", "??"].forEach(function (sheetName) {
+  ["ПП", "АФК", "БП"].forEach(function (sheetName) {
     var sh = findSheetByBaseName_(crmSs, sheetName);
     if (!sh || sh.getLastRow() < 3) return;
     var data = sh.getDataRange().getValues();
@@ -4608,10 +4608,10 @@ function seedCrmClientsIntoProfiles_() {
   var sheets = crmSs.getSheets();
   for (var s = 0; s < sheets.length; s++) {
     var title = String(sheets[s].getName() || "");
-    var tU = title.toUpperCase().replace(/?/g, "?");
+    var tU = title.toUpperCase().replace(/ё/g, "Е");
     var isMonth = false;
     for (var m = 0; m < CRM_MONTH_NAMES_RU_.length; m++) {
-      var b = CRM_MONTH_NAMES_RU_[m].toUpperCase().replace(/?/g, "?");
+      var b = CRM_MONTH_NAMES_RU_[m].toUpperCase().replace(/ё/g, "Е");
       if (tU === b || tU.indexOf(b) === 0) { isMonth = true; break; }
     }
     if (!isMonth) continue;
@@ -4633,7 +4633,7 @@ function seedCrmClientsIntoProfiles_() {
           parsed.address,
           parsed.phone,
           parsed.note,
-          "?????????:" + title
+          "календарь:" + title
         );
         stats.fromMonths++;
       }
@@ -4657,119 +4657,119 @@ function handleSeedCrmClients(json, callback, fromPost) {
 }
 
 function mapCrmHeaderToItem_(header) {
-  var h = String(header || "").replace(/\s+/g, " ").trim().toUpperCase().replace(/?/g, "?");
+  var h = String(header || "").replace(/\s+/g, " ").trim().toUpperCase().replace(/Ё/g, "Е");
   if (!h) return null;
-  if (/^(????|ID|?????|??????|???????|??????)/.test(h)) return null;
-  if (/?????????|?????|????|????|?????|??????|????|??????|????|?????|^?[123]$|^??4$/.test(h)) return null;
+  if (/^(ЛЮДИ|ID|КОЛИЧ|СТАТУС|ПОЖЕЛАН|ЗАМЕТК)/.test(h)) return null;
+  if (/СЕБЕСТОИМ|СУММА|ЦЕНА|ИТОГ|СКИДК|ВЫХЛОП|ФАКТ|КАРМАН|ФРАК|ГРЯЗН|^У[123]$|^УП4$/.test(h)) return null;
 
-  // --- ???????? ---
-  if (/?????/.test(h)) {
-    if (/?[??]???|????/.test(h)) return { name: "?????? ???????", sub: "", cat: "powder", grams: true };
-    if (/???/.test(h)) return { name: "?????? ?????", sub: "", cat: "powder", grams: true };
-    if (/?????/.test(h)) return { name: "?????? ??????", sub: "", cat: "powder", grams: true };
-    if (/???/.test(h)) return { name: "?????? ?????", sub: "", cat: "powder", grams: true };
-    if (/????/.test(h)) return { name: "?????? ????", sub: "", cat: "powder", grams: true };
-    return { name: "?????? ????", sub: "", cat: "powder", grams: true };
+  // --- присыпки ---
+  if (/КРОШК/.test(h)) {
+    if (/Л[ЕЁ]?ГК|ЛЕГК/.test(h)) return { name: "КРОШКА ЛЁГКОГО", sub: "", cat: "powder", grams: true };
+    if (/ПОЧ/.test(h)) return { name: "КРОШКА ПОЧЕК", sub: "", cat: "powder", grams: true };
+    if (/СЕРДЦ/.test(h)) return { name: "КРОШКА СЕРДЦА", sub: "", cat: "powder", grams: true };
+    if (/РУБ/.test(h)) return { name: "КРОШКА РУБЕЦ", sub: "", cat: "powder", grams: true };
+    if (/МИКС/.test(h)) return { name: "КРОШКА МИКС", sub: "", cat: "powder", grams: true };
+    return { name: "КРОШКА МИКС", sub: "", cat: "powder", grams: true };
   }
 
-  // --- ??????? ? ????????? (?? ????? ??.) ---
-  if (/???.*?????|??????.*???|^????? ?????/.test(h)) {
+  // --- жевалки с фракциями (до общих шт.) ---
+  if (/БЫЧ.*КОРЕН|КОРЕНЬ.*БЫЧ|^БЫЧИЙ КОРЕН/.test(h)) {
     var rootSub = "";
-    if (/?????\s*???|??\s*???|?????\s*???/.test(h)) rootSub = "?? ???";
-    else if (/?????|?????|???/.test(h)) rootSub = "???";
-    else if (/?????|???/.test(h)) rootSub = "???";
-    else if (/?????|????/.test(h)) rootSub = "????";
-    else if (/???????|???/.test(h)) rootSub = "???";
-    return { name: "????? ??????", sub: rootSub, cat: "chew", grams: false };
+    if (/ОЧЕНЬ\s*МАЛ|ОЧ\s*МАЛ|СУПЕР\s*МАЛ/.test(h)) rootSub = "ОЧ МАЛ";
+    else if (/ОГРОМ|РОГАЛ|ОГР/.test(h)) rootSub = "ОГР";
+    else if (/БОЛЬШ|БОЛ/.test(h)) rootSub = "БОЛ";
+    else if (/СРЕДН|СРЕД/.test(h)) rootSub = "СРЕД";
+    else if (/МАЛЕНЬК|МАЛ/.test(h)) rootSub = "МАЛ";
+    return { name: "БЫЧИЙ КОРЕНЬ", sub: rootSub, cat: "chew", grams: false };
   }
-  if (/?????/.test(h)) {
+  if (/ТРАХЕ/.test(h)) {
     var trSub = "";
-    if (/?????|???????/.test(h)) trSub = "?????";
-    else if (/?????|???/.test(h)) trSub = "???";
-    else if (/?????|???/.test(h)) trSub = "???";
-    else if (/?????|????/.test(h)) trSub = "????";
-    else if (/???????|???/.test(h)) trSub = "???";
-    return { name: "??????", sub: trSub, cat: "chew", grams: false };
+    if (/ПЛАСТ|ПЛАСТИН/.test(h)) trSub = "ПЛАСТ";
+    else if (/ОГРОМ|ОГР/.test(h)) trSub = "ОГР";
+    else if (/БОЛЬШ|БОЛ/.test(h)) trSub = "БОЛ";
+    else if (/СРЕДН|СРЕД/.test(h)) trSub = "СРЕД";
+    else if (/МАЛЕНЬК|МАЛ/.test(h)) trSub = "МАЛ";
+    return { name: "ТРАХЕЯ", sub: trSub, cat: "chew", grams: false };
   }
-  if (/??????/.test(h)) {
-    var stSub = "????";
-    if (/?????|????/.test(h)) stSub = "????";
-    else if (/?????|???|???/.test(h) && !/????/.test(h)) stSub = "???";
-    else if (/?????|????|???????/.test(h)) stSub = "????";
-    return { name: "???????? ????", sub: stSub, cat: "chew", grams: false };
+  if (/СТАНОВ/.test(h)) {
+    var stSub = "СРЕД";
+    if (/ПАЛОЧ|ПАЛК/.test(h)) stSub = "ПАЛК";
+    else if (/БОЛЬШ|БОЛ|ЦЕЛ/.test(h) && !/СРЕД/.test(h)) stSub = "БОЛ";
+    else if (/СРЕДН|СРЕД|ПОЛОВИН/.test(h)) stSub = "СРЕД";
+    return { name: "СТАНОВАЯ ЖИЛА", sub: stSub, cat: "chew", grams: false };
   }
-  if (/???|???/.test(h)) {
-    var earSub = /???????/.test(h) ? "?????????" : "???????";
-    return { name: "??? ?", sub: earSub, cat: "chew", grams: false };
+  if (/УХО|УШК/.test(h)) {
+    var earSub = /ПОЛОВИН/.test(h) ? "ПОЛОВИНКА" : "Обычное";
+    return { name: "УХО Г", sub: earSub, cat: "chew", grams: false };
   }
-  if (/????/.test(h)) {
-    var aoSub = /???????/.test(h) ? "?????????" : "???????";
-    return { name: "?????", sub: aoSub, cat: "chew", grams: false };
+  if (/АОРТ/.test(h)) {
+    var aoSub = /ПОЛОВИН/.test(h) ? "ПОЛОВИНКА" : "Обычная";
+    return { name: "АОРТА", sub: aoSub, cat: "chew", grams: false };
   }
-  if (/?????/.test(h)) return { name: "?????? ??.", sub: "", cat: "chew", grams: false };
-  if (/?????/.test(h)) return { name: "?????? ??.", sub: "", cat: "chew", grams: false };
-  if (/???/.test(h)) return { name: "???? ??.", sub: "", cat: "chew", grams: false };
-  if (/???.*????|????.*???|?????/.test(h)) return { name: "??? ???? ??.", sub: "", cat: "chew", grams: false };
-  if (/????.*??|???\s*??|??????/.test(h)) return { name: "?????? ??? ??.", sub: "", cat: "chew", grams: false };
-  if (/?????[??]?|???????/.test(h)) return { name: "????????? ??.", sub: "", cat: "chew", grams: false };
-  if (/???/.test(h)) return { name: "???? ??.", sub: "", cat: "chew", grams: false };
+  if (/КОЛЕН/.test(h)) return { name: "КОЛЕНИ шт.", sub: "", cat: "chew", grams: false };
+  if (/КОПЫТ/.test(h)) return { name: "КОПЫТО шт.", sub: "", cat: "chew", grams: false };
+  if (/НОС/.test(h)) return { name: "НОСЫ шт.", sub: "", cat: "chew", grams: false };
+  if (/ЛОП.*ХРЯЩ|ХРЯЩ.*ЛОП|ЛОПАТ/.test(h)) return { name: "ЛОП ХРЯЩ шт.", sub: "", cat: "chew", grams: false };
+  if (/УТИН.*ШЕ|ШЕИ\s*УТ|УТИНЫЕ/.test(h)) return { name: "УТИНЫЕ ШЕИ шт.", sub: "", cat: "chew", grams: false };
+  if (/ПЕРЕП[ЕЁ]Л|ПЕРЕПЕЛ/.test(h)) return { name: "ПЕРЕПЁЛКИ шт.", sub: "", cat: "chew", grams: false };
+  if (/ГУБ/.test(h)) return { name: "ГУБЫ шт.", sub: "", cat: "chew", grams: false };
 
-  // --- ???????? / ??????? ---
+  // --- дрессура / баранье ---
   function dressSub_(hh) {
-    if (/????/.test(hh)) return "??????";
-    if (/????/.test(hh)) return "???????";
-    if (/?????/.test(hh)) return "???????";
-    if (/?????|??????/.test(hh)) return "???????";
-    if (/???|????/.test(hh)) return "?????";
+    if (/МЕЛК/.test(hh)) return "Мелкое";
+    if (/СРЕД/.test(hh)) return "Среднее";
+    if (/КРУПН/.test(hh)) return "Крупное";
+    if (/БОЛЬШ|ПОЛОСК/.test(hh)) return "Большое";
+    if (/ЦЕЛ|ЛОМТ/.test(hh)) return "Целое";
     return "";
   }
 
-  if (/????????\s*?????/.test(h)) {
-    return { name: "??????? ??????", sub: dressSub_(h) || "", cat: "other", grams: true };
+  if (/БАРАНЬ?Я\s*ПЕЧЕН/.test(h)) {
+    return { name: "БАРАНЬЯ ПЕЧЕНЬ", sub: dressSub_(h) || "", cat: "other", grams: true };
   }
-  if (/?????????\s*?[??]???|??????? ????/.test(h)) {
-    return { name: "??????? ??????", sub: dressSub_(h) || "???????", cat: "dressura", grams: true };
+  if (/БАРАНЬ?Е?\s*Л[ЕЁ]?ГК|БАРАНЬЕ ЛЕГК/.test(h)) {
+    return { name: "БАРАНЬЕ ЛЁГКОЕ", sub: dressSub_(h) || "Среднее", cat: "dressura", grams: true };
   }
-  if (/????/.test(h) && !/?????|?????/.test(h)) {
-    return { name: "??????", sub: dressSub_(h) || "???????", cat: "dressura", grams: true };
+  if (/ЛЕГК/.test(h) && !/КРОШК|БАРАН/.test(h)) {
+    return { name: "ЛЁГКОЕ", sub: dressSub_(h) || "Среднее", cat: "dressura", grams: true };
   }
-  if (/?????/.test(h)) {
-    return { name: "??????", sub: dressSub_(h) || (/???|????/.test(h) ? "?????" : "??????"), cat: "dressura", grams: true };
+  if (/СЕРДЦ/.test(h)) {
+    return { name: "СЕРДЦЕ", sub: dressSub_(h) || (/ЦЕЛ|ЛОМТ/.test(h) ? "Целое" : "Мелкое"), cat: "dressura", grams: true };
   }
-  if (/????/.test(h)) {
-    return { name: "?????", sub: dressSub_(h) || (/???/.test(h) ? "?????" : "??????"), cat: "dressura", grams: true };
+  if (/ПОЧК/.test(h)) {
+    return { name: "ПОЧКИ", sub: dressSub_(h) || (/ЦЕЛ/.test(h) ? "Целое" : "Мелкое"), cat: "dressura", grams: true };
   }
-  if (/?????\s*?\b|?????.*???|?????\s*????/.test(h) || h === "????? ?") {
-    return { name: "??????? ?????", sub: "", cat: "other", grams: true };
+  if (/РУБЕЦ\s*С\b|СВЕТЛ.*РУБ|РУБЕЦ\s*СВЕТ/.test(h) || h === "РУБЕЦ С") {
+    return { name: "СВЕТЛЫЙ РУБЕЦ", sub: "", cat: "other", grams: true };
   }
-  if (/?????/.test(h)) {
+  if (/РУБЕЦ/.test(h)) {
     var rs = dressSub_(h);
-    if (/?????/.test(h)) rs = "???????";
-    return { name: "????? ?", sub: rs || "???????", cat: "dressura", grams: true };
+    if (/КРУПН/.test(h)) rs = "Крупное";
+    return { name: "РУБЕЦ Т", sub: rs || "Среднее", cat: "dressura", grams: true };
   }
 
-  // --- ?????? ???? ---
-  if (/?????/.test(h)) return { name: "??????", sub: "", cat: "other", grams: true };
-  if (/??????/.test(h)) {
+  // --- другое мясо ---
+  if (/ПЕЧЕН/.test(h)) return { name: "ПЕЧЕНЬ", sub: "", cat: "other", grams: true };
+  if (/ИНДЕЙК/.test(h)) {
     var is = dressSub_(h);
-    return { name: "???????", sub: is, cat: "other", grams: true };
+    return { name: "ИНДЕЙКА", sub: is, cat: "other", grams: true };
   }
-  if (/????.*????|??????/.test(h)) return { name: "?????? ???????", sub: "", cat: "other", grams: true };
-  if (/????/.test(h)) return { name: "????", sub: "", cat: "other", grams: true };
-  if (/?????/.test(h)) return { name: "?????????", sub: "", cat: "other", grams: true };
-  if (/???????/.test(h)) return { name: "????????? ????", sub: "", cat: "other", grams: true };
-  if (/?????/.test(h)) return { name: "??????", sub: "", cat: "other", grams: true };
+  if (/МЯСН.*ЛОМТ|ЛОМТИК/.test(h)) return { name: "МЯСНЫЕ ЛОМТИКИ", sub: "", cat: "other", grams: true };
+  if (/ВЫМЯ/.test(h)) return { name: "ВЫМЯ", sub: "", cat: "other", grams: true };
+  if (/СЕМЕН/.test(h)) return { name: "СЕМЕННИКИ", sub: "", cat: "other", grams: true };
+  if (/ПИКАЛЬН/.test(h)) return { name: "ПИКАЛЬНОЕ МЯСО", sub: "", cat: "other", grams: true };
+  if (/КНИЖК/.test(h)) return { name: "КНИЖКА", sub: "", cat: "other", grams: true };
 
-  // --- ?????/?????? ---
-  if (/?????/.test(h)) return { name: "??????", sub: "", cat: "veg", grams: true };
-  if (/?????/.test(h)) return { name: "??????", sub: "", cat: "veg", grams: true };
-  if (/????/.test(h)) return { name: "?????", sub: "", cat: "veg", grams: true };
-  if (/???????/.test(h)) return { name: "????????", sub: "", cat: "veg", grams: true };
-  if (/??????/.test(h)) return { name: "???????", sub: "", cat: "veg", grams: true };
-  if (/?????/.test(h)) return { name: "???????", sub: "", cat: "veg", grams: true };
-  if (/????/.test(h)) return { name: "?????", sub: "", cat: "veg", grams: true };
-  if (/?????/.test(h)) return { name: "??????", sub: "", cat: "veg", grams: true };
-  if (/?????/.test(h)) return { name: "?????", sub: "", cat: "veg", grams: true };
+  // --- овощи/фрукты ---
+  if (/БАНАН/.test(h)) return { name: "БАНАНЫ", sub: "", cat: "veg", grams: true };
+  if (/ЯБЛОК/.test(h)) return { name: "ЯБЛОКИ", sub: "", cat: "veg", grams: true };
+  if (/ГРУШ/.test(h)) return { name: "ГРУШИ", sub: "", cat: "veg", grams: true };
+  if (/КЛУБНИК/.test(h)) return { name: "КЛУБНИКА", sub: "", cat: "veg", grams: true };
+  if (/МОРКОВ/.test(h)) return { name: "МОРКОВЬ", sub: "", cat: "veg", grams: true };
+  if (/КАБАЧ/.test(h)) return { name: "КАБАЧОК", sub: "", cat: "veg", grams: true };
+  if (/ТЫКВ/.test(h)) return { name: "ТЫКВА", sub: "", cat: "veg", grams: true };
+  if (/СВЕКЛ/.test(h)) return { name: "СВЕКЛА", sub: "", cat: "veg", grams: true };
+  if (/БАТАТ/.test(h)) return { name: "БАТАТ", sub: "", cat: "veg", grams: true };
 
   return null;
 }
@@ -4783,7 +4783,7 @@ function basketFromSubscriberRow_(headers, row) {
     if (raw === "" || raw == null) continue;
     var num = Number(String(raw).replace(",", "."));
     if (!num || num <= 0) continue;
-    // ??: ??????? 1 = 100?. ????? ?20 ??? ? ??????? (?? ???????).
+    // ТЗ: сыпучее 1 = 100г. Целое ≥20 уже в граммах (не трогаем).
     var val;
     if (map.grams) {
       if (num >= 20 && Math.abs(num - Math.round(num)) < 1e-9) val = Math.round(num);
@@ -4807,9 +4807,9 @@ function basketFromSubscriberRow_(headers, row) {
 function findSubscriberBasket_(crmSs, nick, preferredSegment) {
   var sheets = [];
   var seg = String(preferredSegment || "").toUpperCase();
-  if (seg === "???" || seg === "AFK") sheets = ["???", "??", "??"];
-  else if (seg === "??" || seg === "BP") sheets = ["??", "??", "???"];
-  else sheets = ["??", "???", "??"];
+  if (seg === "АФК" || seg === "AFK") sheets = ["АФК", "ПП", "БП"];
+  else if (seg === "БП" || seg === "BP") sheets = ["БП", "ПП", "АФК"];
+  else sheets = ["ПП", "АФК", "БП"];
 
   var wantKey = clientMatchKey_(nick);
   if (!wantKey) return { basket: [], subId: "", wishes: "", sheet: "" };
@@ -4835,7 +4835,7 @@ function findSubscriberBasket_(crmSs, nick, preferredSegment) {
 }
 
 function lookupContactAddress_(crmSs, nick) {
-  var data = getCrmSheetValuesFast_(crmSs, "????????");
+  var data = getCrmSheetValuesFast_(crmSs, "Контакты");
   if (!data || data.length < 2) return { address: "", note: "", phone: "" };
   for (var r = 1; r < data.length; r++) {
     var cell = String(data[r][0] || "");
@@ -4850,8 +4850,8 @@ function lookupContactAddress_(crmSs, nick) {
 }
 
 /**
- * ??????????? ???????? ?? CRM-????????? ?????? ? ?????_???????.
- * ?? ???????? ????????? ????? (source=retail) ? ?? ?????? ?????? ?????????.
+ * Подтягивает клиентов из CRM-календаря месяца в Брони_Заказов.
+ * Не затирает розничные брони (source=retail) и не пустые правки менеджера.
  */
 function syncCrmIntoBookings_(ss, deliveryDate) {
   var crmSs;
@@ -4881,7 +4881,7 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
       existing = all[j];
       break;
     }
-    // ??????? ??????? ? ?? ?????????? ?? CRM-?????????
+    // удалили вручную — не возвращать из CRM-календаря
     if (wasCancelled && !existing) {
       skipped++;
       continue;
@@ -4895,7 +4895,7 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
       continue;
     }
 
-    // ??????????: ?? ? ?????? N ? ????? ????????; ???/?? ? ?????? ??? ? ?????
+    // Автосостав: ПП с учётом N и слота доставки; АФК/БП — полный ряд с листа
     var contact = lookupContactAddress_(crmSs, c.client);
     var address = c.address || contact.address || "";
     var phone = c.phone || contact.phone || "";
@@ -4934,19 +4934,19 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
 }
 
 /**
- * ?????? ??? ????? ?? ????: ?? ? ???? ????? (N=1 ??????? / N=2 ???????? ??? ???????);
- * ???/?? ? ?????? ?????? ? ????? ????????.
+ * Состав для брони на дату: ПП → доля слота (N=1 целиком / N=2 половина или остаток);
+ * АФК/БП → полный состав с листа подписки.
  */
 function fillSubscriptionBasketForDate_(ss, crmSs, client, segment, deliveryDate) {
   var seg = String(segment || "").toUpperCase();
-  if (seg === "?" || seg === "R" || seg === "RETAIL") {
+  if (seg === "Р" || seg === "R" || seg === "RETAIL") {
     return { basket: [], subId: "", hint: "" };
   }
   var tz = ss.getSpreadsheetTimeZone() || "Europe/Minsk";
   var dateStr = deliveryDate ? dateKey_(deliveryDate, tz) : "";
 
-  // ?? (??? ??????? ?? ??????, ?? ?????? ???? ? ??)
-  if (!seg || seg === "??" || seg === "PP") {
+  // ПП (или сегмент не указан, но клиент есть в ПП)
+  if (!seg || seg === "ПП" || seg === "PP") {
     try {
       var sug = buildPpOrderSuggest_(ss, client, "", dateStr);
       if (sug && sug.proposedBasket && sug.proposedBasket.length) {
@@ -4963,28 +4963,28 @@ function fillSubscriptionBasketForDate_(ss, crmSs, client, segment, deliveryDate
   }
 
   try {
-    var found = findSubscriberBasket_(crmSs || getCrmSpreadsheet_(), client, seg || "??");
+    var found = findSubscriberBasket_(crmSs || getCrmSpreadsheet_(), client, seg || "ПП");
     return {
       basket: clonePpBasket_(found.basket || []),
       subId: found.subId || "",
-      hint: found.sheet ? ("[???? " + found.sheet + "]") : ""
+      hint: found.sheet ? ("[лист " + found.sheet + "]") : ""
     };
   } catch (e2) {
     return { basket: [], subId: "", hint: "" };
   }
 }
 
-/* ========== v7.6: ??????? / ????? / ???????? / ???? / ?????? ========== */
+/* ========== v7.6: Доступы / Склад / Подписки / Цена / Сборка ========== */
 
 var ACCESS_HEADERS_ = ["telegramId", "name", "username", "role", "status", "requestedAt", "note"];
 var PRICE_SPREADSHEET_ID_DEFAULT_ = "1c3iETyh_eOGcL0_zsGapzliVEfhQk5fQqbg8aAGAgI0";
-var OWNER_IDS_FALLBACK_ = []; // ??????? OWNER_TELEGRAM_IDS ? Script Properties
+var OWNER_IDS_FALLBACK_ = []; // задайте OWNER_TELEGRAM_IDS в Script Properties
 
 function getAccessSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName("???????");
+  var sh = ss.getSheetByName("Доступы");
   if (!sh) {
-    sh = ss.insertSheet("???????");
+    sh = ss.insertSheet("Доступы");
     sh.getRange(1, 1, 1, ACCESS_HEADERS_.length).setValues([ACCESS_HEADERS_]);
     sh.setFrozenRows(1);
   }
@@ -5007,7 +5007,7 @@ function isOwnerId_(telegramId) {
   return getOwnerTelegramIds_().indexOf(id) >= 0;
 }
 
-/** Soft HMAC: ???? ???? bot token + initData ? ?????????; ????? ?? ????????? (dev / GitHub Pages). */
+/** Soft HMAC: если есть bot token + initData — проверяем; иначе не блокируем (dev / GitHub Pages). */
 function validateInitDataSoft_(initData) {
   var raw = String(initData || "");
   if (!raw) return { ok: true, soft: true, user: null };
@@ -5113,7 +5113,7 @@ function handleGetMyAccess(json, callback, fromPost) {
   if (!row) {
     var owners = getOwnerTelegramIds_();
     if (!owners.length) {
-      // ?????? ?????? ??? OWNER_TELEGRAM_IDS ? ?? ????????? ???????
+      // первый запуск без OWNER_TELEGRAM_IDS — не блокируем команду
       var openAll = {
         status: "success",
         role: "all",
@@ -5195,10 +5195,10 @@ function handleRequestAccess(json, callback, fromPost) {
   upsertAccessRow_(telegramId, json.name || "", json.username || "", "pending", "pending");
   try {
     var owners = getOwnerTelegramIds_();
-    var text = "?????? ??????? ? ?????\nID: " + telegramId +
-      "\n???: " + (json.name || "") +
+    var text = "Запрос доступа в Бойню\nID: " + telegramId +
+      "\nИмя: " + (json.name || "") +
       "\n@" + (json.username || "") +
-      "\n????????? ???? ?? ??????? ????.";
+      "\nНазначьте роль во вкладке Люди.";
     for (var i = 0; i < owners.length; i++) {
       try { telegramSendText_(owners[i], text); } catch (e) {}
     }
@@ -5212,7 +5212,7 @@ function handleRequestAccess(json, callback, fromPost) {
 function handleListAccess(json, callback, fromPost) {
   var actor = String(json.telegramId || "").trim();
   if (!isOwnerId_(actor) && (!findAccessById_(actor) || findAccessById_(actor).role !== "owner")) {
-    // soft: ??? ????? ?????? ?????? ???? actor ?????? (?????), ????? ?????? owner
+    // soft: всё равно отдаём список если actor пустой (тесты), иначе только owner
     if (actor && !isOwnerId_(actor)) {
       var forbid = { status: "error", message: "owner_only" };
       return fromPost ? jsonpText(callback, forbid) : jsonp(callback, forbid);
@@ -5250,18 +5250,18 @@ function handleSetAccessRole(json, callback, fromPost) {
   var status = (role === "denied") ? "denied" : (role === "pending" ? "pending" : "active");
   var existing = findAccessById_(target);
   upsertAccessRow_(target, (json.name || (existing && existing.name) || ""), (json.username || (existing && existing.username) || ""), role, status);
-  try { telegramSendText_(target, "??? ????????? ????: " + role); } catch (e) {}
+  try { telegramSendText_(target, "Вам назначена роль: " + role); } catch (e) {}
   var ok = { status: "success", telegramId: target, role: role, access: status };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
-/* ----- ????? ----- */
+/* ----- Склад ----- */
 
 function getLedgerSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName("?????_????????");
+  var sh = ss.getSheetByName("Склад_Движения");
   if (!sh) {
-    sh = ss.insertSheet("?????_????????");
+    sh = ss.insertSheet("Склад_Движения");
     sh.getRange(1, 1, 1, 7).setValues([["ts", "weekEnd", "skuRow", "type", "qty", "unit", "meta"]]);
     sh.setFrozenRows(1);
   }
@@ -5276,7 +5276,7 @@ function round2_(n) {
 
 function handleGetWarehouse(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var wh = ss.getSheetByName("?????");
+  var wh = ss.getSheetByName("Склад");
   if (!wh) {
     var bad = { status: "error", message: "no_warehouse" };
     return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
@@ -5291,7 +5291,7 @@ function handleGetWarehouse(json, callback, fromPost) {
     var name = String(names[i][0] || "").trim();
     if (!name) continue;
     var row = i + 2;
-    var piece = /??/i.test(name);
+    var piece = /шт/i.test(name);
     var kVal = "";
     try {
       if (piece) kVal = wh.getRange(row, 11).getValue();
@@ -5302,7 +5302,7 @@ function handleGetWarehouse(json, callback, fromPost) {
       arrival: round2_(arrivals[i][0]),
       stock: round2_(stock[i][0]),
       buy: !!buyFlags[i][0],
-      unit: piece ? "??" : "??",
+      unit: piece ? "шт" : "кг",
       stockPcs: piece ? round2_(kVal) : null
     });
   }
@@ -5332,7 +5332,7 @@ function handleGetWarehouse(json, callback, fromPost) {
 
 function handleSetWarehouseArrival(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var wh = ss.getSheetByName("?????");
+  var wh = ss.getSheetByName("Склад");
   var row = Number(json.row) || 0;
   var qty = Number(json.qty != null ? json.qty : json.arrival) || 0;
   if (!wh || row < 2) {
@@ -5341,7 +5341,7 @@ function handleSetWarehouseArrival(json, callback, fromPost) {
   }
   wh.getRange(row, 2).setValue(qty);
   try {
-    getLedgerSheet_().appendRow([new Date(), "", row, "arrival", qty, "??", JSON.stringify({ by: json.telegramId || "" })]);
+    getLedgerSheet_().appendRow([new Date(), "", row, "arrival", qty, "кг", JSON.stringify({ by: json.telegramId || "" })]);
   } catch (e) {}
   var ok = { status: "success", row: row, arrival: qty };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
@@ -5349,13 +5349,13 @@ function handleSetWarehouseArrival(json, callback, fromPost) {
 
 function handleWarehousePreview(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var wh = ss.getSheetByName("?????");
-  var cutting = ss.getSheetByName("???????");
+  var wh = ss.getSheetByName("Склад");
+  var cutting = ss.getSheetByName("Нарезка");
   if (!wh) {
     var bad = { status: "error", message: "no_warehouse" };
     return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
   }
-  // ?????????? preview: ??????? ??????? F + ??????? B vs ????? ?? ???????? ??????? D
+  // упрощённый preview: текущий остаток F + дозакуп B vs сырьё по активной нарезке D
   var last = Math.min(50, Math.max(2, wh.getLastRow()));
   var names = wh.getRange(2, 1, last - 1, 1).getValues();
   var arrivals = wh.getRange(2, 2, last - 1, 1).getValues();
@@ -5363,16 +5363,16 @@ function handleWarehousePreview(json, callback, fromPost) {
   var deficits = [];
   for (var i = 0; i < names.length; i++) {
     var name = String(names[i][0] || "").trim();
-    if (!name || /??/i.test(name)) continue;
+    if (!name || /шт/i.test(name)) continue;
     var f = Number(stock[i][0]) || 0;
     var b = Number(arrivals[i][0]) || 0;
     var need = 0;
     try {
       if (cutting) {
-        // ?????????: ?????? ??????? ? ???????
+        // эвристика: строки нарезки с объёмом
         var cRow = i + 3;
         var dry = 0;
-        // skip detailed map ? flag low stock only
+        // skip detailed map — flag low stock only
       }
     } catch (e) {}
     if (f + b <= 0.01 && f === 0) {
@@ -5389,11 +5389,11 @@ function handleWarehousePreview(json, callback, fromPost) {
       if (flags[j][0]) buyList.push({ row: j + 2, name: String(names[j][0] || "") });
     }
   } catch (e2) {}
-  var ok = { status: "success", deficits: deficits, buyList: buyList, note: "?????? ?????? ?????? ? ??? ???????? (owner)." };
+  var ok = { status: "success", deficits: deficits, buyList: buyList, note: "Полный расход недели — при закрытии (owner)." };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
-/* ----- ???????? CRM ----- */
+/* ----- Подписки CRM ----- */
 
 function handleListSubscriptions(json, callback, fromPost) {
   var crmSs;
@@ -5401,7 +5401,7 @@ function handleListSubscriptions(json, callback, fromPost) {
     var bad = { status: "error", message: "crm_unavailable", detail: String(e) };
     return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
   }
-  var sheets = ["??", "???", "??"];
+  var sheets = ["ПП", "АФК", "БП"];
   var list = [];
   var seen = {};
   for (var s = 0; s < sheets.length; s++) {
@@ -5439,7 +5439,7 @@ function handleGetSubscription(json, callback, fromPost) {
   }
   var nick = String(json.nick || json.client || "").trim();
   var subId = String(json.subId || "").trim();
-  var found = findSubscriberBasket_(crmSs, nick || subId, json.segment || "??");
+  var found = findSubscriberBasket_(crmSs, nick || subId, json.segment || "ПП");
   var contact = lookupContactAddress_(crmSs, nick);
   var ok = {
     status: "success",
@@ -5478,12 +5478,12 @@ function handlePushSubscriptionToDay(json, callback, fromPost) {
 }
 
 
-/* ----- ??: ???????? ?????? ? ???????? + ?????? N=2 ----- */
+/* ----- ПП: месячный состав → доставки + оплата N=2 ----- */
 
 function ppBasketItemKey_(it) {
   var cat = String((it && it.cat) || "").trim().toLowerCase();
-  var name = String((it && (it.main || it.name)) || "").trim().toUpperCase().replace(/?/g, "?");
-  var sub = String((it && it.sub) || "").trim().toUpperCase().replace(/?/g, "?");
+  var name = String((it && (it.main || it.name)) || "").trim().toUpperCase().replace(/Ё/g, "Е");
+  var sub = String((it && it.sub) || "").trim().toUpperCase().replace(/Ё/g, "Е");
   return cat + "|" + name + "|" + sub;
 }
 
@@ -5491,9 +5491,9 @@ function isPpChewItem_(it) {
   var cat = String((it && it.cat) || "").toLowerCase();
   if (cat === "chews" || cat === "chew") return true;
   if (cat === "dressura") return false;
-  // ?? / ??????? ?? ?????
+  // шт / жевалки по имени
   var name = String((it && (it.main || it.name)) || "");
-  return /??\.?|?????|?????|???|???|???|???|????|?????|?????|??????/i.test(name);
+  return /шт\.?|колен|копыт|нос|ухо|уши|шея|хрящ|хвост|рога?|сустав/i.test(name);
 }
 
 function clonePpBasket_(list) {
@@ -5514,12 +5514,12 @@ function clonePpBasket_(list) {
   return out;
 }
 
-/** ?????? ????: ???????? floor(n/2), ??????? ceil(n/2). ?????? ? ???????. */
+/** Первая доля: дрессура floor(n/2), жевалки ceil(n/2). Вторая — остаток. */
 function splitQtyForPpSlot_(qty, isChew, slot) {
   var v = Number(qty) || 0;
   if (v <= 0) return 0;
   var first = isChew ? Math.ceil(v / 2) : Math.floor(v / 2);
-  if (first <= 0 && v > 0) first = v; // 1? ???????? ? ??????? ? 1-?
+  if (first <= 0 && v > 0) first = v; // 1г дрессуры → целиком в 1-ю
   if (slot <= 1) return first;
   return Math.max(0, v - first);
 }
@@ -5628,7 +5628,7 @@ function parseMemoryDateLoose_(v, tz) {
   return null;
 }
 
-/** ??????? ??? ?????? ??? ??????? ???????????? ? ???? ??????????? ?????? (?? ??????_???????? + ???? ????????). */
+/** Сколько раз клиент уже отмечен доставленным в этом календарном месяце (по Память_Доставок + лист Доставки). */
 function countPpDeliveredThisMonth_(ss, clientName, dateValue, tz, excludeDateText) {
   var want = String(clientName || "").trim().toUpperCase();
   if (!want || !dateValue) return 0;
@@ -5654,9 +5654,9 @@ function countPpDeliveredThisMonth_(ss, clientName, dateValue, tz, excludeDateTe
       }
     }
   }
-  // ??????? ???? �????????�, ???? ???? ????? ??????
+  // текущий лист «Доставки», если дата этого месяца
   try {
-    var courier = ss.getSheetByName("????????");
+    var courier = ss.getSheetByName("Доставки");
     if (courier) {
       var curTxt = formatSheetDate(courier.getRange("A1").getValue(), tz);
       var curParsed = parseMemoryDateLoose_(courier.getRange("A1").getValue(), tz);
@@ -5680,7 +5680,7 @@ function resolvePpDeliverySlot_(ss, clientName, dateValue, tz, deliveredToday) {
   if (!(deliveriesN >= 1)) deliveriesN = 0;
   var dateText = formatSheetDate(dateValue, tz);
   var before = countPpDeliveredThisMonth_(ss, clientName, dateValue, tz, deliveredToday ? null : dateText);
-  // ???? ??????? ??? ? ???????? ? before ???????? ???????
+  // если сегодня уже в счётчике — before включает сегодня
   if (deliveredToday) {
     var slotDone = Math.max(1, before);
     if (cycle && cycle.slot1 && cycle.slot1.date === dateText) slotDone = 1;
@@ -5703,7 +5703,7 @@ function buildPpOrderSuggest_(ss, nick, dayName, dateStr) {
   if (!dateValue) dateValue = new Date();
 
   var crmSs = getCrmSpreadsheet_();
-  var found = findSubscriberBasket_(crmSs, nick, "??");
+  var found = findSubscriberBasket_(crmSs, nick, "ПП");
   var contact = lookupContactAddress_(crmSs, nick);
   var deliveriesN = lookupPpDeliveries_(nick);
   if (!(deliveriesN >= 1) && found.basket && found.basket.length) deliveriesN = 1;
@@ -5712,7 +5712,7 @@ function buildPpOrderSuggest_(ss, nick, dayName, dateStr) {
   var dateText = formatSheetDate(dateValue, tz);
   var deliveredToday = false;
   try {
-    var courier = ss.getSheetByName("????????");
+    var courier = ss.getSheetByName("Доставки");
     if (courier && formatSheetDate(courier.getRange("A1").getValue(), tz) === dateText) {
       var col = findCourierClientCol_(courier, nick);
       if (col > 0) deliveredToday = courier.getRange(2, col).getValue() === true;
@@ -5750,13 +5750,13 @@ function buildPpOrderSuggest_(ss, nick, dayName, dateStr) {
 
   var factCost = null;
   try {
-    var shPp = findSheetByBaseName_(crmSs, "??");
+    var shPp = findSheetByBaseName_(crmSs, "ПП");
     if (shPp && shPp.getLastRow() >= 2) {
       var dataPp = shPp.getDataRange().getValues();
       var headersPp = dataPp[0].map(function (h) { return String(h || "").trim().toUpperCase(); });
       var factCol = -1;
       for (var c = 0; c < headersPp.length; c++) {
-        if (headersPp[c].indexOf("????") >= 0 && headersPp[c].indexOf("?????") >= 0) { factCol = c; break; }
+        if (headersPp[c].indexOf("ФАКТ") >= 0 && headersPp[c].indexOf("СТОИМ") >= 0) { factCol = c; break; }
       }
       var wantNick = String(nick || "");
       for (var r = 2; r < dataPp.length; r++) {
@@ -5775,7 +5775,7 @@ function buildPpOrderSuggest_(ss, nick, dayName, dateStr) {
     status: "success",
     nick: nick,
     subId: found.subId || "",
-    sheet: found.sheet || "??",
+    sheet: found.sheet || "ПП",
     wishes: found.wishes || "",
     address: contact.address || "",
     note: contact.note || "",
@@ -5792,8 +5792,8 @@ function buildPpOrderSuggest_(ss, nick, dayName, dateStr) {
     slot1Basket: slot1Basket,
     remainingBasket: remaining,
     hint: deliveriesN >= 2
-      ? ("?? N=" + deliveriesN + " � ???????? " + slot + "/" + deliveriesN + (slot >= 2 ? " (???????)" : " (????)"))
-      : (deliveriesN === 1 ? "?? N=1 � ?????? ???????" : "??: ?????? ? ?????")
+      ? ("ПП N=" + deliveriesN + " · доставка " + slot + "/" + deliveriesN + (slot >= 2 ? " (остаток)" : " (доля)"))
+      : (deliveriesN === 1 ? "ПП N=1 · состав целиком" : "ПП: состав с листа")
   };
 }
 
@@ -5842,7 +5842,7 @@ function recordPpDeliveryCycle_(ss, dayName, clientName, dateValue, tz, paidVal)
 
   var resolved = resolvePpDeliverySlot_(ss, clientName, dateValue, tz, true);
   var slot = resolved.slot || 1;
-  // ???? slot1 ??? ??? ? ??? ?????? ???????? ??????
+  // если slot1 ещё нет — это первая доставка месяца
   if (!cycle.slot1) slot = 1;
   else if (cycle.slot1.date !== dateText) slot = 2;
 
@@ -5861,9 +5861,9 @@ function getWeekPaidStore_(memory, weekKey, tz) {
   return all;
 }
 function weekPaidKey_(dateValue, tz) {
-  // ???? ?????? ?? ???????????? ????
+  // ключ недели по понедельнику даты
   var d = new Date(dateValue);
-  var day = d.getDay(); // 0=??
+  var day = d.getDay(); // 0=вс
   var diff = (day === 0 ? -6 : 1 - day);
   var mon = new Date(d.getTime());
   mon.setDate(d.getDate() + diff);
@@ -5872,7 +5872,7 @@ function weekPaidKey_(dateValue, tz) {
 function lookupPpDeliveries_(clientName) {
   try {
     var crmSs = getCrmSpreadsheet_();
-    var data = getCrmSheetValuesFast_(crmSs, "??");
+    var data = getCrmSheetValuesFast_(crmSs, "ПП");
     if (!data || data.length < 3) return 0;
     for (var r = 2; r < data.length; r++) {
       if (nicksMatch_(data[r][0], clientName)) return Number(data[r][2]) || 0;
@@ -5887,7 +5887,7 @@ function normalizeMemDelivered_(v) {
 }
 function countDeliveredThisWeek_(ss, clientName, dateValue, tz) {
   var want = String(clientName || "").trim().toUpperCase();
-  var days = ["???????????", "???????", "?????", "???????", "???????"];
+  var days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
   var n = 0;
   var memory = getMemoryCourierSheet_();
   for (var i = 0; i < days.length; i++) {
@@ -5898,7 +5898,7 @@ function countDeliveredThisWeek_(ss, clientName, dateValue, tz) {
     var k2 = weekPaidKey_(dateValue, tz);
     if (k1 !== k2) continue;
     var dateText = formatSheetDate(dv, tz);
-    var courier = ss.getSheetByName("????????");
+    var courier = ss.getSheetByName("Доставки");
     var sheetActive = courier && formatSheetDate(courier.getRange("A1").getValue(), tz) === dateText;
     var delivered = false;
     if (sheetActive) {
@@ -5917,151 +5917,151 @@ function countDeliveredThisWeek_(ss, clientName, dateValue, tz) {
 }
 
 
-/* ----- ???? ----- */
+/* ----- Цена ----- */
 
-/** ????????? ????? ? ??????? IG (2026-07), BYN ?? 100? / ?? / ?????? */
+/** Розничный прайс с витрины IG (2026-07), BYN за 100г / шт / пакеты */
 var RETAIL_PRICE_BYN_ = {
-  "??????|??????": { per100: 12 },
-  "??????|???????": { per100: 10 },
-  "??????|???????": { per100: 9 },
-  "??????|?????": { per100: 8 },
-  "??????": { per100: 10 },
-  "??????|??????": { per100: 13 },
-  "??????|???????": { per100: 12 },
-  "??????|???????": { per100: 11 },
-  "??????|?????": { per100: 10 },
-  "??????": { per100: 12 },
-  "????? ?|??????": { per100: 13 },
-  "????? ?|???????": { per100: 12 },
-  "????? ?|???????": { per100: 11 },
-  "????? ?|?????": { per100: 10 },
-  "????? ?": { per100: 12 },
-  "?????|??????": { per100: 11 },
-  "?????|?????": { per100: 10 },
-  "?????": { per100: 10 },
-  "??????? ??????|??????": { per100: 15 },
-  "??????? ??????|???????": { per100: 14 },
-  "??????? ??????|???????": { per100: 13 },
-  "??????? ??????|?????": { per100: 12 },
-  "??????? ??????": { per100: 14 },
-  "??????": { per100: 9 },
-  "??????? ?????": { per100: 9 },
-  "??????": { per100: 9 },
-  "????": { per100: 9 },
-  "?????????": { per100: 12 },
-  "?????? ???????": { per100: 13 },
-  "????????? ????": { per100: 10 },
-  "???????|??????": { per100: 17 },
-  "???????|???????": { per100: 16 },
-  "???????|?????": { per100: 15 },
-  "???????": { per100: 16 },
-  "??????? ??????|??????": { per100: 18 },
-  "??????? ??????|???????": { per100: 17 },
-  "??????? ??????|?????": { per100: 16 },
-  "??????? ??????": { per100: 17 },
-  "?????? ???????": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
-  "?????? ?????": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
-  "?????? ??????": { packs: { "20": 7, "50": 9, "100": 12 }, per100: 12 },
-  "?????? ?????": { packs: { "20": 7, "50": 9, "100": 12 }, per100: 12 },
-  "?????? ????": { packs: { "20": 6, "50": 8, "100": 11 }, per100: 11 },
-  "??????": { per100: 10 },
-  "??????": { per100: 9 },
-  "?????": { per100: 10 },
-  "????????": { per100: 10 },
-  "???????": { per100: 10 },
-  "?????": { per100: 12 },
-  "?????": { per100: 11 },
-  "???????": { per100: 12 },
-  "??????": { per100: 10 },
-  "?????? ??.": { perPiece: 9 },
-  "?????? ??.": { perPiece: 6 },
-  "???? ??.": { perPiece: 7 },
-  "??? ???? ??.": { perPiece: 4 },
-  "?????? ??? ??.": { perPiece: 3 },
-  "????????? ??.": { perPiece: 4 },
-  "???? ??.": { perPiece: 4 },
-  "??????|???": { perPiece: 4 },
-  "??????|????": { perPiece: 7 },
-  "??????|???": { perPiece: 12 },
-  "??????|?????": { perPiece: 7 },
-  "??????|???": { perPiece: 12 },
-  "??????": { perPiece: 7 },
-  "????? ??????|?? ???": { perPiece: 6 },
-  "????? ??????|???": { perPiece: 6 },
-  "????? ??????|????": { perPiece: 11 },
-  "????? ??????|???": { perPiece: 21 },
-  "????? ??????|???": { perPiece: 25 },
-  "????? ??????": { perPiece: 11 },
-  "??? ?|?????????": { perPiece: 4 },
-  "??? ?|???????": { perPiece: 6 },
-  "??? ?": { perPiece: 6 },
-  "?????|?????????": { perPiece: 2 },
-  "?????|???????": { perPiece: 4 },
-  "?????": { perPiece: 4 },
-  "???????? ????|????": { perPiece: 1 },
-  "???????? ????|????": { perPiece: 4 },
-  "???????? ????|???": { perPiece: 6 },
-  "???????? ????": { perPiece: 4 }
+  "ЛЁГКОЕ|Мелкое": { per100: 12 },
+  "ЛЁГКОЕ|Среднее": { per100: 10 },
+  "ЛЁГКОЕ|Большое": { per100: 9 },
+  "ЛЁГКОЕ|Целое": { per100: 8 },
+  "ЛЁГКОЕ": { per100: 10 },
+  "СЕРДЦЕ|Мелкое": { per100: 13 },
+  "СЕРДЦЕ|Среднее": { per100: 12 },
+  "СЕРДЦЕ|Большое": { per100: 11 },
+  "СЕРДЦЕ|Целое": { per100: 10 },
+  "СЕРДЦЕ": { per100: 12 },
+  "РУБЕЦ Т|Мелкое": { per100: 13 },
+  "РУБЕЦ Т|Среднее": { per100: 12 },
+  "РУБЕЦ Т|Крупное": { per100: 11 },
+  "РУБЕЦ Т|Целое": { per100: 10 },
+  "РУБЕЦ Т": { per100: 12 },
+  "ПОЧКИ|Мелкое": { per100: 11 },
+  "ПОЧКИ|Целое": { per100: 10 },
+  "ПОЧКИ": { per100: 10 },
+  "БАРАНЬЕ ЛЁГКОЕ|Мелкое": { per100: 15 },
+  "БАРАНЬЕ ЛЁГКОЕ|Среднее": { per100: 14 },
+  "БАРАНЬЕ ЛЁГКОЕ|Большое": { per100: 13 },
+  "БАРАНЬЕ ЛЁГКОЕ|Целое": { per100: 12 },
+  "БАРАНЬЕ ЛЁГКОЕ": { per100: 14 },
+  "ПЕЧЕНЬ": { per100: 9 },
+  "СВЕТЛЫЙ РУБЕЦ": { per100: 9 },
+  "КНИЖКА": { per100: 9 },
+  "ВЫМЯ": { per100: 9 },
+  "СЕМЕННИКИ": { per100: 12 },
+  "МЯСНЫЕ ЛОМТИКИ": { per100: 13 },
+  "ПИКАЛЬНОЕ МЯСО": { per100: 10 },
+  "ИНДЕЙКА|Мелкое": { per100: 17 },
+  "ИНДЕЙКА|Среднее": { per100: 16 },
+  "ИНДЕЙКА|Целое": { per100: 15 },
+  "ИНДЕЙКА": { per100: 16 },
+  "БАРАНЬЯ ПЕЧЕНЬ|Мелкое": { per100: 18 },
+  "БАРАНЬЯ ПЕЧЕНЬ|Среднее": { per100: 17 },
+  "БАРАНЬЯ ПЕЧЕНЬ|Целое": { per100: 16 },
+  "БАРАНЬЯ ПЕЧЕНЬ": { per100: 17 },
+  "КРОШКА ЛЁГКОГО": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
+  "КРОШКА ПОЧЕК": { packs: { "20": 5, "50": 7, "100": 10 }, per100: 10 },
+  "КРОШКА СЕРДЦА": { packs: { "20": 7, "50": 9, "100": 12 }, per100: 12 },
+  "КРОШКА РУБЕЦ": { packs: { "20": 7, "50": 9, "100": 12 }, per100: 12 },
+  "КРОШКА МИКС": { packs: { "20": 6, "50": 8, "100": 11 }, per100: 11 },
+  "БАНАНЫ": { per100: 10 },
+  "ЯБЛОКИ": { per100: 9 },
+  "ГРУШИ": { per100: 10 },
+  "КЛУБНИКА": { per100: 10 },
+  "МОРКОВЬ": { per100: 10 },
+  "ТЫКВА": { per100: 12 },
+  "БАТАТ": { per100: 11 },
+  "КАБАЧОК": { per100: 12 },
+  "СВЕКЛА": { per100: 10 },
+  "КОПЫТО шт.": { perPiece: 9 },
+  "КОЛЕНИ шт.": { perPiece: 6 },
+  "НОСЫ шт.": { perPiece: 7 },
+  "ЛОП ХРЯЩ шт.": { perPiece: 4 },
+  "УТИНЫЕ ШЕИ шт.": { perPiece: 3 },
+  "ПЕРЕПЁЛКИ шт.": { perPiece: 4 },
+  "ГУБЫ шт.": { perPiece: 4 },
+  "ТРАХЕЯ|МАЛ": { perPiece: 4 },
+  "ТРАХЕЯ|СРЕД": { perPiece: 7 },
+  "ТРАХЕЯ|БОЛ": { perPiece: 12 },
+  "ТРАХЕЯ|ПЛАСТ": { perPiece: 7 },
+  "ТРАХЕЯ|ОГР": { perPiece: 12 },
+  "ТРАХЕЯ": { perPiece: 7 },
+  "БЫЧИЙ КОРЕНЬ|ОЧ МАЛ": { perPiece: 6 },
+  "БЫЧИЙ КОРЕНЬ|МАЛ": { perPiece: 6 },
+  "БЫЧИЙ КОРЕНЬ|СРЕД": { perPiece: 11 },
+  "БЫЧИЙ КОРЕНЬ|БОЛ": { perPiece: 21 },
+  "БЫЧИЙ КОРЕНЬ|ОГР": { perPiece: 25 },
+  "БЫЧИЙ КОРЕНЬ": { perPiece: 11 },
+  "УХО Г|ПОЛОВИНКА": { perPiece: 4 },
+  "УХО Г|Обычное": { perPiece: 6 },
+  "УХО Г": { perPiece: 6 },
+  "АОРТА|ПОЛОВИНКА": { perPiece: 2 },
+  "АОРТА|Обычная": { perPiece: 4 },
+  "АОРТА": { perPiece: 4 },
+  "СТАНОВАЯ ЖИЛА|ПАЛК": { perPiece: 1 },
+  "СТАНОВАЯ ЖИЛА|СРЕД": { perPiece: 4 },
+  "СТАНОВАЯ ЖИЛА|БОЛ": { perPiece: 6 },
+  "СТАНОВАЯ ЖИЛА": { perPiece: 4 }
 };
 
 function retailNormalizeSub_(name, sub) {
   var s = String(sub || "").trim();
   if (!s) return "";
-  var u = s.toUpperCase().replace(/?/g, "?").replace(/\s+/g, " ");
-  var n = String(name || "").toUpperCase().replace(/?/g, "?");
-  // ??????? ? ?????????? ????
-  if (/????? ?????|?????|??????/.test(n)) {
-    if (/?????\s*???|??\s*???|?????/.test(u)) return "?? ???";
-    if (/?????|?????|???/.test(u)) return "???";
-    if (/?????|???/.test(u)) return "???";
-    if (/?????|????|???????/.test(u) && /??????/.test(n)) return /???/.test(u) ? "????" : "????";
-    if (/????/.test(u)) return "????";
-    if (/?????|????/.test(u)) return "????";
-    if (/?????/.test(u)) return "?????";
-    if (/???/.test(u)) return "???";
+  var u = s.toUpperCase().replace(/Ё/g, "Е").replace(/\s+/g, " ");
+  var n = String(name || "").toUpperCase().replace(/Ё/g, "Е");
+  // жевалки — каталожные коды
+  if (/БЫЧИЙ КОРЕН|ТРАХЕ|СТАНОВ/.test(n)) {
+    if (/ОЧЕНЬ\s*МАЛ|ОЧ\s*МАЛ|СУПЕР/.test(u)) return "ОЧ МАЛ";
+    if (/ОГРОМ|РОГАЛ|ОГР/.test(u)) return "ОГР";
+    if (/БОЛЬШ|БОЛ/.test(u)) return "БОЛ";
+    if (/СРЕДН|СРЕД|ПОЛОВИН/.test(u) && /СТАНОВ/.test(n)) return /ПАЛ/.test(u) ? "ПАЛК" : "СРЕД";
+    if (/СРЕД/.test(u)) return "СРЕД";
+    if (/ПАЛОЧ|ПАЛК/.test(u)) return "ПАЛК";
+    if (/ПЛАСТ/.test(u)) return "ПЛАСТ";
+    if (/МАЛ/.test(u)) return "МАЛ";
   }
-  if (/???|???/.test(n)) {
-    if (/???????/.test(u)) return "?????????";
-    return "???????";
+  if (/УХО|УШК/.test(n)) {
+    if (/ПОЛОВИН/.test(u)) return "ПОЛОВИНКА";
+    return "Обычное";
   }
-  if (/????/.test(n)) {
-    if (/???????/.test(u)) return "?????????";
-    return "???????";
+  if (/АОРТ/.test(n)) {
+    if (/ПОЛОВИН/.test(u)) return "ПОЛОВИНКА";
+    return "Обычная";
   }
-  // ???????? / ?????-???????? ? ????
-  if (/????/.test(u)) return "??????";
-  if (/????|?????|?????/.test(u) && !/????|?????|???|????|??????/.test(u)) return "???????";
-  if (/????|??????/.test(u) && !/????/.test(u)) return "???????";
-  if (/?????/.test(u)) return "???????";
-  if (/?????|??????/.test(u)) return "???????";
-  if (/???|????/.test(u)) return "?????";
-  if (/?????/.test(u)) return "???????";
+  // дрессура / прайс-синонимы с фото
+  if (/МЕЛК/.test(u)) return "Мелкое";
+  if (/СРЕД|КУСОЧ|КУБИК/.test(u) && !/МЕЛК|БОЛЬШ|ЦЕЛ|ЛОМТ|ПОЛОСК/.test(u)) return "Среднее";
+  if (/СРЕД|КУСОЧК/.test(u) && !/МЕЛК/.test(u)) return "Среднее";
+  if (/КРУПН/.test(u)) return "Крупное";
+  if (/БОЛЬШ|ПОЛОСК/.test(u)) return "Большое";
+  if (/ЦЕЛ|ЛОМТ/.test(u)) return "Целое";
+  if (/КУБИК/.test(u)) return "Среднее";
   return s;
 }
 
 function retailNormalizeName_(name) {
   var n = String(name || "").trim();
-  var u = n.toUpperCase().replace(/?/g, "?");
+  var u = n.toUpperCase().replace(/Ё/g, "Е");
   var aliases = {
-    "??????": "??????",
-    "??????? ??????": "??????? ??????",
-    "?????? ???????": "?????? ???????",
-    "????????? ??.": "????????? ??.",
-    "????????? ??": "????????? ??.",
-    "?????? ??.": "?????? ??.",
-    "?????? ??.": "?????? ??.",
-    "???? ??.": "???? ??.",
-    "??? ???? ??.": "??? ???? ??.",
-    "?????? ??? ??.": "?????? ??? ??.",
-    "???? ??.": "???? ??.",
-    "???? ??": "???? ??.",
-    "???????": "???????",
-    "?????": "?????",
-    "????? ?": "??????? ?????",
-    "??????? ?????": "??????? ?????"
+    "ЛЕГКОЕ": "ЛЁГКОЕ",
+    "БАРАНЬЕ ЛЕГКОЕ": "БАРАНЬЕ ЛЁГКОЕ",
+    "КРОШКА ЛЕГКОГО": "КРОШКА ЛЁГКОГО",
+    "ПЕРЕПЕЛКИ ШТ.": "ПЕРЕПЁЛКИ шт.",
+    "ПЕРЕПЕЛКИ ШТ": "ПЕРЕПЁЛКИ шт.",
+    "КОПЫТО ШТ.": "КОПЫТО шт.",
+    "КОЛЕНИ ШТ.": "КОЛЕНИ шт.",
+    "НОСЫ ШТ.": "НОСЫ шт.",
+    "ЛОП ХРЯЩ ШТ.": "ЛОП ХРЯЩ шт.",
+    "УТИНЫЕ ШЕИ ШТ.": "УТИНЫЕ ШЕИ шт.",
+    "ГУБЫ ШТ.": "ГУБЫ шт.",
+    "ГУБЫ ШТ": "ГУБЫ шт.",
+    "КАБАЧКИ": "КАБАЧОК",
+    "ГРУШЫ": "ГРУШИ",
+    "РУБЕЦ С": "СВЕТЛЫЙ РУБЕЦ",
+    "СВЕТЛЫЙ РУБЕЦ": "СВЕТЛЫЙ РУБЕЦ"
   };
   if (aliases[u]) return aliases[u];
-  if (u.indexOf("?????? ???") === 0) return "?????? ?????";
+  if (u.indexOf("КРОШКА РУБ") === 0) return "КРОШКА РУБЕЦ";
   return n;
 }
 
@@ -6079,7 +6079,7 @@ function retailLineCost_(name, sub, val, cat) {
     var c = p100 * (v / 100);
     return { cost: Math.round(c * 100) / 100, per: p100, found: true };
   }
-  if (info.perPiece != null || String(cat || "") === "chew" || String(cat || "") === "chews" || /??/i.test(n)) {
+  if (info.perPiece != null || String(cat || "") === "chew" || String(cat || "") === "chews" || /шт/i.test(n)) {
     var pp = Number(info.perPiece || 0);
     return { cost: Math.round(pp * v * 100) / 100, per: pp, found: true };
   }
@@ -6097,10 +6097,10 @@ function getPriceSpreadsheet_() {
 function readPriceCosts_(mode) {
   var ss = getPriceSpreadsheet_();
   var m = String(mode || "").toLowerCase();
-  var sheetName = "????????";
-  if (m.indexOf("????") >= 0 || m === "retail") sheetName = "???????";
-  else if (m === "bp" || m.indexOf("??") >= 0) sheetName = ss.getSheetByName("??") ? "??" : "????????";
-  else if (m === "pp" || m === "subscription" || m.indexOf("??") >= 0) sheetName = "????????";
+  var sheetName = "Подписка";
+  if (m.indexOf("розн") >= 0 || m === "retail") sheetName = "Розница";
+  else if (m === "bp" || m.indexOf("бп") >= 0) sheetName = ss.getSheetByName("БП") ? "БП" : "Подписка";
+  else if (m === "pp" || m === "subscription" || m.indexOf("пп") >= 0) sheetName = "Подписка";
   var sh = ss.getSheetByName(sheetName) || ss.getSheets()[0];
   var data = sh.getDataRange().getValues();
   if (!data.length) return { costs: {}, headers: [] };
@@ -6108,7 +6108,7 @@ function readPriceCosts_(mode) {
   var costRow = null;
   for (var r = 0; r < Math.min(5, data.length); r++) {
     var label = String(data[r][0] || "").toLowerCase();
-    if (label.indexOf("?????????") >= 0 || label.indexOf("100") >= 0) {
+    if (label.indexOf("себестоим") >= 0 || label.indexOf("100") >= 0) {
       costRow = data[r];
       break;
     }
@@ -6137,9 +6137,9 @@ function handleCalcPrice(json, callback, fromPost) {
   var mode = json.mode || "subscription";
   var basket = json.basket || [];
   var m = String(mode || "").toLowerCase();
-  var isRetail = m.indexOf("????") >= 0 || m === "retail";
+  var isRetail = m.indexOf("розн") >= 0 || m === "retail";
 
-  // ??????? ? ????? ? ??????? (????), ??? ????? ? ??? �2.3
+  // Розница — прайс с витрины (фото), без листа и без ×2.3
   if (isRetail) {
     var rLines = [];
     var rTotal = 0;
@@ -6157,7 +6157,7 @@ function handleCalcPrice(json, callback, fromPost) {
     var rok = {
       status: "success",
       mode: mode,
-      sheet: "??????? IG",
+      sheet: "витрина IG",
       lines: rLines,
       cost: rTotal,
       markup: 1,
@@ -6196,7 +6196,7 @@ function handleCalcPrice(json, callback, fromPost) {
     var piece = false;
     if (info && info.piece) piece = true;
     else if (cat === "chew" || cat === "chews") piece = true;
-    else if (/??/i.test(name)) piece = true;
+    else if (/шт/i.test(name)) piece = true;
     else if (info && info.grams === false) piece = true;
     var cost = piece ? (unitPrice * val) : ((val / 100) * unitPrice);
     totalCost += cost;
@@ -6224,7 +6224,7 @@ function handleCalcPrice(json, callback, fromPost) {
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
-/* ----- ?????? / ?????? ----- */
+/* ----- Сборка / пакеты ----- */
 
 function packCountForLight_(grams) {
   var g = Number(grams) || 0;
@@ -6246,15 +6246,15 @@ function packCountForBulk_(grams) {
   return Math.ceil(g / 300) * 4;
 }
 
-/** ???????????? ??????? ??????? ? ???? ????????. */
+/** Нормализация фракции лёгкого → ключ счётчика. */
 function lightFractionCounterKey_(sub) {
   var u = String(sub || '').trim().toUpperCase();
-  if (!u || u.indexOf('???') >= 0) return '???????';
-  if (/????|???/.test(u) && !/??/.test(u)) return '?????????';
-  if (/????/.test(u)) return '???????';
-  if (/?????|?????|???/.test(u)) return '???????';
-  if (/???/.test(u)) return '?????';
-  return '???????';
+  if (!u || u.indexOf('БЕЗ') >= 0) return 'средний';
+  if (/МЕЛК|МАЛ/.test(u) && !/ОЧ/.test(u)) return 'маленький';
+  if (/СРЕД/.test(u)) return 'средний';
+  if (/КРУПН|БОЛЬШ|БОЛ/.test(u)) return 'большой';
+  if (/ЦЕЛ/.test(u)) return 'целое';
+  return 'средний';
 }
 
 function buildAssemblyForBasket_(basket) {
@@ -6268,38 +6268,38 @@ function buildAssemblyForBasket_(basket) {
     var sub = String(it.sub || '').trim();
     var val = Number(it.val != null ? it.val : it.value) || 0;
     var cat = String(it.cat || '').toLowerCase();
-    var unit = String(it.unit || '').trim() || (/??/i.test(name) ? '??' : '??');
+    var unit = String(it.unit || '').trim() || (/шт/i.test(name) ? 'шт' : 'гр');
     if (!name || val <= 0) return;
     var bags = 0;
     var rule = '';
     var type = 'other';
     var counterKey = '';
-    if (/?[??]??/i.test(name)) {
+    if (/л[её]гк/i.test(name)) {
       bags = packCountForLight_(val);
-      rule = '??????';
+      rule = 'лёгкое';
       type = 'light';
-      var fk = sub || '???????';
+      var fk = sub || 'Среднее';
       lightMap[fk] = (lightMap[fk] || 0) + val;
       counterKey = lightFractionCounterKey_(fk);
       lightBagsByCounter[counterKey] = (lightBagsByCounter[counterKey] || 0) + bags;
-    } else if (cat === 'chew' || /??/i.test(name) || /???|?????|????|???|???|???????|?????|?????|?????|???|?????/i.test(name)) {
+    } else if (cat === 'chew' || /шт/i.test(name) || /быч|трахе|аорт|ухо|нос|станова|колен|копыт|переп|губ|книжк/i.test(name)) {
       bags = Math.max(1, Math.ceil(val / 4));
-      rule = '???????�4';
+      rule = 'жевалки×4';
       type = 'chew';
       counterKey = '';
-    } else if (cat === 'other' || /?????|??????|??????|????|?????|???????|??????|?????/i.test(name)) {
+    } else if (cat === 'other' || /крафт|индейк|ломтик|вымя|семен|пикальн|печень|светл/i.test(name)) {
       bags = Math.max(1, Math.ceil(val / 5)) + 1;
-      rule = '?????�5+?????';
+      rule = 'крафт×5+запас';
       type = 'craft';
-      counterKey = '?????';
+      counterKey = 'крафт';
     } else if (cat === 'dressura' || cat === 'powder' || cat === 'veg') {
       bags = packCountForBulk_(val);
-      rule = '???????';
+      rule = 'сыпучее';
       type = 'bulk';
       counterKey = '';
     } else {
       bags = packCountForBulk_(val);
-      rule = '???????';
+      rule = 'сыпучее';
       type = 'bulk';
       counterKey = '';
     }
@@ -6314,7 +6314,7 @@ function buildAssemblyForBasket_(basket) {
       rule: rule,
       type: type,
       counterKey: counterKey,
-      label: name + (sub ? ' / ' + sub : '') + ' ? ' + bags + ' ???.'
+      label: name + (sub ? ' / ' + sub : '') + ' → ' + bags + ' пак.'
     });
   });
   var lightByFraction = [];
@@ -6394,7 +6394,7 @@ function handleGetAssembly(json, callback, fromPost) {
     lightGramsTotal += Number(lightAll[lk]) || 0;
   }
   lightByFraction.sort(function (a, b) {
-    var order = { '??????': 1, '???????': 2, '???????': 3, '???????': 3, '?????': 4 };
+    var order = { 'Мелкое': 1, 'Среднее': 2, 'Крупное': 3, 'Большое': 3, 'Целое': 4 };
     return (order[a.sub] || 9) - (order[b.sub] || 9) || String(a.sub).localeCompare(String(b.sub));
   });
   var ok = {
@@ -6416,13 +6416,13 @@ function setupOpsEcosystem() {
   getBookingsSheet_();
   getLedgerSheet_();
   getClientsProfilesSheet_();
-  // ????? �??????� ????-???? ? ? DATA_SPREADSHEET_ID (?????? ?????) ??? ? active
+  // листы «данных» мини-аппа — в DATA_SPREADSHEET_ID (старая книга) или в active
   getGeoSheet_();
   getDeficitSheet_();
   getCuttingCompletionSheet_();
-  var sku = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("SKU_?????");
+  var sku = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("SKU_Карта");
   if (!sku) {
-    sku = SpreadsheetApp.getActiveSpreadsheet().insertSheet("SKU_?????");
+    sku = SpreadsheetApp.getActiveSpreadsheet().insertSheet("SKU_Карта");
     sku.getRange(1, 1, 1, 5).setValues([["cutRow", "warehouseRow", "name", "unit", "notes"]]);
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -6436,20 +6436,20 @@ function setupOpsEcosystem() {
   }
   Logger.log("setupOpsEcosystem ok; crmLocal=" + crmLocal + "; DATA_SPREADSHEET_ID=" + (dataId || "(active)") + "; seed=" + JSON.stringify(seed));
   var msg = crmLocal
-    ? ("ok ? CRM ? ?????????; ???????: ???? " + (seed.profilesBefore || 0) + " ? ????? " + (seed.profilesAfter || 0) +
-      " (???????? " + (seed.fromContacts || 0) + ", ???????? " + (seed.fromSubs || 0) + ", ?????????-?????? " + (seed.fromMonths || 0) + ")")
-    : "ok ? CRM-?????? ?? ?????; ?????????? ????????/??/???/??/?????? ? ??? ?????";
+    ? ("ok — CRM в чистовике; Клиенты: было " + (seed.profilesBefore || 0) + " → стало " + (seed.profilesAfter || 0) +
+      " (контакты " + (seed.fromContacts || 0) + ", подписки " + (seed.fromSubs || 0) + ", календарь-ячейки " + (seed.fromMonths || 0) + ")")
+    : "ok — CRM-листов не видно; скопируйте Контакты/ПП/АФК/БП/месяцы в эту книгу";
   if (dataId) {
-    msg += "; DATA_SPREADSHEET_ID ????? (???/????????/?????/?????? ? ?????? ?????)";
+    msg += "; DATA_SPREADSHEET_ID задан (гео/дефициты/итоги/память в старой книге)";
   } else {
-    msg += "; ?????? ????-???? ? ???? ?? ?????";
+    msg += "; данные мини-аппа в этой же книге";
   }
   return msg;
 }
 
 
 
-/* ========== v7.8 ???????? / ??????? / ?????????? ========== */
+/* ========== v7.8 Обучение / репорты / статистика ========== */
 
 function getOrCreateSheet_(ss, name, headers) {
   var sh = ss.getSheetByName(name);
@@ -6465,7 +6465,7 @@ function getOrCreateSheet_(ss, name, headers) {
 
 function handleLogEvent(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = getOrCreateSheet_(ss, "????????_???????", [
+  var sh = getOrCreateSheet_(ss, "Обучение_События", [
     "at", "event", "screen", "role", "telegramId", "client", "day", "meta"
   ]);
   var meta = json.meta;
@@ -6488,7 +6488,7 @@ function handleLogEvent(json, callback, fromPost) {
 
 function handleReportBug(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = getOrCreateSheet_(ss, "???_???????", [
+  var sh = getOrCreateSheet_(ss, "Баг_Репорты", [
     "at", "screen", "role", "telegramId", "what", "expected", "client", "day", "status"
   ]);
   sh.appendRow([
@@ -6514,13 +6514,13 @@ function handleGetStats(json, callback, fromPost) {
   var ppActive = 0, bpFunnel = 0, deliveries = 0;
   try {
     var crm = getCrmSpreadsheet_();
-    var pp = findSheetByBaseName_(crm, "??");
+    var pp = findSheetByBaseName_(crm, "ПП");
     if (pp && pp.getLastRow() >= 3) ppActive = Math.max(0, pp.getLastRow() - 2);
-    var bp = findSheetByBaseName_(crm, "??");
+    var bp = findSheetByBaseName_(crm, "БП");
     if (bp && bp.getLastRow() >= 3) bpFunnel = Math.max(0, bp.getLastRow() - 2);
   } catch (e) {}
   try {
-    var days = ["???????????", "???????", "?????", "???????", "???????"];
+    var days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
     for (var i = 0; i < days.length; i++) {
       var d = getClientsData_(ss, days[i]);
       deliveries += (d.clients || []).length;
@@ -6528,13 +6528,13 @@ function handleGetStats(json, callback, fromPost) {
   } catch (e2) {}
   var ok = {
     status: "success",
-    title: "??????????? ????? � " + monthName,
+    title: "Календарный месяц · " + monthName,
     period: json.period || "month",
     ppActive: ppActive,
     bpFunnel: bpFunnel,
     deliveries: deliveries,
-    revenue: "?",
-    note: "??????: ?????? ?????/???????/CAC ? ??????????. ??????? ? exportStats."
+    revenue: "—",
+    note: "Каркас: полный архив/воронка/CAC — наращиваем. Экспорт — exportStats."
   };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
@@ -6543,7 +6543,7 @@ function handleExportStats(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var lines = ["date\tclient\tday\taddress"];
   try {
-    var days = ["???????????", "???????", "?????", "???????", "???????"];
+    var days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
     for (var i = 0; i < days.length; i++) {
       var d = getClientsData_(ss, days[i]);
       var dateText = d.date || "";
@@ -6555,7 +6555,7 @@ function handleExportStats(json, callback, fromPost) {
   var ok = {
     status: "success",
     format: json.format || "accountant",
-    message: "TSV ??????? ?????? (?????? ??????????)",
+    message: "TSV текущей недели (каркас бухгалтера)",
     tsv: lines.join("\n")
   };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
@@ -6565,7 +6565,7 @@ function handleListSurvey(json, callback, fromPost) {
   var ok = {
     status: "success",
     items: [],
-    note: "???????? ??2/??1 ? ??????; ???? ????????? ? ?????? F"
+    note: "Опросник БП2/ПП1 — каркас; лист подключим в полном F"
   };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
@@ -6577,18 +6577,18 @@ function handleGetPpFactCost(json, callback, fromPost) {
   var out = { status: "success", nick: nick, factCost: null, deliveries: 0 };
   try {
     var crmSs = getCrmSpreadsheet_();
-    var data = getCrmSheetValuesFast_(crmSs, "??");
+    var data = getCrmSheetValuesFast_(crmSs, "ПП");
     if (!data || data.length < 2) {
       return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
     }
     var headers = data[0].map(function (h) { return String(h || "").trim().toUpperCase(); });
     var factCol = -1;
     for (var c = 0; c < headers.length; c++) {
-      if (headers[c].indexOf("????") >= 0 && headers[c].indexOf("?????") >= 0) { factCol = c; break; }
+      if (headers[c].indexOf("ФАКТ") >= 0 && headers[c].indexOf("СТОИМ") >= 0) { factCol = c; break; }
     }
     if (factCol < 0) {
       for (var c2 = 0; c2 < headers.length; c2++) {
-        if (headers[c2].indexOf("???? ?????????") >= 0 || headers[c2] === "???? ?????????") { factCol = c2; break; }
+        if (headers[c2].indexOf("ФАКТ СТОИМОСТЬ") >= 0 || headers[c2] === "ФАКТ СТОИМОСТЬ") { factCol = c2; break; }
       }
     }
     var wantNick = String(nick || "");
@@ -6615,7 +6615,7 @@ function ensureBpAndSurveyFromOrder_(json) {
   var crmSs = getCrmSpreadsheet_();
   var nick = String(json.client || "").trim();
   if (!nick) return;
-  var bp = findSheetByBaseName_(crmSs, "??");
+  var bp = findSheetByBaseName_(crmSs, "БП");
   if (bp) {
     // append minimal row if not exists
     var data = bp.getDataRange().getValues();
@@ -6626,28 +6626,27 @@ function ensureBpAndSurveyFromOrder_(json) {
     }
     if (!found) {
       var basket = json.basket || [];
-      bp.appendRow([nick, "", 1, "??1", "", JSON.stringify(basket)]);
+      bp.appendRow([nick, "", 1, "БП1", "", JSON.stringify(basket)]);
     }
   }
-  var survey = findSheetByBaseName_(crmSs, "????????");
+  var survey = findSheetByBaseName_(crmSs, "Опросник");
   if (!survey) {
     try {
-      survey = crmSs.insertSheet("????????");
+      survey = crmSs.insertSheet("Опросник");
       survey.appendRow(["nick", "tag", "sentAt", "dueAt", "note", "status"]);
     } catch (e2) {}
   }
   if (survey) {
     var sent = json.survey && json.survey.surveyDate ? json.survey.surveyDate : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
-    survey.appendRow([nick, "??2", sent, "", "from_order", "new"]);
+    survey.appendRow([nick, "БП2", sent, "", "from_order", "new"]);
   }
 }
 
-
-/* ========== ?????????? ??????? (per telegramId) ========== */
+/* ========== Отложенные расчёты (per telegramId) ========== */
 
 function deferredSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  return getOrCreateSheet_(ss, "??????????", [
+  return getOrCreateSheet_(ss, "Отложенное", [
     "id", "at", "telegramId", "mode", "title", "clientNick", "status", "payloadJson", "updatedAt"
   ]);
 }
@@ -6678,9 +6677,11 @@ function handleListDeferred_(json, callback, fromPost) {
   var sh = deferredSheet_();
   var data = sh.getDataRange().getValues();
   var items = [];
+  var openN = 0;
   for (var r = 1; r < data.length; r++) {
     if (String(data[r][2] || "").trim() !== tid) continue;
     var st = String(data[r][6] || "open").trim().toLowerCase();
+    if (st === "open") openN++;
     if (wantStatus && wantStatus !== "all" && st !== wantStatus) continue;
     var payload = {};
     try { payload = JSON.parse(String(data[r][7] || "{}")); } catch (e) { payload = {}; }
@@ -6698,16 +6699,7 @@ function handleListDeferred_(json, callback, fromPost) {
     });
   }
   items.reverse();
-  var ok = { status: "success", items: items, openCount: items.filter(function (x) { return x.status === "open"; }).length };
-  if (wantStatus === "open") {
-    // openCount already = length
-  } else {
-    var openN = 0;
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][2] || "").trim() === tid && String(data[i][6] || "").toLowerCase() === "open") openN++;
-    }
-    ok.openCount = openN;
-  }
+  var ok = { status: "success", items: items, openCount: openN };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
@@ -6726,10 +6718,9 @@ function handleSaveDeferred_(json, callback, fromPost) {
     payload = String(payload || "{}");
   }
   if (!title) {
-    title = (mode === "retail" ? "???????" : "??") + (nick ? (" ? " + nick) : "");
+    title = (mode === "retail" ? "Розница" : "ПП") + (nick ? (" · " + nick) : "");
   }
   var now = new Date();
-  // update existing if id matches this user
   var data = sh.getDataRange().getValues();
   for (var r = 1; r < data.length; r++) {
     if (String(data[r][0]) === id && String(data[r][2]).trim() === tid) {
@@ -6804,24 +6795,23 @@ function writePpBasketToRowValues_(headers, basket, nick, subId, deliveriesN, st
   row[0] = nick;
   if (headers.length > 1) row[1] = subId || "";
   if (headers.length > 2) row[2] = deliveriesN || 1;
-  if (headers.length > 3) row[3] = status || "??1";
+  if (headers.length > 3) row[3] = status || "ПП1";
   if (headers.length > 4) row[4] = wishes || "";
   for (var b = 0; b < (basket || []).length; b++) {
     var it = basket[b];
-    var iname = String(it.main || it.name || "").trim().toUpperCase().replace(/?/g, "?");
-    var isub = String(it.sub || "").trim().toUpperCase().replace(/?/g, "?");
+    var iname = String(it.main || it.name || "").trim().toUpperCase().replace(/Ё/g, "Е");
+    var isub = String(it.sub || "").trim().toUpperCase().replace(/Ё/g, "Е");
     var val = Number(it.val != null ? it.val : it.value) || 0;
     if (!iname || val <= 0) continue;
     for (var c = 6; c < headers.length; c++) {
       var map = mapCrmHeaderToItem_(headers[c]);
       if (!map) continue;
-      var mname = String(map.name || "").toUpperCase().replace(/?/g, "?");
-      var msub = String(map.sub || "").toUpperCase().replace(/?/g, "?");
+      var mname = String(map.name || "").toUpperCase().replace(/Ё/g, "Е");
+      var msub = String(map.sub || "").toUpperCase().replace(/Ё/g, "Е");
       if (mname !== iname) continue;
       if (msub && isub && msub !== isub) continue;
       if (msub && !isub) continue;
       if (!msub && isub) continue;
-      // ?????? ????? ??? ????; ??????? CRM ?????? ?20 ??? ??????
       row[c] = val;
       break;
     }
@@ -6829,7 +6819,7 @@ function writePpBasketToRowValues_(headers, basket, nick, subId, deliveriesN, st
   if (factCost != null && factCost !== "") {
     for (var fc = 0; fc < headers.length; fc++) {
       var h = String(headers[fc] || "").toUpperCase();
-      if (h.indexOf("????") >= 0 && h.indexOf("?????") >= 0) {
+      if (h.indexOf("ФАКТ") >= 0 && h.indexOf("СТОИМ") >= 0) {
         row[fc] = Number(factCost) || factCost;
         break;
       }
@@ -6880,20 +6870,20 @@ function handleEnrollDeferredToPp_(json, callback, fromPost) {
     var noCrm = { status: "error", message: "crm_unavailable", detail: String(eCrm) };
     return fromPost ? jsonpText(callback, noCrm) : jsonp(callback, noCrm);
   }
-  var pp = findSheetByBaseName_(crmSs, "??");
+  var pp = findSheetByBaseName_(crmSs, "ПП");
   if (!pp) {
     var noPp = { status: "error", message: "pp_sheet_missing" };
     return fromPost ? jsonpText(callback, noPp) : jsonp(callback, noPp);
   }
   var headers = pp.getRange(1, 1, 1, pp.getLastColumn()).getValues()[0];
-  var rowVals = writePpBasketToRowValues_(headers, basket, nick, json.subId || "", deliveriesN, json.ppStatus || "??1", wishes, factCost);
+  var rowVals = writePpBasketToRowValues_(headers, basket, nick, json.subId || "", deliveriesN, json.ppStatus || "ПП1", wishes, factCost);
 
   var dataPp = pp.getDataRange().getValues();
   var updated = false;
   for (var rr = 2; rr < dataPp.length; rr++) {
     if (nicksMatch_(dataPp[rr][0], nick)) {
-      while (rowVals.length < dataPp[rr].length) rowVals.push("");
-      pp.getRange(rr + 1, 1, rr + 1, rowVals.length).setValues([rowVals.slice(0, Math.max(rowVals.length, headers.length))]);
+      while (rowVals.length < headers.length) rowVals.push("");
+      pp.getRange(rr + 1, 1, rr + 1, headers.length).setValues([rowVals.slice(0, headers.length)]);
       updated = true;
       break;
     }
@@ -6903,12 +6893,11 @@ function handleEnrollDeferredToPp_(json, callback, fromPost) {
     pp.appendRow(rowVals.slice(0, headers.length));
   }
 
-  // ???????? ? ???? ???????? ?????
   try {
     var addr = String(json.address || "").trim();
     var phone = String(json.phone || "").trim();
     if (addr || phone) {
-      var contacts = findSheetByBaseName_(crmSs, "????????");
+      var contacts = findSheetByBaseName_(crmSs, "Контакты");
       if (contacts && contacts.getLastRow() >= 1) {
         var cd = contacts.getDataRange().getValues();
         var foundC = false;
