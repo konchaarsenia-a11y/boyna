@@ -665,7 +665,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.31</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.32</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -703,36 +703,6 @@
         <div class="tasks-section" id="tasksSectionPp">
           <div class="tasks-section-title" id="tasksSectionPpTitle">Расчёт ПП</div>
           <div id="tasksPpList"><p class="muted">Загрузка…</p></div>
-        </div>
-        <div id="deferredEnrollCard" class="card" style="display:none;margin-top:8px;">
-          <div class="section-title" style="margin-top:0;">Внести в ПП</div>
-          <input type="hidden" id="deferredEnrollId" value="">
-          <div class="form-group">
-            <label>Ник клиента</label>
-            <input type="text" id="deferredEnrollNick" placeholder="@nick">
-          </div>
-          <div class="form-group">
-            <label>Доставок в месяц (N)</label>
-            <input type="number" id="deferredEnrollN" value="1" min="1" max="8" inputmode="numeric">
-          </div>
-          <div class="form-group">
-            <label>Адрес</label>
-            <input type="text" id="deferredEnrollAddress" placeholder="улица, дом">
-          </div>
-          <div class="form-group">
-            <label>Телефон</label>
-            <input type="text" id="deferredEnrollPhone" placeholder="+375…">
-          </div>
-          <div class="form-group">
-            <label>Пожелания / примечание</label>
-            <textarea id="deferredEnrollWishes" rows="3" placeholder="нарезка, замены, бюджет…"></textarea>
-          </div>
-          <div class="form-group">
-            <label>Факт стоимость (BYN)</label>
-            <input type="number" id="deferredEnrollFact" step="0.01" inputmode="decimal" placeholder="из расчёта">
-          </div>
-          <button class="btn-action btn-orange" type="button" onclick="confirmEnrollDeferredToPp()">Внести в лист ПП</button>
-          <button class="btn-action" type="button" style="margin-top:8px;background:#3a3a3c;" onclick="closeDeferredEnroll()">Отмена</button>
         </div>
       </div>
     </aside>
@@ -1036,6 +1006,41 @@
 
     <!-- РАСЧЁТ (бывш. Цена) -->
     <div id="priceScreen" class="screen">
+      <div class="card" id="priceEnrollCard" style="display:none;border:1px solid rgba(48,209,88,0.45);">
+        <div class="section-title" style="margin-top:0;color:#30d158;">Внести в ПП</div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px;">Состав и сумма ниже как в расчёте. Заполни имя, Instagram и примечание — и внеси в лист.</div>
+        <input type="hidden" id="deferredEnrollId" value="">
+        <div class="form-group">
+          <label>Имя</label>
+          <input type="text" id="enrollDisplayName" placeholder="как зовут">
+        </div>
+        <div class="form-group">
+          <label>Ник в Instagram</label>
+          <input type="text" id="enrollInstNick" placeholder="@nick">
+        </div>
+        <div class="form-group">
+          <label>Примечание</label>
+          <textarea id="enrollNote" rows="3" placeholder="нарезка, замены, бюджет…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Адрес</label>
+          <input type="text" id="enrollAddress" placeholder="улица, дом">
+        </div>
+        <div class="form-group">
+          <label>Телефон</label>
+          <input type="text" id="enrollPhone" placeholder="+375…">
+        </div>
+        <div class="form-group">
+          <label>Доставок в месяц (N)</label>
+          <input type="number" id="enrollDeliveriesN" value="1" min="1" max="8" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Факт стоимость (BYN)</label>
+          <input type="number" id="enrollFactCost" step="0.01" inputmode="decimal" placeholder="из расчёта">
+        </div>
+        <button class="btn-action btn-orange" type="button" onclick="confirmEnrollDeferredToPp()">Внести в лист ПП</button>
+        <button class="btn-action" type="button" style="margin-top:8px;background:#3a3a3c;" onclick="exitPriceEnrollMode()">Отмена</button>
+      </div>
       <div class="card">
         <div class="form-group">
           <label>Режим</label>
@@ -1190,7 +1195,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.31";
+    const APP_VERSION = "v7.10.32";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1356,6 +1361,9 @@
     const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"];
     let deferredCache = [];
     let deferredOpenCount = 0;
+    let deferredCacheAt = 0;
+    let deferredFetchInFlight = null;
+    window._enrollDeferredId = "";
 
     let tg = null;
     try {
@@ -2689,6 +2697,7 @@
         if (screenId === "subsScreen") loadSubscriptions();
         if (screenId === "statsScreen") loadStats();
         if (screenId === "deferredScreen") openTasksDrawer();
+        if (screenId === "priceScreen") try { syncPriceEnrollUi(); } catch (eEn) {}
         if (screenId === "orderScreen") try { refreshWeekBanners(); } catch (eO) {}
         if (screenId === "peopleScreen") loadPeople();
         if (screenId === "courierScreen") {
@@ -8181,7 +8190,11 @@
         dr.classList.add("open");
         dr.setAttribute("aria-hidden", "false");
       }
-      renderTasksDrawer();
+      // сразу из кэша, сеть — в фоне
+      renderTasksDrawer(false);
+      if (!deferredCache.length || (Date.now() - deferredCacheAt) > 12000) {
+        renderTasksDrawer(true);
+      }
     }
     window.openTasksDrawer = openTasksDrawer;
 
@@ -8193,7 +8206,6 @@
         dr.classList.remove("open");
         dr.setAttribute("aria-hidden", "true");
       }
-      closeDeferredEnroll();
     }
     window.closeTasksDrawer = closeTasksDrawer;
 
@@ -8204,25 +8216,41 @@
     }
     window.toggleTasksDrawer = toggleTasksDrawer;
 
-    async function refreshDeferredBadge() {
+    async function refreshDeferredBadge(force) {
       var tid = myTelegramId || readTelegramIdFromTg() || loadStoredTelegramId();
       if (tid) storeTelegramId(tid);
       if (!tid) { deferredOpenCount = 0; deferredCache = []; updateTasksBadge(); return; }
-      try {
-        var res = await apiGet({
-          action: "listDeferred",
-          telegramId: tid,
-          status: "open"
-        }, { timeoutMs: 20000, cacheTtlMs: 0 });
-        deferredCache = (res && res.items) || [];
-        var ppOpen = deferredCache.filter(function (it) {
+      if (!force && deferredCacheAt && (Date.now() - deferredCacheAt) < 12000 && deferredCache.length) {
+        var ppOpenCached = deferredCache.filter(function (it) {
           return String(it.mode || "pp").toLowerCase() !== "retail";
         });
-        deferredOpenCount = ppOpen.length;
+        deferredOpenCount = ppOpenCached.length;
         updateTasksBadge();
-      } catch (e) {
-        /* silent */
+        return;
       }
+      if (deferredFetchInFlight) return deferredFetchInFlight;
+      deferredFetchInFlight = (async function () {
+        try {
+          var res = await apiGet({
+            action: "listDeferred",
+            telegramId: tid,
+            status: "open",
+            light: "1"
+          }, { timeoutMs: 12000, cacheTtlMs: 15000 });
+          deferredCache = (res && res.items) || [];
+          deferredCacheAt = Date.now();
+          var ppOpen = deferredCache.filter(function (it) {
+            return String(it.mode || "pp").toLowerCase() !== "retail";
+          });
+          deferredOpenCount = ppOpen.length;
+          updateTasksBadge();
+        } catch (e) {
+          /* silent */
+        } finally {
+          deferredFetchInFlight = null;
+        }
+      })();
+      return deferredFetchInFlight;
     }
     window.refreshDeferredBadge = refreshDeferredBadge;
 
@@ -8294,8 +8322,10 @@
       try {
         await apiPost(body);
         window._editingDeferredId = "";
+        deferredCacheAt = 0;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
         showToast("В задачах (☰)");
-        await refreshDeferredBadge();
+        await refreshDeferredBadge(true);
         var dr = document.getElementById("tasksDrawer");
         if (dr && dr.classList.contains("open")) renderTasksDrawer(false);
       } catch (e) {
@@ -8338,17 +8368,20 @@
 
     async function renderTasksDrawer(doFetch) {
       var box = document.getElementById("tasksPpList");
-      if (doFetch !== false) {
-        if (box) box.innerHTML = '<p class="muted">Загрузка…</p>';
-        await refreshDeferredBadge();
-      }
-      var ppItems = (deferredCache || []).filter(function (it) {
-        return String(it.mode || "pp").toLowerCase() !== "retail" &&
-          String(it.status || "open").toLowerCase() === "open";
-      });
-      deferredOpenCount = ppItems.length;
-      updateTasksBadge();
-      renderTasksPpCards(ppItems);
+      var paint = function () {
+        var ppItems = (deferredCache || []).filter(function (it) {
+          return String(it.mode || "pp").toLowerCase() !== "retail" &&
+            String(it.status || "open").toLowerCase() === "open";
+        });
+        deferredOpenCount = ppItems.length;
+        updateTasksBadge();
+        renderTasksPpCards(ppItems);
+      };
+      paint();
+      if (doFetch === false) return;
+      if (box && !deferredCache.length) box.innerHTML = '<p class="muted">Загрузка…</p>';
+      await refreshDeferredBadge(true);
+      paint();
     }
     window.renderTasksDrawer = renderTasksDrawer;
 
@@ -8420,7 +8453,8 @@
       try {
         await apiPost({ action: "cancelDeferred", telegramId: tid, id: id, status: "cancelled" });
         showToast("Отменено");
-        closeDeferredEnroll();
+        deferredCacheAt = 0;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
         await renderTasksDrawer(true);
       } catch (e) {
         showToast("Не удалось отменить");
@@ -8428,60 +8462,113 @@
     }
     window.cancelDeferredItem = cancelDeferredItem;
 
-    function openDeferredEnroll(id) {
+    function syncPriceEnrollUi() {
+      var card = document.getElementById("priceEnrollCard");
+      var on = !!window._enrollDeferredId;
+      if (card) card.style.display = on ? "block" : "none";
+      var saveBtn = document.querySelector('#priceScreen button[onclick="saveCurrentCalcToDeferred()"]');
+      if (saveBtn) saveBtn.style.display = on ? "none" : "";
+    }
+
+    function exitPriceEnrollMode() {
+      window._enrollDeferredId = "";
+      var hid = document.getElementById("deferredEnrollId");
+      if (hid) hid.value = "";
+      syncPriceEnrollUi();
+    }
+    window.exitPriceEnrollMode = exitPriceEnrollMode;
+    window.closeDeferredEnroll = exitPriceEnrollMode;
+
+    async function openDeferredEnroll(id) {
       var it = findDeferredCached(id);
       if (!it) { showToast("Не найдено"); return; }
-      var card = document.getElementById("deferredEnrollCard");
-      if (card) card.style.display = "block";
-      document.getElementById("deferredEnrollId").value = id;
-      document.getElementById("deferredEnrollNick").value = it.clientNick || "";
+      if (it.payload) applyDeferredSnapshotToPrice(it.payload);
+      window._enrollDeferredId = id;
+      window._editingDeferredId = "";
+      var hid = document.getElementById("deferredEnrollId");
+      if (hid) hid.value = id;
       var pl = it.payload || {};
-      document.getElementById("deferredEnrollN").value = pl.deliveriesN || 1;
-      document.getElementById("deferredEnrollWishes").value = pl.note || "";
-      document.getElementById("deferredEnrollFact").value =
-        pl.subTotal != null ? Math.round(Number(pl.subTotal) * 100) / 100 : "";
-      document.getElementById("deferredEnrollAddress").value = "";
-      document.getElementById("deferredEnrollPhone").value = "";
-      try { card.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (e) {}
+      var nameEl = document.getElementById("enrollDisplayName");
+      var nickEl = document.getElementById("enrollInstNick");
+      var noteEl = document.getElementById("enrollNote");
+      var addrEl = document.getElementById("enrollAddress");
+      var phoneEl = document.getElementById("enrollPhone");
+      var nEl = document.getElementById("enrollDeliveriesN");
+      var factEl = document.getElementById("enrollFactCost");
+      if (nameEl) nameEl.value = pl.displayName || pl.clientName || "";
+      if (nickEl) nickEl.value = it.clientNick || pl.clientNick || "";
+      if (noteEl) noteEl.value = pl.note || "";
+      if (addrEl) addrEl.value = pl.address || "";
+      if (phoneEl) phoneEl.value = pl.phone || "";
+      if (nEl) nEl.value = pl.deliveriesN || (document.getElementById("priceDeliveriesN") || {}).value || 1;
+      if (factEl) {
+        factEl.value = pl.subTotal != null ? Math.round(Number(pl.subTotal) * 100) / 100 : "";
+      }
+      // синхрон N с блоком расчёта
+      var priceN = document.getElementById("priceDeliveriesN");
+      if (priceN && nEl) priceN.value = nEl.value;
+      closeTasksDrawer();
+      switchTab("priceScreen");
+      syncPriceEnrollUi();
+      try {
+        if (nameEl) nameEl.focus();
+      } catch (eF) {}
+      try { await calcPriceFromBasket({ silent: true }); } catch (e) {}
+      if (factEl && !factEl.value) {
+        try {
+          var snap = buildPriceDeferredSnapshot();
+          if (snap.subTotal != null) factEl.value = Math.round(Number(snap.subTotal) * 100) / 100;
+        } catch (e2) {}
+      }
+      showToast("Проверь состав и заполни данные для ПП");
     }
     window.openDeferredEnroll = openDeferredEnroll;
 
-    function closeDeferredEnroll() {
-      var card = document.getElementById("deferredEnrollCard");
-      if (card) card.style.display = "none";
-    }
-    window.closeDeferredEnroll = closeDeferredEnroll;
-
     async function confirmEnrollDeferredToPp() {
-      var id = document.getElementById("deferredEnrollId").value;
-      var nick = String(document.getElementById("deferredEnrollNick").value || "").trim();
-      if (!nick) { showToast("Укажи ник"); return; }
+      var id = window._enrollDeferredId || (document.getElementById("deferredEnrollId") || {}).value || "";
+      var nick = String((document.getElementById("enrollInstNick") || {}).value || "").trim();
+      var displayName = String((document.getElementById("enrollDisplayName") || {}).value || "").trim();
+      if (!nick) { showToast("Укажи ник Instagram"); return; }
       var tid = await ensureTelegramId();
       if (!tid) return;
-      var ok = await uiConfirmAsync("Внести " + nick + " в лист ПП?");
+      var ok = await uiConfirmAsync("Внести " + nick + (displayName ? (" (" + displayName + ")") : "") + " в лист ПП?");
       if (!ok) return;
       var it = findDeferredCached(id);
       var pl = (it && it.payload) || {};
+      // актуальный состав с экрана расчёта
+      stashPriceActiveBasket();
+      var snap = buildPriceDeferredSnapshot();
       var items = [];
-      if (pl.baskets) {
+      if (snap.baskets) {
+        items = (snap.baskets["1"] || []).concat(snap.dogCount >= 2 ? (snap.baskets["2"] || []) : []);
+      } else if (pl.baskets) {
         items = (pl.baskets["1"] || []).concat(pl.dogCount >= 2 ? (pl.baskets["2"] || []) : []);
       }
+      var wishes = String((document.getElementById("enrollNote") || {}).value || "").trim();
+      var fact = (document.getElementById("enrollFactCost") || {}).value;
+      if (fact === "" || fact == null) fact = snap.subTotal != null ? snap.subTotal : pl.subTotal;
+      var deliveriesN = Number((document.getElementById("enrollDeliveriesN") || {}).value) ||
+        Number((document.getElementById("priceDeliveriesN") || {}).value) || 1;
       try {
         await apiPost({
           action: "enrollDeferredToPp",
           telegramId: tid,
           id: id,
           clientNick: nick,
-          deliveriesN: Number(document.getElementById("deferredEnrollN").value) || 1,
-          wishes: document.getElementById("deferredEnrollWishes").value || "",
-          address: document.getElementById("deferredEnrollAddress").value || "",
-          phone: document.getElementById("deferredEnrollPhone").value || "",
-          factCost: document.getElementById("deferredEnrollFact").value || pl.subTotal,
+          displayName: displayName,
+          deliveriesN: deliveriesN,
+          wishes: wishes,
+          note: wishes,
+          address: (document.getElementById("enrollAddress") || {}).value || "",
+          phone: (document.getElementById("enrollPhone") || {}).value || "",
+          factCost: fact,
           basket: items
         });
         showToast("Отправлено в ПП");
-        closeDeferredEnroll();
-        setTimeout(function () { renderTasksDrawer(true); }, 800);
+        exitPriceEnrollMode();
+        deferredCacheAt = 0;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+        setTimeout(function () { refreshDeferredBadge(true); }, 600);
       } catch (e) {
         showToast("Ошибка сети / Deploy");
       }

@@ -78,6 +78,19 @@ function bustClientsCache_() {
   } catch (e) {}
 }
 
+function bustDeferredCache_(telegramId) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var tid = String(telegramId || "").trim();
+    if (!tid) return;
+    var statuses = ["open", "all", "cancelled", "enrolled"];
+    for (var i = 0; i < statuses.length; i++) {
+      cache.remove("DEF:" + tid + ":" + statuses[i]);
+      cache.remove("DEF:" + tid + ":" + statuses[i] + ":L");
+    }
+  } catch (e) {}
+}
+
 function getCrmSheetValuesFast_(crmSs, sheetName) {
   var sid = "";
   try { sid = crmSs.getId(); } catch (eId) { sid = "x"; }
@@ -733,7 +746,8 @@ function doGet(e) {
   if (action === "listDeferred") {
     return handleDeferredAction_("listDeferred", {
       telegramId: e.parameter.telegramId ? decodeURIComponent(e.parameter.telegramId) : "",
-      status: e.parameter.status ? decodeURIComponent(e.parameter.status) : "open"
+      status: e.parameter.status ? decodeURIComponent(e.parameter.status) : "open",
+      light: e.parameter.light || "1"
     }, callback, false);
   }
 
@@ -6674,6 +6688,12 @@ function handleDeferredAction_(action, json, callback, fromPost) {
 function handleListDeferred_(json, callback, fromPost) {
   var tid = String(json.telegramId || "").trim();
   var wantStatus = String(json.status || "open").trim().toLowerCase();
+  var light = !(json.light === false || json.light === "0" || json.light === 0);
+  var cacheKey = "DEF:" + tid + ":" + wantStatus + (light ? ":L" : "");
+  var cached = cacheGetJson_(cacheKey);
+  if (cached && cached.status === "success") {
+    return fromPost ? jsonpText(callback, cached) : jsonp(callback, cached);
+  }
   var sh = deferredSheet_();
   var data = sh.getDataRange().getValues();
   var items = [];
@@ -6685,6 +6705,23 @@ function handleListDeferred_(json, callback, fromPost) {
     if (wantStatus && wantStatus !== "all" && st !== wantStatus) continue;
     var payload = {};
     try { payload = JSON.parse(String(data[r][7] || "{}")); } catch (e) { payload = {}; }
+    if (light && payload && typeof payload === "object") {
+      // без огромного текста сообщения — быстрее JSONP
+      payload = {
+        mode: payload.mode,
+        baskets: payload.baskets || null,
+        dogCount: payload.dogCount || 1,
+        activeDog: payload.activeDog || 1,
+        packCounts: payload.packCounts || null,
+        note: payload.note || "",
+        deliveriesN: payload.deliveriesN || 1,
+        coef: payload.coef,
+        fracRates: payload.fracRates || null,
+        subTotal: payload.subTotal,
+        retailTotal: payload.retailTotal,
+        lastMessage: ""
+      };
+    }
     items.push({
       id: String(data[r][0] || ""),
       at: data[r][1],
@@ -6699,7 +6736,8 @@ function handleListDeferred_(json, callback, fromPost) {
     });
   }
   items.reverse();
-  var ok = { status: "success", items: items, openCount: openN };
+  var ok = { status: "success", items: items, openCount: openN, light: light };
+  cachePutJson_(cacheKey, ok, 30);
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
 
@@ -6725,11 +6763,13 @@ function handleSaveDeferred_(json, callback, fromPost) {
   for (var r = 1; r < data.length; r++) {
     if (String(data[r][0]) === id && String(data[r][2]).trim() === tid) {
       sh.getRange(r + 1, 4, r + 1, 9).setValues([[mode, title, nick, "open", payload, now]]);
+      bustDeferredCache_(tid);
       var upd = { status: "success", id: id, updated: true };
       return fromPost ? jsonpText(callback, upd) : jsonp(callback, upd);
     }
   }
   sh.appendRow([id, now, tid, mode, title, nick, "open", payload, now]);
+  bustDeferredCache_(tid);
   var ok = { status: "success", id: id, created: true };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }
@@ -6754,6 +6794,7 @@ function handleUpdateDeferred_(json, callback, fromPost) {
       payload = typeof json.payload === "object" ? JSON.stringify(json.payload) : String(json.payload);
     }
     sh.getRange(r + 1, 4, r + 1, 9).setValues([[mode, title, nick, st, payload, new Date()]]);
+    bustDeferredCache_(tid);
     var ok = { status: "success", id: id };
     return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
   }
@@ -6896,20 +6937,23 @@ function handleEnrollDeferredToPp_(json, callback, fromPost) {
   try {
     var addr = String(json.address || "").trim();
     var phone = String(json.phone || "").trim();
-    if (addr || phone) {
+    var displayName = String(json.displayName || json.name || "").trim();
+    if (addr || phone || displayName) {
       var contacts = findSheetByBaseName_(crmSs, "Контакты");
       if (contacts && contacts.getLastRow() >= 1) {
         var cd = contacts.getDataRange().getValues();
         var foundC = false;
         for (var cr = 1; cr < cd.length; cr++) {
           if (!nicksMatch_(cd[cr][0], nick)) continue;
+          if (displayName) contacts.getRange(cr + 1, 2).setValue(displayName);
           if (addr) contacts.getRange(cr + 1, 4).setValue(addr);
           if (phone) contacts.getRange(cr + 1, 5).setValue(phone);
+          if (wishes) contacts.getRange(cr + 1, 7).setValue(wishes);
           foundC = true;
           break;
         }
         if (!foundC) {
-          contacts.appendRow([nick, "", "", addr, phone, "", wishes]);
+          contacts.appendRow([nick, displayName, "", addr, phone, "", wishes]);
         }
       }
     }
@@ -6927,6 +6971,7 @@ function handleEnrollDeferredToPp_(json, callback, fromPost) {
           break;
         }
       }
+      bustDeferredCache_(tid);
     } catch (eU) {}
   }
 
