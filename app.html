@@ -665,7 +665,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.30</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.31</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -1190,7 +1190,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.30";
+    const APP_VERSION = "v7.10.31";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1282,6 +1282,54 @@
     let APP_ROLE = "all";
     let myTelegramId = "";
     let myAccessName = "";
+    const TG_ID_LS = "superboyna_tg_id";
+
+    function readTelegramIdFromTg() {
+      try {
+        var u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+        if (u && u.id) return String(u.id);
+      } catch (e0) {}
+      try {
+        var raw = (tg && tg.initData) || "";
+        if (!raw) return "";
+        var m = String(raw).match(/(?:^|&)user=([^&]+)/);
+        if (!m) return "";
+        var ju = JSON.parse(decodeURIComponent(m[1]));
+        if (ju && ju.id) return String(ju.id);
+      } catch (e1) {}
+      return "";
+    }
+
+    function loadStoredTelegramId() {
+      try { return String(localStorage.getItem(TG_ID_LS) || "").trim(); } catch (e) { return ""; }
+    }
+
+    function storeTelegramId(id) {
+      id = String(id || "").trim();
+      if (!id) return;
+      myTelegramId = id;
+      try { localStorage.setItem(TG_ID_LS, id); } catch (e) {}
+    }
+
+    /** ID из Mini App → память → один раз спросить. */
+    async function ensureTelegramId() {
+      if (myTelegramId) return myTelegramId;
+      var id = readTelegramIdFromTg() || loadStoredTelegramId();
+      if (id) { storeTelegramId(id); return id; }
+      var entered = await uiPromptAsync(
+        "Ваш Telegram ID (цифры). Нужен для задач ☰.\nУзнать: @userinfobot или настройки Telegram.",
+        ""
+      );
+      if (entered === null) return "";
+      id = String(entered || "").replace(/\D/g, "");
+      if (!id) {
+        showToast("Нужен Telegram ID");
+        return "";
+      }
+      storeTelegramId(id);
+      return id;
+    }
+    window.ensureTelegramId = ensureTelegramId;
     const ROLE_TABS = {
       all: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"],
       owner: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"],
@@ -6406,7 +6454,8 @@
     async function bootstrapAccess() {
       try {
         var u = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
-        myTelegramId = String(u.id || "");
+        myTelegramId = String(u.id || "") || readTelegramIdFromTg() || loadStoredTelegramId();
+        if (myTelegramId) storeTelegramId(myTelegramId);
         myAccessName = String(u.first_name || "") + (u.last_name ? " " + u.last_name : "");
         var username = String(u.username || "");
         if (!myTelegramId) {
@@ -8156,11 +8205,13 @@
     window.toggleTasksDrawer = toggleTasksDrawer;
 
     async function refreshDeferredBadge() {
-      if (!myTelegramId) { deferredOpenCount = 0; deferredCache = []; updateTasksBadge(); return; }
+      var tid = myTelegramId || readTelegramIdFromTg() || loadStoredTelegramId();
+      if (tid) storeTelegramId(tid);
+      if (!tid) { deferredOpenCount = 0; deferredCache = []; updateTasksBadge(); return; }
       try {
         var res = await apiGet({
           action: "listDeferred",
-          telegramId: myTelegramId,
+          telegramId: tid,
           status: "open"
         }, { timeoutMs: 20000, cacheTtlMs: 0 });
         deferredCache = (res && res.items) || [];
@@ -8217,7 +8268,8 @@
     }
 
     async function saveCurrentCalcToDeferred() {
-      if (!myTelegramId) { showToast("Нужен Telegram ID"); return; }
+      var tid = await ensureTelegramId();
+      if (!tid) return;
       stashPriceActiveBasket();
       if (!allPriceItems().length) { showToast("Сначала набери состав"); return; }
       if (!priceLastMessage) {
@@ -8232,7 +8284,7 @@
         (payload.subTotal != null ? (" · " + roundRub(payload.subTotal) + " BYN") : "");
       var body = {
         action: "saveDeferred",
-        telegramId: myTelegramId,
+        telegramId: tid,
         mode: priceMode,
         title: title,
         clientNick: nick,
@@ -8363,8 +8415,10 @@
     async function cancelDeferredItem(id) {
       var ok = await uiConfirmAsync("Убрать из задач?");
       if (!ok) return;
+      var tid = await ensureTelegramId();
+      if (!tid) return;
       try {
-        await apiPost({ action: "cancelDeferred", telegramId: myTelegramId, id: id, status: "cancelled" });
+        await apiPost({ action: "cancelDeferred", telegramId: tid, id: id, status: "cancelled" });
         showToast("Отменено");
         closeDeferredEnroll();
         await renderTasksDrawer(true);
@@ -8402,6 +8456,8 @@
       var id = document.getElementById("deferredEnrollId").value;
       var nick = String(document.getElementById("deferredEnrollNick").value || "").trim();
       if (!nick) { showToast("Укажи ник"); return; }
+      var tid = await ensureTelegramId();
+      if (!tid) return;
       var ok = await uiConfirmAsync("Внести " + nick + " в лист ПП?");
       if (!ok) return;
       var it = findDeferredCached(id);
@@ -8413,7 +8469,7 @@
       try {
         await apiPost({
           action: "enrollDeferredToPp",
-          telegramId: myTelegramId,
+          telegramId: tid,
           id: id,
           clientNick: nick,
           deliveriesN: Number(document.getElementById("deferredEnrollN").value) || 1,
