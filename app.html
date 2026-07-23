@@ -665,7 +665,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.32</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.33</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -860,12 +860,13 @@
           <input type="date" id="viewDate" onchange="onViewDateChange()">
         </div>
         <div class="form-group">
-          <label>День (если дата уже в таблице недели)</label>
-          <select id="viewDaySelect" onchange="loadClientsForDay()">
+          <label>День (блок на листе «Прием заказов»)</label>
+          <select id="viewDaySelect" onchange="onViewDayChange()">
             <option value="">-- Выбрать день --</option>
             <option>Понедельник</option><option>Вторник</option><option>Среда</option>
             <option>Четверг</option><option>Пятница</option><option>Будущая неделя</option>
           </select>
+          <div class="muted" style="font-size:12px;margin-top:6px;">Либо дата, либо день — не оба сразу. Смена дня сбрасывает дату.</div>
         </div>
         <button type="button" class="btn-action btn-orange" onclick="loadClientsForDay()">Показать</button>
         <div class="batch-bar-row" style="margin-top:10px;">
@@ -1195,7 +1196,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.32";
+    const APP_VERSION = "v7.10.33";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -3302,25 +3303,19 @@
     function onViewDateChange() {
       const el = document.getElementById("viewDate");
       if (!el || !el.value) return;
-      const d = new Date(el.value + "T12:00:00");
-      if (isNaN(d.getTime())) return;
-      const names = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
-      const wd = names[d.getDay()];
+      // не угадываем день по JS-weekday — иначе при дате вне недели подтягивается чужой блок
       const daySel = document.getElementById("viewDaySelect");
-      if (daySel) {
-        let matched = false;
-        for (let i = 0; i < daySel.options.length; i++) {
-          if (daySel.options[i].value === wd || daySel.options[i].text === wd) {
-            daySel.selectedIndex = i;
-            matched = true;
-            break;
-          }
-        }
-        if (!matched) daySel.selectedIndex = 0;
-      }
+      if (daySel) daySel.selectedIndex = 0;
       loadClientsForDay();
     }
     window.onViewDateChange = onViewDateChange;
+
+    function onViewDayChange() {
+      const dateEl = document.getElementById("viewDate");
+      if (dateEl) dateEl.value = "";
+      loadClientsForDay();
+    }
+    window.onViewDayChange = onViewDayChange;
 
     async function loadClientsForDay() {
       const day = document.getElementById("viewDaySelect").value;
@@ -3337,33 +3332,41 @@
       summary.innerHTML = "";
       box.innerHTML = loadingDanceHtml("Загружаю клиентов…");
       try {
+        // строго один ключ: дата ИЛИ день (оба вместе путали блоки)
         const params = { action: "getClients" };
-        if (day) params.day = day;
         if (dateStr) params.date = dateStr;
-        const res = await apiGet(params, { timeoutMs: 22000, cacheTtlMs: dateStr ? 0 : 8000 });
-        if (res.day) {
-          const daySel = document.getElementById("viewDaySelect");
-          if (daySel) {
-            for (let i = 0; i < daySel.options.length; i++) {
-              if (daySel.options[i].value === res.day || daySel.options[i].text === res.day) {
-                daySel.selectedIndex = i;
-                break;
-              }
+        else params.day = day;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+        const res = await apiGet(params, { timeoutMs: 22000, cacheTtlMs: 0 });
+        const daySel = document.getElementById("viewDaySelect");
+        if (res.day && daySel) {
+          for (let i = 0; i < daySel.options.length; i++) {
+            if (daySel.options[i].value === res.day || daySel.options[i].text === res.day) {
+              daySel.selectedIndex = i;
+              break;
             }
           }
+        } else if (res.dateNotInWeek && daySel) {
+          daySel.selectedIndex = 0;
         }
         if (res.status !== "success" || !res.clients || !res.clients.length) {
-          box.innerHTML = '<p class="muted">На эту дату никто не записан</p>';
-          summary.innerHTML = "";
+          var emptyHint = res.dateNotInWeek
+            ? "Дата не стоит в текущей неделе на листе — в блоке дня никого. Выбери день недели или дату из A1/A62/…"
+            : "На эту дату никто не записан";
+          box.innerHTML = '<p class="muted">' + emptyHint + "</p>";
+          summary.innerHTML = res.dateNotInWeek
+            ? '<div class="total-summary-badge" style="border-color:#ff453a;">Дата вне недели · доукомплект по дню</div>'
+            : "";
           loadedClientsRawData = [];
           updateBatchBar();
           return;
         }
         loadedClientsRawData = res.clients;
         const src = res.fromBookings ? " · из броней" : "";
+        const notWeek = res.dateNotInWeek ? " · дата вне недели" : "";
         const dayLabel = res.day ? (" · " + res.day) : "";
         const dateLabel = res.date ? (" · " + res.date) : (dateStr ? (" · " + dateStr) : "");
-        summary.innerHTML = `<div class="total-summary-badge">Клиентов: ${res.clients.length}${dayLabel}${dateLabel}${src}</div>`;
+        summary.innerHTML = `<div class="total-summary-badge">Клиентов: ${res.clients.length}${dayLabel}${dateLabel}${src}${notWeek}</div>`;
         box.innerHTML = res.clients.map((client, index) => {
           const lines = (client.basket || []).map(g => {
             const unit = g.unit || unitForItem(g.cat, g.name);
@@ -6742,16 +6745,28 @@
         await uiAlertAsync("Сначала укажите день или дату");
         return;
       }
+      const label = day || dateStr;
       const ok = await uiConfirmAsync(
-        "Доукомплектовать " + (day || dateStr) + " из месяца?\nДобавим тех, кого ещё нет — уже с составом с ПП/АФК/БП.\nУ стоящих состав не затираем."
+        "Доукомплектовать " + label + " из месяца?\nДобавим тех, кого ещё нет — уже с составом с ПП/АФК/БП.\nУ стоящих состав не затираем."
       );
       if (!ok) return;
       try {
         showToast("Доукомплектовываю…");
         const params = { action: "ensureDayMaterialized", onlyMissing: "1" };
-        if (dateStr) params.date = dateStr;
+        // один ключ: день блока надёжнее «чужой» даты
         if (day) params.day = day;
-        const res = await apiGet(params);
+        else params.date = dateStr;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+        const res = await apiGet(params, { timeoutMs: 45000, cacheTtlMs: 0 });
+        if (!res || res.status !== "success") {
+          var msg = (res && res.result && res.result.message) || (res && res.message) || "ошибка";
+          if (msg === "date_not_in_week") {
+            await uiAlertAsync("Эта дата не стоит в текущей неделе на листе.\nВыбери день (Пн–Пт) или дату из ячеек A1/A62/A123/A184/A245.");
+            return;
+          }
+          await uiAlertAsync("Не удалось: " + msg);
+          return;
+        }
         const n = res && res.result ? (res.result.count || 0) : 0;
         showToast(n ? ("Добавлено: " + n) : "Новых нет");
         await loadClientsForDay();

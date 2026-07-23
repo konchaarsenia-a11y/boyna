@@ -1791,17 +1791,33 @@ function extractEmbeddedFraction(sheetFull) {
 function handleGetClients(dayName, callback, dateStr) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
-  var resolvedDay = dayName;
+  var resolvedDay = String(dayName || "").trim();
   var deliveryDate = null;
+
+  // Дата — главный ключ. Если она НЕ стоит в ячейках недели — не подсовываем чужой блок дня.
   if (dateStr) {
     deliveryDate = parseFlexibleDate_(dateStr, tz);
     if (deliveryDate) {
       var byDate = findDayNameForDate_(ss, deliveryDate);
-      if (byDate) resolvedDay = byDate;
+      if (byDate) {
+        resolvedDay = byDate;
+      } else {
+        var listOnly = clientsFromBookings_(ss, deliveryDate);
+        return jsonp(callback, {
+          status: "success",
+          day: "",
+          date: dateKey_(deliveryDate, tz),
+          fromBookings: true,
+          dateNotInWeek: true,
+          clients: listOnly
+        });
+      }
     }
   }
+
   if (resolvedDay) {
     var cacheKey = "GC:" + String(resolvedDay || "").toUpperCase();
+    // кэш только для чистого day-запроса без даты
     if (!dateStr) {
       var cached = cacheGetJson_(cacheKey);
       if (cached && cached.status) return jsonp(callback, cached);
@@ -1809,8 +1825,12 @@ function handleGetClients(dayName, callback, dateStr) {
     var data = getClientsData_(ss, resolvedDay);
     for (var i = 0; i < data.clients.length; i++) delete data.clients[i].col;
     data.day = resolvedDay;
+    if (!deliveryDate) {
+      var rawDayDate = getDayDate_(ss, resolvedDay);
+      deliveryDate = parseFlexibleDate_(rawDayDate, tz);
+    }
     data.date = deliveryDate ? dateKey_(deliveryDate, tz) : "";
-    // если день в неделе пуст, но есть брони на дату — отдать брони
+    // брони на дату дня — только если блок пуст
     if (deliveryDate && (!data.clients || !data.clients.length)) {
       var fromBookings = clientsFromBookings_(ss, deliveryDate);
       if (fromBookings.length) {
@@ -1822,6 +1842,7 @@ function handleGetClients(dayName, callback, dateStr) {
     if (!dateStr && data.status === "success") cachePutJson_(cacheKey, data, 25);
     return jsonp(callback, data);
   }
+
   if (deliveryDate) {
     var list = clientsFromBookings_(ss, deliveryDate);
     return jsonp(callback, {
@@ -3902,19 +3923,42 @@ function materializeDeliveryDate_(ss, deliveryDate, opts) {
 function handleEnsureDayMaterialized(json, callback, fromPost) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
+  var dayHint = String(json.day || "").trim();
   var deliveryDate = parseFlexibleDate_(json.deliveryDate || json.date, tz);
-  if (!deliveryDate && json.day) {
-    deliveryDate = getDayDate_(ss, json.day);
+  // Если переданы и дата, и день — сверяем. Несовпадение / дата не в неделе → день из листа.
+  if (deliveryDate) {
+    var byDate = findDayNameForDate_(ss, deliveryDate);
+    if (byDate) {
+      if (dayHint && byDate !== dayHint) {
+        // явный день важнее «залетевшей» даты
+        var dayDate = getDayDate_(ss, dayHint);
+        var parsedDayDate = parseFlexibleDate_(dayDate, tz);
+        if (parsedDayDate) deliveryDate = parsedDayDate;
+      }
+    } else if (dayHint) {
+      var d2 = parseFlexibleDate_(getDayDate_(ss, dayHint), tz);
+      if (d2) deliveryDate = d2;
+      else {
+        var badDate = { status: "error", result: { ok: false, message: "date_not_in_week", date: dateKey_(deliveryDate, tz) } };
+        return fromPost ? jsonpText(callback, badDate) : jsonp(callback, badDate);
+      }
+    } else {
+      var badDate2 = { status: "error", result: { ok: false, message: "date_not_in_week", date: dateKey_(deliveryDate, tz) } };
+      return fromPost ? jsonpText(callback, badDate2) : jsonp(callback, badDate2);
+    }
+  } else if (dayHint) {
+    deliveryDate = getDayDate_(ss, dayHint);
     if (deliveryDate && !(deliveryDate instanceof Date)) {
       deliveryDate = parseFlexibleDate_(deliveryDate, tz);
     }
   }
   if (!deliveryDate) {
-    var now = new Date();
-    deliveryDate = addDaysDate_(new Date(now.getFullYear(), now.getMonth(), now.getDate()), 1);
+    var need = { status: "error", result: { ok: false, message: "need_day_or_date" } };
+    return fromPost ? jsonpText(callback, need) : jsonp(callback, need);
   }
   var onlyMissing = !(json.onlyMissing === false || json.onlyMissing === "0" || json.onlyMissing === 0 || json.onlyMissing === "false");
   var result = materializeDeliveryDate_(ss, deliveryDate, { onlyMissing: onlyMissing });
+  try { bustClientsCache_(); } catch (eB) {}
   var out = { status: result.ok ? "success" : "error", result: result };
   return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
 }
