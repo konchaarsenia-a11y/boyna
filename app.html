@@ -553,6 +553,20 @@
       font-size: 20px; font-weight: 800; cursor: pointer;
       box-shadow: 0 6px 18px rgba(0,0,0,0.45);
     }
+    .deferred-pill {
+      position: fixed; left: 12px; right: 70px; bottom: 18px; z-index: 1190;
+      display: none; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px 14px; border-radius: 14px;
+      background: linear-gradient(135deg, #2c2c2e 0%, #1c1c1e 100%);
+      border: 1px solid #ff9f0a; box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    }
+    .deferred-pill.show { display: flex; }
+    .deferred-pill b { color: #ff9f0a; font-size: 14px; }
+    .deferred-pill .muted { font-size: 12px; margin-top: 2px; }
+    .deferred-pill > button {
+      flex: 0 0 auto; height: 36px; padding: 0 14px; border-radius: 10px;
+      border: none; background: #ff9f0a; color: #111; font-weight: 700;
+    }
     .week-banner {
       margin: 10px 0 12px; padding: 14px; border-radius: 12px;
       border: 1px solid rgba(255,159,10,0.45); background: rgba(255,159,10,0.12);
@@ -589,6 +603,7 @@
         <div class="order-flyout" id="orderFlyout">
           <button type="button" class="order-flyout-btn" data-fly="clientsScreen" data-fly-roles="manager,owner,all">Просмотр</button>
           <button type="button" class="order-flyout-btn" data-fly="priceScreen" data-fly-roles="manager,owner,all">Расчёт</button>
+          <button type="button" class="order-flyout-btn" data-fly="deferredScreen" data-fly-roles="manager,owner,all">Отложенное</button>
           <button type="button" class="order-flyout-btn" data-fly="subsScreen" data-fly-roles="owner,all">Подписки</button>
           <button type="button" class="order-flyout-btn" data-fly="statsScreen" data-fly-roles="owner,all">Статистика</button>
           <button type="button" class="order-flyout-btn" data-fly="peopleScreen" data-fly-roles="owner,all">Люди</button>
@@ -602,6 +617,13 @@
     <div class="app-top-spacer" id="appTopSpacer" aria-hidden="true"></div>
     <button type="button" class="help-fab" id="helpFab" onclick="openScreenHelp()" title="Справка" aria-label="Справка">?</button>
     <button type="button" class="bug-fab" id="bugFab" onclick="openBugReport()" title="Работает некорректно">!</button>
+    <div class="deferred-pill" id="deferredPill" onclick="openDeferredScreen()">
+      <div>
+        <b>Отложенное</b>
+        <div class="muted" id="deferredPillText">есть предложения в ожидании</div>
+      </div>
+      <button type="button">Открыть</button>
+    </div>
 
     <!-- МЕНЕДЖЕР: ПРИЁМ -->
     <div id="orderScreen" class="screen active">
@@ -989,6 +1011,7 @@
           <textarea id="priceClientNote" rows="3" placeholder="Напр.: учли тонкую нарезку…" oninput="schedulePriceLiveUpdate()"></textarea>
         </div>
         <button class="btn-action btn-orange" type="button" onclick="calcPriceFromBasket()">Собрать сообщение</button>
+        <button class="btn-action btn-blue" type="button" style="margin-top:8px;" onclick="saveCurrentCalcToDeferred()">В отложенное</button>
       </div>
 
       <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -1027,6 +1050,46 @@
       <div id="priceResult"><p class="muted">Набери состав и нажми «Собрать сообщение»</p></div>
     </div>
 
+    <!-- ОТЛОЖЕННОЕ -->
+    <div id="deferredScreen" class="screen">
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">Отложенные предложения</div>
+        <div class="muted" style="font-size:13px;margin-bottom:10px;">Только ваши. Ждут ответа клиента — отменить, править в Расчёте или внести в ПП.</div>
+        <button class="btn-action btn-blue" type="button" onclick="loadDeferredList()">Обновить</button>
+      </div>
+      <div id="deferredList"><p class="muted">Загрузка…</p></div>
+      <div id="deferredEnrollCard" class="card" style="display:none;margin-top:12px;">
+        <div class="section-title" style="margin-top:0;">Внести в ПП</div>
+        <input type="hidden" id="deferredEnrollId" value="">
+        <div class="form-group">
+          <label>Ник клиента</label>
+          <input type="text" id="deferredEnrollNick" placeholder="@nick">
+        </div>
+        <div class="form-group">
+          <label>Доставок в месяц (N)</label>
+          <input type="number" id="deferredEnrollN" value="1" min="1" max="8" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Адрес</label>
+          <input type="text" id="deferredEnrollAddress" placeholder="улица, дом">
+        </div>
+        <div class="form-group">
+          <label>Телефон</label>
+          <input type="text" id="deferredEnrollPhone" placeholder="+375…">
+        </div>
+        <div class="form-group">
+          <label>Пожелания / примечание</label>
+          <textarea id="deferredEnrollWishes" rows="3" placeholder="нарезка, замены, бюджет…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Факт стоимость (BYN)</label>
+          <input type="number" id="deferredEnrollFact" step="0.01" inputmode="decimal" placeholder="из расчёта">
+        </div>
+        <button class="btn-action btn-orange" type="button" onclick="confirmEnrollDeferredToPp()">Внести в лист ПП</button>
+        <button class="btn-action" type="button" style="margin-top:8px;background:#3a3a3c;" onclick="closeDeferredEnroll()">Отмена</button>
+      </div>
+    </div>
+
     <!-- ЛЮДИ -->
     <div id="peopleScreen" class="screen">
       <div class="card">
@@ -1046,7 +1109,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.25";
+    const APP_VERSION = "v7.10.26";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1139,9 +1202,9 @@
     let myTelegramId = "";
     let myAccessName = "";
     const ROLE_TABS = {
-      all: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "subsScreen", "statsScreen", "peopleScreen"],
-      owner: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "subsScreen", "statsScreen", "peopleScreen"],
-      manager: ["orderScreen", "clientsScreen", "priceScreen"],
+      all: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"],
+      owner: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"],
+      manager: ["orderScreen", "clientsScreen", "priceScreen", "deferredScreen"],
       cutter: ["cuttingScreen"],
       courier: ["courierScreen"],
       logistics: ["warehouseScreen"],
@@ -1161,7 +1224,9 @@
       "крафт": true
     };
     let assemblyCache = null;
-    const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "subsScreen", "statsScreen", "peopleScreen"];
+    const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"];
+    let deferredCache = [];
+    let deferredOpenCount = 0;
 
     let tg = null;
     try {
@@ -1280,7 +1345,8 @@
       warehouseScreen: "Склад\n• Сырое/сухое, коэффициенты, снабжение.",
       subsScreen: "Подписки\n• «В заказ» и доукомплект из месяца подставляют состав с листа (ПП — с учётом слота).",
       statsScreen: "Статистика\n• Месяц, воронка БП, CAC, аудит, экспорт.",
-      priceScreen: "Расчёт\n• ПП и розница — отдельные составы (не смешиваются).\n• 2 собаки: два состава, 11 и 6×N один раз.\n• Розница — шаблон «Давайте подытожим…».",
+      priceScreen: "Расчёт\n• ПП и розница — отдельные составы.\n• «В отложенное» — ждёт ответа клиента (ваш список).\n• 2 собаки: свет/доставки один раз.",
+      deferredScreen: "Отложенное\n• Только ваши предложения.\n• Править → Расчёт; Внести → форма в ПП; Отменить — убрать.",
       peopleScreen: "Люди\n• Роли назначают только владельцы."
     };
 
@@ -1396,6 +1462,33 @@
       const res = await p;
       recoverUiFocus();
       return !!res;
+    }
+
+    async function uiPromptAsync(message, defVal) {
+      const p = openModal(
+        '<div class="modal-title">Ввод</div>' +
+        '<div class="modal-text">' + escapeHtml(String(message)) + '</div>' +
+        '<div class="form-group" style="margin-top:10px;"><input type="text" id="modalPromptInput" value="' +
+        escapeHtml(String(defVal || "")) + '"></div>' +
+        '<div class="modal-actions row">' +
+          '<button class="btn-action" type="button" id="modalCancel" style="background:#3a3a3c;">Отмена</button>' +
+          '<button class="btn-action btn-blue" type="button" id="modalOk">OK</button>' +
+        '</div>'
+      );
+      setTimeout(function () {
+        const inp = document.getElementById("modalPromptInput");
+        const ok = document.getElementById("modalOk");
+        const cancel = document.getElementById("modalCancel");
+        if (inp) { try { inp.focus(); inp.select(); } catch (e) {} }
+        if (ok) ok.onclick = function () {
+          var v = inp ? inp.value : "";
+          closeModal(v);
+        };
+        if (cancel) cancel.onclick = function () { closeModal(null); };
+      }, 0);
+      const res = await p;
+      recoverUiFocus();
+      return res;
     }
 
     async function uiChoiceAsync(title, message, choices) {
@@ -2465,6 +2558,7 @@
         if (screenId === "warehouseScreen") loadWarehouse();
         if (screenId === "subsScreen") loadSubscriptions();
         if (screenId === "statsScreen") loadStats();
+        if (screenId === "deferredScreen") loadDeferredList();
         if (screenId === "orderScreen") try { refreshWeekBanners(); } catch (eO) {}
         if (screenId === "peopleScreen") loadPeople();
         if (screenId === "courierScreen") {
@@ -6201,11 +6295,13 @@
         }
         hideAccessGate();
         applyRoleTabs();
+        try { refreshDeferredBadge(); } catch (eDef) {}
         maybeAskWeekPullFromMonth();
       } catch (e) {
         APP_ROLE = "all";
         weekTabUnlocked = true;
         applyRoleTabs();
+        try { refreshDeferredBadge(); } catch (eDef2) {}
         maybeAskWeekPullFromMonth();
       }
     }
@@ -7761,6 +7857,286 @@
       }
     }
     window.calcPriceFromBasket = calcPriceFromBasket;
+
+    /* ===== Отложенное ===== */
+
+    function updateDeferredPill() {
+      var pill = document.getElementById("deferredPill");
+      var txt = document.getElementById("deferredPillText");
+      if (!pill) return;
+      var n = Number(deferredOpenCount) || 0;
+      if (n > 0 && (APP_ROLE === "manager" || APP_ROLE === "owner" || APP_ROLE === "all")) {
+        pill.classList.add("show");
+        if (txt) txt.textContent = n === 1 ? "1 предложение ждёт ответа" : (n + " предложений ждут ответа");
+      } else {
+        pill.classList.remove("show");
+      }
+    }
+
+    async function refreshDeferredBadge() {
+      if (!myTelegramId) { deferredOpenCount = 0; updateDeferredPill(); return; }
+      try {
+        var res = await apiGet({
+          action: "listDeferred",
+          telegramId: myTelegramId,
+          status: "open"
+        }, { timeoutMs: 20000, cacheTtlMs: 0 });
+        deferredCache = (res && res.items) || [];
+        deferredOpenCount = (res && res.openCount != null) ? Number(res.openCount) : deferredCache.length;
+        updateDeferredPill();
+      } catch (e) {
+        /* silent */
+      }
+    }
+    window.refreshDeferredBadge = refreshDeferredBadge;
+
+    function openDeferredScreen() {
+      switchTab("deferredScreen");
+    }
+    window.openDeferredScreen = openDeferredScreen;
+
+    function buildPriceDeferredSnapshot() {
+      stashPriceModeState(priceMode);
+      var key = priceModeKey(priceMode);
+      var s = priceByMode[key] || makeEmptyPriceModeStore();
+      var list = allPriceItems();
+      var subHint = null;
+      try {
+        if (priceMode === "pp" && pricePpApiCache && pricePpApiCache.res) {
+          var costSum = recalcPpCostSum(pricePpApiCache.res, list);
+          var coef = getPricePpCoef();
+          var nEl = document.getElementById("priceDeliveriesN");
+          var deliveriesN = Math.max(1, Number(nEl && nEl.value) || Number(s.deliveriesN) || 1);
+          var packagesByn = calcPricePacksByn();
+          var fracMark = calcDressuraFractionMarkup(list, getPriceFracRates());
+          subHint = costSum * coef + PRICE_PP_FIXED_BYN + PRICE_PP_DELIVERY_PER * deliveriesN +
+            packagesByn + fracMark.total;
+        } else if (priceMode === "retail") {
+          subHint = calcRetailBasketTotal(list).total;
+        }
+      } catch (eH) {}
+      return {
+        mode: priceMode,
+        baskets: JSON.parse(JSON.stringify(s.baskets || { 1: [], 2: [] })),
+        dogCount: s.dogCount || 1,
+        activeDog: s.activeDog || 1,
+        packCounts: Object.assign({}, s.packCounts || pricePackCounts),
+        note: s.note || "",
+        lastMessage: s.lastMessage || priceLastMessage || "",
+        deliveriesN: Number((document.getElementById("priceDeliveriesN") || {}).value) || 1,
+        coef: getPricePpCoef(),
+        fracRates: getPriceFracRates(),
+        subTotal: subHint,
+        retailTotal: calcRetailBasketTotal(list).total
+      };
+    }
+
+    async function saveCurrentCalcToDeferred() {
+      if (!myTelegramId) { showToast("Нужен Telegram ID"); return; }
+      stashPriceActiveBasket();
+      if (!allPriceItems().length) { showToast("Сначала набери состав"); return; }
+      if (!priceLastMessage) {
+        await calcPriceFromBasket({ silent: true });
+      }
+      var nick = await uiPromptAsync("Ник клиента (можно пусто)", "");
+      if (nick === null) return;
+      nick = String(nick || "").trim();
+      var payload = buildPriceDeferredSnapshot();
+      var title = (priceMode === "retail" ? "Розница" : "ПП") +
+        (nick ? (" · " + nick) : "") +
+        (payload.subTotal != null ? (" · " + roundRub(payload.subTotal) + " BYN") : "");
+      var body = {
+        action: "saveDeferred",
+        telegramId: myTelegramId,
+        mode: priceMode,
+        title: title,
+        clientNick: nick,
+        payload: payload
+      };
+      if (window._editingDeferredId) body.id = window._editingDeferredId;
+      try {
+        await apiPost(body);
+        window._editingDeferredId = "";
+        showToast("В отложенном");
+        await refreshDeferredBadge();
+      } catch (e) {
+        showToast("Не удалось сохранить");
+      }
+    }
+    window.saveCurrentCalcToDeferred = saveCurrentCalcToDeferred;
+
+    async function loadDeferredList() {
+      var box = document.getElementById("deferredList");
+      if (box) box.innerHTML = '<p class="muted">Загрузка…</p>';
+      closeDeferredEnroll();
+      if (!myTelegramId) {
+        if (box) box.innerHTML = '<p class="muted">Нет Telegram ID</p>';
+        return;
+      }
+      try {
+        var res = await apiGet({
+          action: "listDeferred",
+          telegramId: myTelegramId,
+          status: "open"
+        }, { timeoutMs: 25000 });
+        deferredCache = (res && res.items) || [];
+        deferredOpenCount = (res && res.openCount != null) ? Number(res.openCount) : deferredCache.length;
+        updateDeferredPill();
+        if (!box) return;
+        if (!deferredCache.length) {
+          box.innerHTML = '<p class="muted">Пусто — отложи предложение из Расчёта.</p>';
+          return;
+        }
+        box.innerHTML = deferredCache.map(function (it) {
+          var modeLabel = it.mode === "retail" ? "Розница" : "ПП";
+          var when = it.at ? String(it.at).slice(0, 19) : "";
+          var safeId = String(it.id || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+          var preview = (it.payload && it.payload.lastMessage)
+            ? String(it.payload.lastMessage).slice(0, 160)
+            : "";
+          return '<div class="card" style="margin-bottom:10px;">' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">' +
+            '<div><b>' + escapeHtml(it.title || modeLabel) + '</b>' +
+            '<div class="muted" style="font-size:12px;margin-top:4px;">' + modeLabel +
+            (it.clientNick ? (" · " + escapeHtml(it.clientNick)) : "") +
+            (when ? (" · " + escapeHtml(when)) : "") + "</div></div></div>" +
+            (preview ? ('<div class="muted" style="white-space:pre-wrap;font-size:12px;margin-top:8px;max-height:72px;overflow:hidden;">' +
+              escapeHtml(preview) + (String(it.payload.lastMessage).length > 160 ? "…" : "") + "</div>") : "") +
+            '<div class="seg-row" style="margin-top:10px;flex-wrap:wrap;">' +
+            '<button type="button" class="seg-btn" onclick="editDeferredItem(\'' + safeId + '\')">Править</button>' +
+            '<button type="button" class="seg-btn" style="background:#30d158;border-color:#30d158;color:#111;" onclick="openDeferredEnroll(\'' + safeId + '\')">Внести</button>' +
+            '<button type="button" class="seg-btn" style="background:#3a3a3c;" onclick="cancelDeferredItem(\'' + safeId + '\')">Отменить</button>' +
+            "</div></div>";
+        }).join("");
+      } catch (e) {
+        if (box) box.innerHTML = '<p class="muted">Ошибка загрузки (нужен Deploy Code.gs)</p>';
+      }
+    }
+    window.loadDeferredList = loadDeferredList;
+
+    function findDeferredCached(id) {
+      for (var i = 0; i < deferredCache.length; i++) {
+        if (String(deferredCache[i].id) === String(id)) return deferredCache[i];
+      }
+      return null;
+    }
+
+    function applyDeferredSnapshotToPrice(payload) {
+      if (!payload) return;
+      var mode = payload.mode === "retail" ? "retail" : "pp";
+      if (!priceByMode[mode]) priceByMode[mode] = makeEmptyPriceModeStore();
+      var s = priceByMode[mode];
+      s.baskets = {
+        1: (payload.baskets && payload.baskets["1"]) ? payload.baskets["1"].slice() : [],
+        2: (payload.baskets && payload.baskets["2"]) ? payload.baskets["2"].slice() : []
+      };
+      s.dogCount = payload.dogCount === 2 ? 2 : 1;
+      s.activeDog = payload.activeDog === 2 ? 2 : 1;
+      s.packCounts = Object.assign({ small: 0, medium: 0, large: 0, legs: 0 }, payload.packCounts || {});
+      s.note = payload.note || "";
+      s.lastMessage = payload.lastMessage || "";
+      s.apiCache = null;
+      priceMode = mode;
+      loadPriceModeState(mode);
+      var nEl = document.getElementById("priceDeliveriesN");
+      if (nEl && payload.deliveriesN) nEl.value = payload.deliveriesN;
+      var cEl = document.getElementById("pricePpCoef");
+      if (cEl && payload.coef) cEl.value = payload.coef;
+      var fr = payload.fracRates || {};
+      var map = {
+        priceFracWhole: fr.whole,
+        priceFracLarge: fr.large,
+        priceFracMedium: fr.medium,
+        priceFracSmall: fr.small
+      };
+      Object.keys(map).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && map[id] != null && isFinite(Number(map[id]))) el.value = map[id];
+      });
+      setPriceMode(mode);
+    }
+
+    async function editDeferredItem(id) {
+      var it = findDeferredCached(id);
+      if (!it || !it.payload) { showToast("Нет данных"); return; }
+      applyDeferredSnapshotToPrice(it.payload);
+      window._editingDeferredId = id;
+      switchTab("priceScreen");
+      showToast("Открыто в Расчёте — после правок снова «В отложенное»");
+      try { await calcPriceFromBasket({ silent: true }); } catch (e) {}
+    }
+    window.editDeferredItem = editDeferredItem;
+
+    async function cancelDeferredItem(id) {
+      var ok = await uiConfirmAsync("Убрать из отложенного?");
+      if (!ok) return;
+      try {
+        await apiPost({ action: "cancelDeferred", telegramId: myTelegramId, id: id, status: "cancelled" });
+        showToast("Отменено");
+        await loadDeferredList();
+      } catch (e) {
+        showToast("Не удалось отменить");
+      }
+    }
+    window.cancelDeferredItem = cancelDeferredItem;
+
+    function openDeferredEnroll(id) {
+      var it = findDeferredCached(id);
+      if (!it) { showToast("Не найдено"); return; }
+      var card = document.getElementById("deferredEnrollCard");
+      if (card) card.style.display = "block";
+      document.getElementById("deferredEnrollId").value = id;
+      document.getElementById("deferredEnrollNick").value = it.clientNick || "";
+      var pl = it.payload || {};
+      document.getElementById("deferredEnrollN").value = pl.deliveriesN || 1;
+      document.getElementById("deferredEnrollWishes").value = pl.note || "";
+      document.getElementById("deferredEnrollFact").value =
+        pl.subTotal != null ? Math.round(Number(pl.subTotal) * 100) / 100 : "";
+      document.getElementById("deferredEnrollAddress").value = "";
+      document.getElementById("deferredEnrollPhone").value = "";
+      try { card.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {}
+    }
+    window.openDeferredEnroll = openDeferredEnroll;
+
+    function closeDeferredEnroll() {
+      var card = document.getElementById("deferredEnrollCard");
+      if (card) card.style.display = "none";
+    }
+    window.closeDeferredEnroll = closeDeferredEnroll;
+
+    async function confirmEnrollDeferredToPp() {
+      var id = document.getElementById("deferredEnrollId").value;
+      var nick = String(document.getElementById("deferredEnrollNick").value || "").trim();
+      if (!nick) { showToast("Укажи ник"); return; }
+      var ok = await uiConfirmAsync("Внести " + nick + " в лист ПП?");
+      if (!ok) return;
+      var it = findDeferredCached(id);
+      var pl = (it && it.payload) || {};
+      var items = [];
+      if (pl.baskets) {
+        items = (pl.baskets["1"] || []).concat(pl.dogCount >= 2 ? (pl.baskets["2"] || []) : []);
+      }
+      try {
+        await apiPost({
+          action: "enrollDeferredToPp",
+          telegramId: myTelegramId,
+          id: id,
+          clientNick: nick,
+          deliveriesN: Number(document.getElementById("deferredEnrollN").value) || 1,
+          wishes: document.getElementById("deferredEnrollWishes").value || "",
+          address: document.getElementById("deferredEnrollAddress").value || "",
+          phone: document.getElementById("deferredEnrollPhone").value || "",
+          factCost: document.getElementById("deferredEnrollFact").value || pl.subTotal,
+          basket: items
+        });
+        showToast("Отправлено в ПП");
+        closeDeferredEnroll();
+        setTimeout(function () { loadDeferredList(); }, 800);
+      } catch (e) {
+        showToast("Ошибка сети / Deploy");
+      }
+    }
+    window.confirmEnrollDeferredToPp = confirmEnrollDeferredToPp;
 
     async function loadPeople() {
       var box = document.getElementById("peopleContainer");
