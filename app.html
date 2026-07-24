@@ -85,7 +85,9 @@
       top: 0;
       left: 0;
       right: 0;
-      z-index: 200;
+      /* выше tasks-drawer (1400): иначе залипший оверлей ест клики по вкладкам */
+      z-index: 1600;
+      pointer-events: auto;
       background: rgba(10, 10, 10, 0.96);
       -webkit-backdrop-filter: blur(12px);
       backdrop-filter: blur(12px);
@@ -125,10 +127,17 @@
       touch-action: manipulation;
     }
     .modal-overlay:not(.open),
-    .toast:not(.show) {
+    .toast:not(.show),
+    .tasks-drawer-overlay:not(.open),
+    .save-load-overlay:not(.open),
+    .access-gate:not(.open) {
       display: none !important;
       pointer-events: none !important;
       visibility: hidden !important;
+    }
+    .tasks-drawer:not(.open) {
+      pointer-events: none !important;
+      visibility: hidden;
     }
     .section-title {
       font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
@@ -851,7 +860,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.42</div>
+          <div class="header-main" id="appHeaderTitle" title="Удерживайте 1 сек — разблокировать UI">Бойня-Конвейер v7.10.43</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -1459,7 +1468,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.42";
+    const APP_VERSION = "v7.10.43";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2867,10 +2876,12 @@
     }
 
     function hideSaveLoading() {
+      try { if (window._saveLoadTimer) { clearTimeout(window._saveLoadTimer); window._saveLoadTimer = null; } } catch (eT) {}
       const ov = document.getElementById("saveLoadOverlay");
       if (ov) {
         ov.classList.remove("open");
         ov.style.display = "none";
+        ov.style.pointerEvents = "none";
       }
     }
     function showSaveLoading(label) {
@@ -2879,8 +2890,17 @@
       if (lb) lb.textContent = label || "Сохраняю заказ…";
       if (ov) {
         ov.style.display = "flex";
+        ov.style.pointerEvents = "auto";
         ov.classList.add("open");
       }
+      // страховка: не оставлять чёрный экран навечно при сбое сети
+      try {
+        if (window._saveLoadTimer) clearTimeout(window._saveLoadTimer);
+        window._saveLoadTimer = setTimeout(function () {
+          hideSaveLoading();
+          try { showToast("Сохранение зависло — UI разблокирован"); } catch (e0) {}
+        }, 28000);
+      } catch (e1) {}
     }
 
     function clearBlockingOverlays() {
@@ -2900,15 +2920,23 @@
         document.querySelectorAll(".addr-suggest.open").forEach(function (el) {
           el.classList.remove("open");
         });
-        // ☰-drawer: иначе полупрозрачный слой z=1400 перекрывает шапку/вкладки (z=200)
+        // ☰-drawer: иначе полупрозрачный слой перекрывает клики
         try { closeTasksDrawer(); } catch (eDr) {
           var tov = document.getElementById("tasksDrawerOverlay");
           var tdr = document.getElementById("tasksDrawer");
-          if (tov) { tov.classList.remove("open"); tov.style.display = "none"; }
-          if (tdr) { tdr.classList.remove("open"); tdr.setAttribute("aria-hidden", "true"); }
+          if (tov) {
+            tov.classList.remove("open");
+            tov.style.display = "none";
+            tov.style.pointerEvents = "none";
+          }
+          if (tdr) {
+            tdr.classList.remove("open");
+            tdr.setAttribute("aria-hidden", "true");
+          }
         }
         var slo = document.getElementById("saveLoadOverlay");
-        if (slo && !slo.classList.contains("open")) {
+        if (slo) {
+          slo.classList.remove("open");
           slo.style.display = "none";
           slo.style.pointerEvents = "none";
         }
@@ -3014,6 +3042,39 @@
 
     // Сразу снять возможные залипшие слои при загрузке скрипта
     clearBlockingOverlays();
+
+    // Долгий тап по заголовку → аварийная разблокировка UI
+    (function bindHeaderUnstick() {
+      var hdr = document.getElementById("appHeaderTitle");
+      if (!hdr) return;
+      var t0 = 0;
+      function arm() { t0 = Date.now(); }
+      function maybeUnlock() {
+        if (t0 && (Date.now() - t0) >= 650) {
+          clearBlockingOverlays();
+          try { showToast("UI разблокирован"); } catch (e) {}
+        }
+        t0 = 0;
+      }
+      hdr.addEventListener("touchstart", arm, { passive: true });
+      hdr.addEventListener("mousedown", arm);
+      hdr.addEventListener("touchend", maybeUnlock);
+      hdr.addEventListener("mouseup", maybeUnlock);
+    })();
+
+    // Вернулись из фона Telegram — снять залипшие слои (не трогаем access-gate)
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) {
+        try { hideSaveLoading(); closeTasksDrawer(); } catch (eV) {}
+        try {
+          document.body.style.pointerEvents = "auto";
+          document.documentElement.style.pointerEvents = "auto";
+        } catch (eP) {}
+      }
+    });
+    window.addEventListener("pageshow", function () {
+      try { clearBlockingOverlays(); } catch (ePs) {}
+    });
 
     function unitForItem(cat, main) {
       if (cat === "chew") return "шт";
