@@ -307,12 +307,22 @@
     }
     .view-save-bar {
       display: none; position: sticky; bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-      z-index: 41; margin: 10px 0 4px; padding: 12px; border-radius: 12px;
+      z-index: 41; margin: 6px 0 2px; padding: 6px 8px; border-radius: 10px;
       background: #1c1c1e; border: 1px solid #af52de;
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+      box-shadow: 0 -2px 12px rgba(0,0,0,0.3);
     }
-    .view-save-bar.open { display: block; }
-    .view-save-bar .btn-save { margin: 8px 0 0; }
+    .view-save-bar.open { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+    .view-save-bar #viewDraftCount {
+      flex: 0 0 auto; margin: 0; font-size: 12px; font-weight: 700; color: #af52de;
+      white-space: nowrap;
+    }
+    .view-save-bar .view-save-actions {
+      display: flex; gap: 6px; flex: 1 1 auto; min-width: 0;
+    }
+    .view-save-bar .view-save-actions button {
+      flex: 1 1 0; margin: 0; padding: 8px 6px; font-size: 12px; line-height: 1.2;
+      min-height: 0; width: auto;
+    }
     .client-order-details.open { display: block !important; }
     .view-tap-hint { font-size: 11px; color: var(--text-muted); }
     .client-main-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
@@ -811,7 +821,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.38</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.39</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -1043,10 +1053,11 @@
       </div>
 
       <div class="view-save-bar" id="viewSaveBar">
-        <div class="batch-count" id="viewDraftCount">Черновик: 0</div>
-        <div class="muted" style="font-size:12px;text-align:center;">Пока только на экране. В таблицу — кнопкой ниже.</div>
-        <button type="button" class="btn-save" onclick="saveViewTransferDraft()">Сохранить переносы</button>
-        <button type="button" class="btn-action btn-orange" style="margin-top:8px;width:100%;" onclick="clearViewTransferDraft()">Отменить черновик</button>
+        <div id="viewDraftCount">Черн. 0</div>
+        <div class="view-save-actions">
+          <button type="button" class="btn-save" onclick="saveViewTransferDraft()">Сохранить</button>
+          <button type="button" class="btn-action btn-orange" onclick="clearViewTransferDraft()">Отмена</button>
+        </div>
       </div>
 
       <div class="batch-bar" id="batchBar">
@@ -1361,7 +1372,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.38";
+    const APP_VERSION = "v7.10.39";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -3583,7 +3594,7 @@
     function updateViewDraftBar() {
       var bar = document.getElementById("viewSaveBar");
       var cnt = document.getElementById("viewDraftCount");
-      if (cnt) cnt.textContent = "Черновик: " + viewTransferDraft.length;
+      if (cnt) cnt.textContent = "Черн. " + viewTransferDraft.length;
       if (bar) bar.classList.toggle("open", viewTransferDraft.length > 0);
     }
 
