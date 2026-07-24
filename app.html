@@ -214,6 +214,28 @@
     }
     .view-col-head b { font-size: 13px; }
     .view-col.is-month { border-color: rgba(175,82,222,0.4); }
+    .client-item-card.is-gap {
+      border-color: #ff453a !important;
+      box-shadow: inset 0 0 0 1px rgba(255,69,58,0.35);
+      background: #2a1515;
+    }
+    .client-item-card.is-draft {
+      border-style: dashed;
+      border-color: #af52de;
+      background: #1a1422;
+    }
+    .gap-badge {
+      font-size: 11px; font-weight: 700; color: #ff453a;
+      background: rgba(255,69,58,0.15); padding: 2px 6px; border-radius: 6px;
+    }
+    .view-save-bar {
+      display: none; position: sticky; bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+      z-index: 41; margin: 10px 0 4px; padding: 12px; border-radius: 12px;
+      background: #1c1c1e; border: 1px solid #af52de;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+    }
+    .view-save-bar.open { display: block; }
+    .view-save-bar .btn-save { margin: 8px 0 0; }
     .client-order-details.open { display: block !important; }
     .view-tap-hint { font-size: 11px; color: var(--text-muted); }
     .client-main-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
@@ -712,7 +734,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.36</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.37</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -914,7 +936,7 @@
           <label>Или дата</label>
           <input type="date" id="viewDate" onchange="onViewDateChange()">
         </div>
-        <div class="muted" style="font-size:12px;">Слева — неделя, справа — месяц. Тап по имени — состав и детали. «→» — перенос на неделю.</div>
+        <div class="muted" style="font-size:12px;">Слева — неделя, справа — месяц. «→» в черновик (ещё не в таблице). Потом «Сохранить переносы». Красные — нет адреса/телефона/состава.</div>
         <div id="viewDeployHint" class="muted" style="display:none;font-size:12px;margin-top:8px;color:#ff9f0a;"></div>
       </div>
       <div id="totalDaySummaryContainer"></div>
@@ -936,11 +958,18 @@
           <div class="view-col-head">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
               <b>Месяц <span class="muted" id="viewMonthCount"></span></b>
-              <button type="button" class="btn-action btn-purple" style="margin:0;padding:6px 10px;font-size:11px;" onclick="topUpDayFromMonth()">Все →</button>
+              <button type="button" class="btn-action btn-purple" style="margin:0;padding:6px 10px;font-size:11px;" onclick="stageAllFromMonth()">Все →</button>
             </div>
           </div>
           <div id="monthClientsContainer"><p class="muted">—</p></div>
         </div>
+      </div>
+
+      <div class="view-save-bar" id="viewSaveBar">
+        <div class="batch-count" id="viewDraftCount">Черновик: 0</div>
+        <div class="muted" style="font-size:12px;text-align:center;">Пока только на экране. В таблицу — кнопкой ниже.</div>
+        <button type="button" class="btn-save" onclick="saveViewTransferDraft()">Сохранить переносы</button>
+        <button type="button" class="btn-action btn-orange" style="margin-top:8px;width:100%;" onclick="clearViewTransferDraft()">Отменить черновик</button>
       </div>
 
       <div class="batch-bar" id="batchBar">
@@ -1255,7 +1284,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.36";
+    const APP_VERSION = "v7.10.37";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -3067,6 +3096,9 @@
     window.resetOrderScreen = resetOrderScreen;
 
     async function sendEntireOrder() {
+      if (window._viewDraftEditIndex != null && typeof applyOrderBasketToViewDraft === "function") {
+        if (applyOrderBasketToViewDraft()) return;
+      }
       const clientName = document.getElementById("client").value.trim();
       let clientAddressFull = document.getElementById("addressInput").value.trim();
       clientAddressFull = formatStreetHouse(clientAddressFull) || clientAddressFull;
@@ -3385,6 +3417,43 @@
     window.onViewDayChange = onViewDayChange;
 
     let monthClientsCache = [];
+    let viewTransferDraft = []; // черновик переноса: визуально слева, в таблицу после «Сохранить»
+
+    function viewClientKey(raw) {
+      var s = String(raw || "").replace(/\s+/g, " ").trim();
+      if (!s) return "";
+      var at = s.match(/@([A-Za-z0-9._]{2,})/);
+      var handle = "";
+      if (at) handle = at[1];
+      else {
+        s = s.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s*\b(АФК|ПП|БП|Р)\b\s*/gi, " ").replace(/\s+/g, " ").trim();
+        var parts = s.split(/\s+/);
+        for (var i = parts.length - 1; i >= 0; i--) {
+          var p = parts[i].replace(/^[.,;:]+|[.,;:]+$/g, "");
+          if (/^[A-Za-z0-9._]{3,}$/.test(p) && /[A-Za-z]/.test(p)) { handle = p; break; }
+        }
+      }
+      if (handle) return handle.toUpperCase().replace(/[._]/g, "");
+      return s.toUpperCase().replace(/Ё/g, "Е");
+    }
+
+    function clientGaps(client) {
+      var gaps = Array.isArray(client.gaps) ? client.gaps.slice() : [];
+      if (!String(client.address || "").trim() && gaps.indexOf("address") < 0) gaps.push("address");
+      if (!String(client.phone || "").trim() && !extractPhone(client.note || "") && gaps.indexOf("phone") < 0) gaps.push("phone");
+      var basketLen = (client.basket && client.basket.length) || Number(client.basketCount) || 0;
+      if (!basketLen && gaps.indexOf("basket") < 0) gaps.push("basket");
+      return gaps;
+    }
+
+    function gapLabels(gaps) {
+      return (gaps || []).map(function (g) {
+        if (g === "address") return "адрес";
+        if (g === "phone") return "тел";
+        if (g === "basket") return "состав";
+        return g;
+      });
+    }
 
     function basketLinesHtml(basket) {
       return (basket || []).map(function (g) {
@@ -3396,8 +3465,59 @@
       }).join("") || '<p class="muted">Нет позиций</p>';
     }
 
-    function renderWeekClientCard(client, index) {
+    function updateViewDraftBar() {
+      var bar = document.getElementById("viewSaveBar");
+      var cnt = document.getElementById("viewDraftCount");
+      if (cnt) cnt.textContent = "Черновик: " + viewTransferDraft.length;
+      if (bar) bar.classList.toggle("open", viewTransferDraft.length > 0);
+    }
+
+    function renderViewLists() {
+      const box = document.getElementById("clientsContainer");
+      const monthBox = document.getElementById("monthClientsContainer");
+      const weekCountEl = document.getElementById("viewWeekCount");
+      const monthCountEl = document.getElementById("viewMonthCount");
+      const draftKeys = {};
+      viewTransferDraft.forEach(function (d) {
+        var k = d.matchKey || viewClientKey(d.name);
+        if (k) draftKeys[k] = true;
+      });
+
+      var weekHtml = (loadedClientsRawData || []).map(function (c, i) {
+        return renderWeekClientCard(c, i, false);
+      }).join("");
+      var draftHtml = viewTransferDraft.map(function (c, i) {
+        return renderWeekClientCard(c, i, true);
+      }).join("");
+      if (box) {
+        box.innerHTML = (weekHtml || draftHtml)
+          ? (weekHtml + draftHtml)
+          : '<p class="muted">На неделе пусто — бери справа →</p>';
+      }
+      if (weekCountEl) {
+        weekCountEl.textContent = "(" + (loadedClientsRawData.length + viewTransferDraft.length) +
+          (viewTransferDraft.length ? (" · +" + viewTransferDraft.length + " черн.") : "") + ")";
+      }
+
+      var visibleMonth = (monthClientsCache || []).filter(function (c) {
+        var k = c.matchKey || viewClientKey(c.name);
+        return !(k && draftKeys[k]);
+      });
+      if (monthBox) {
+        monthBox.innerHTML = visibleMonth.length
+          ? visibleMonth.map(function (c, i) { return renderMonthClientCard(c, i); }).join("")
+          : '<p class="muted">Все из месяца уже на неделе / в черновике.</p>';
+      }
+      if (monthCountEl) monthCountEl.textContent = "(" + visibleMonth.length + ")";
+      updateViewDraftBar();
+      updateBatchBar();
+    }
+
+    function renderWeekClientCard(client, index, isDraft) {
       const nick = String(client.name || client.nick || "").trim() || ("#" + (index + 1));
+      const gaps = clientGaps(client);
+      const gapClass = gaps.length ? " is-gap" : "";
+      const draftClass = isDraft ? " is-draft" : "";
       const lines = basketLinesHtml(client.basket);
       const addr = client.address ? `<div class="delivery-line addr-line">📍 ${escapeHtml(client.address)}</div>` : "";
       const priceHtml = formatOrderPriceHtml(client.note || "");
@@ -3416,52 +3536,321 @@
       const priceBadge = extractOrderPrice(client.note || "") != null
         ? `<span class="client-badge" style="background:rgba(48,209,88,0.2);color:#30d158;">${extractOrderPrice(client.note)} BYN</span>`
         : "";
+      const gapBadge = gaps.length
+        ? ('<span class="gap-badge">нет: ' + escapeHtml(gapLabels(gaps).join(", ")) + "</span>")
+        : "";
       const preview = [addr, tel].filter(Boolean).join("") ||
-        (client.address ? "" : '<div class="muted" style="font-size:11px;margin-top:4px;">адрес не указан</div>');
-      return `<div class="client-item-card" id="clientCard_${index}">
-        <div class="client-main-row" onclick="toggleOrderDetail(${index}, event)">
+        '<div class="muted" style="font-size:11px;margin-top:4px;">адрес/тел не указаны</div>';
+      const idPrefix = isDraft ? "draft" : "client";
+      const detailId = isDraft ? ("draftDetails_" + index) : ("details_" + index);
+      const toggleFn = isDraft ? ("toggleDraftDetail(" + index + ", event)") : ("toggleOrderDetail(" + index + ", event)");
+      var actions = "";
+      if (isDraft) {
+        actions =
+          '<div class="client-right-block" onclick="event.stopPropagation()">' +
+          '<button class="crm-mini-btn crm-edit" title="Дополнить" onclick="editDraftClient(' + index + ', event)">✏️</button>' +
+          '<button class="crm-mini-btn crm-move" title="Вернуть в месяц" onclick="unstageDraftClient(' + index + ', event)">←</button>' +
+          "</div>";
+      } else {
+        actions =
+          '<div class="client-right-block" onclick="event.stopPropagation()">' +
+          '<button class="crm-mini-btn crm-edit" onclick="crmEditClient(' + index + ', event)">✏️</button>' +
+          '<button class="crm-mini-btn crm-move" onclick="crmMoveClient(' + index + ', event)">🔄</button>' +
+          '<button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(' + index + ', event)">🗑️</button>' +
+          "</div>";
+      }
+      return `<div class="client-item-card${gapClass}${draftClass}" id="${idPrefix}Card_${index}">
+        <div class="client-main-row" onclick="${toggleFn}">
           <div class="client-title-wrap">
-            <input type="checkbox" class="client-check" data-index="${index}"
+            ${isDraft ? "" : `<input type="checkbox" class="client-check" data-index="${index}"
               onclick="event.stopPropagation()" onchange="onClientCheckChange(${index})"
-              aria-label="Выбрать ${escapeHtml(nick)}">
-            <span class="client-title">${index + 1}. ${escapeHtml(nick)}</span>
+              aria-label="Выбрать ${escapeHtml(nick)}">`}
+            <span class="client-title">${isDraft ? "＋ " : (index + 1) + ". "}${escapeHtml(nick)}</span>
           </div>
-          <div class="client-right-block" onclick="event.stopPropagation()">
-            <button class="crm-mini-btn crm-edit" onclick="crmEditClient(${index}, event)">✏️</button>
-            <button class="crm-mini-btn crm-move" onclick="crmMoveClient(${index}, event)">🔄</button>
-            <button class="crm-mini-btn crm-delete" onclick="crmDeleteClient(${index}, event)">🗑️</button>
-          </div>
+          ${actions}
         </div>
         <div class="client-meta-row">
+          ${isDraft ? '<span class="client-badge">черновик</span>' : ""}
           ${priceBadge}
-          <span class="client-badge">${client.orderCount || (client.basket || []).length || 0} поз.</span>
+          <span class="client-badge">${client.orderCount || (client.basket || []).length || client.basketCount || 0} поз.</span>
+          ${gapBadge}
           <span class="view-tap-hint">тап — состав</span>
         </div>
         <div class="delivery-info-box">${priceHtml}${note}${roleHint}${deliv}${preview}</div>
-        <div class="client-order-details" id="details_${index}">${lines}</div>
+        <div class="client-order-details" id="${detailId}">${isDraft && !(client.basket && client.basket.length) ? '<p class="muted">Состав подтянется при сохранении (или дополни ✏️)</p>' : lines}</div>
       </div>`;
     }
 
     function renderMonthClientCard(client, index) {
       var nick = String(client.name || client.nick || client.client || "").trim() || ("#" + (index + 1));
-      var safe = nick.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      var gaps = clientGaps(client);
+      var gapClass = gaps.length ? " is-gap" : "";
       var seg = client.segment ? ('<span class="client-badge">' + escapeHtml(client.segment) + "</span>") : "";
+      var gapBadge = gaps.length
+        ? ('<span class="gap-badge">нет: ' + escapeHtml(gapLabels(gaps).join(", ")) + "</span>")
+        : "";
       var bits = [];
       if (client.address) bits.push("📍 " + escapeHtml(client.address));
       if (client.phone) bits.push(escapeHtml(client.phone));
       if (client.note) bits.push(escapeHtml(String(client.note).slice(0, 80)));
-      return '<div class="client-item-card" id="monthCard_' + index + '" style="border-color:rgba(175,82,222,0.35);">' +
+      return '<div class="client-item-card' + gapClass + '" id="monthCard_' + index + '" style="border-color:rgba(175,82,222,0.35);">' +
         '<div class="client-main-row" style="align-items:flex-start;" onclick="toggleMonthDetail(' + index + ', event)">' +
         '<div class="client-title-wrap"><span class="client-title">' + escapeHtml(nick) + "</span></div>" +
         '<div class="client-right-block" style="width:auto;margin-top:0;flex:0 0 auto;" onclick="event.stopPropagation()">' +
         '<button type="button" class="btn-action btn-purple" style="margin:0;padding:8px 10px;font-size:11px;" ' +
-        'onclick="pullOneFromMonth(\'' + safe + '\')">→</button></div>' +
+        'onclick="stageMonthClient(' + index + ')">→</button></div>' +
         "</div>" +
-        '<div class="client-meta-row">' + seg + ' <span class="view-tap-hint">тап — состав</span></div>' +
+        '<div class="client-meta-row">' + seg + gapBadge + ' <span class="view-tap-hint">тап — состав</span></div>' +
         (bits.length ? ('<div class="delivery-info-box muted" style="font-size:12px;">' + bits.join("<br>") + "</div>") : "") +
         '<div class="client-order-details" id="monthDetails_' + index + '"><p class="muted">Загрузка состава…</p></div>' +
         "</div>";
     }
+
+    function stageMonthClient(index) {
+      // index в отфильтрованном списке — ищем по видимым
+      var draftKeys = {};
+      viewTransferDraft.forEach(function (d) {
+        var k = d.matchKey || viewClientKey(d.name);
+        if (k) draftKeys[k] = true;
+      });
+      var visible = (monthClientsCache || []).filter(function (c) {
+        var k = c.matchKey || viewClientKey(c.name);
+        return !(k && draftKeys[k]);
+      });
+      var client = visible[index];
+      if (!client) return;
+      var key = client.matchKey || viewClientKey(client.name);
+      if (key && draftKeys[key]) {
+        showToast("Уже в черновике");
+        return;
+      }
+      viewTransferDraft.push({
+        name: client.name,
+        matchKey: key,
+        address: client.address || "",
+        phone: client.phone || "",
+        note: client.note || "",
+        segment: client.segment || "",
+        basket: client.basket || [],
+        basketCount: client.basketCount || 0,
+        gaps: clientGaps(client),
+        _draft: true
+      });
+      renderViewLists();
+      showToast("В черновик: " + client.name);
+    }
+    window.stageMonthClient = stageMonthClient;
+
+    function stageAllFromMonth() {
+      var draftKeys = {};
+      viewTransferDraft.forEach(function (d) {
+        var k = d.matchKey || viewClientKey(d.name);
+        if (k) draftKeys[k] = true;
+      });
+      var n = 0;
+      (monthClientsCache || []).forEach(function (client) {
+        var key = client.matchKey || viewClientKey(client.name);
+        if (key && draftKeys[key]) return;
+        viewTransferDraft.push({
+          name: client.name,
+          matchKey: key,
+          address: client.address || "",
+          phone: client.phone || "",
+          note: client.note || "",
+          segment: client.segment || "",
+          basket: client.basket || [],
+          basketCount: client.basketCount || 0,
+          gaps: clientGaps(client),
+          _draft: true
+        });
+        if (key) draftKeys[key] = true;
+        n++;
+      });
+      renderViewLists();
+      showToast(n ? ("В черновик: " + n) : "Некого добавлять");
+    }
+    window.stageAllFromMonth = stageAllFromMonth;
+
+    function unstageDraftClient(index, event) {
+      if (event) event.stopPropagation();
+      viewTransferDraft.splice(index, 1);
+      renderViewLists();
+    }
+    window.unstageDraftClient = unstageDraftClient;
+
+    function clearViewTransferDraft() {
+      viewTransferDraft = [];
+      renderViewLists();
+      showToast("Черновик очищен");
+    }
+    window.clearViewTransferDraft = clearViewTransferDraft;
+
+    function toggleDraftDetail(index, event) {
+      if (event && event.target.closest("button")) return;
+      var el = document.getElementById("draftDetails_" + index);
+      if (!el) return;
+      el.classList.toggle("open");
+      el.style.display = el.classList.contains("open") ? "block" : "none";
+    }
+    window.toggleDraftDetail = toggleDraftDetail;
+
+    async function editDraftClient(index, event) {
+      if (event) event.stopPropagation();
+      var client = viewTransferDraft[index];
+      if (!client) return;
+      var html =
+        '<div class="modal-title">Дополнить: ' + escapeHtml(client.name) + "</div>" +
+        '<div class="form-group"><label>Адрес</label><input type="text" id="draftEditAddr" value="' +
+        escapeHtml(client.address || "") + '"></div>' +
+        '<div class="form-group"><label>Телефон</label><input type="text" id="draftEditPhone" value="' +
+        escapeHtml(client.phone || "") + '" inputmode="tel"></div>' +
+        '<div class="form-group"><label>Примечание</label><input type="text" id="draftEditNote" value="' +
+        escapeHtml(client.note || "") + '"></div>' +
+        '<div class="muted" style="font-size:12px;margin-bottom:8px;">Состав можно набрать в Заказе после сохранения переноса, либо оставить авто из ПП/АФК.</div>' +
+        '<button type="button" class="btn-action btn-blue" id="draftEditSave">Ок</button>' +
+        '<button type="button" class="btn-action btn-orange" id="draftEditOrder" style="margin-top:8px;">Набрать состав в Заказе</button>';
+      openModal(html);
+      document.getElementById("draftEditSave").onclick = function () {
+        client.address = (document.getElementById("draftEditAddr").value || "").trim();
+        client.phone = (document.getElementById("draftEditPhone").value || "").trim();
+        client.note = (document.getElementById("draftEditNote").value || "").trim();
+        client.gaps = clientGaps(client);
+        closeModal();
+        renderViewLists();
+        showToast("Данные в черновике");
+      };
+      document.getElementById("draftEditOrder").onclick = function () {
+        client.address = (document.getElementById("draftEditAddr").value || "").trim();
+        client.phone = (document.getElementById("draftEditPhone").value || "").trim();
+        client.note = (document.getElementById("draftEditNote").value || "").trim();
+        client.gaps = clientGaps(client);
+        closeModal();
+        // временная карточка в loadedClients для crmEdit-подобного потока
+        var day = document.getElementById("viewDaySelect").value;
+        var dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
+        document.getElementById("isEditMode").value = "false";
+        editOriginalClient = "";
+        editOriginalDay = "";
+        document.getElementById("appHeaderTitle").innerText = "Черновик: " + client.name;
+        document.getElementById("btnMainSave").innerText = "В черновик (не в таблицу)";
+        if (day) document.getElementById("day").value = day;
+        if (dateStr && document.getElementById("deliveryDate")) document.getElementById("deliveryDate").value = dateStr;
+        document.getElementById("client").value = client.name;
+        document.getElementById("addressInput").value = client.address || "";
+        var phoneEl = document.getElementById("phoneInput");
+        if (phoneEl) phoneEl.value = client.phone || "";
+        loadOrderNotesFromRaw(client.note || "");
+        try { setOrderType(client.segment === "БП" ? "bp" : (client.segment === "ПП" || !client.segment ? "pp" : "retail")); } catch (eOt) {}
+        basket = (client.basket || []).map(function (g) {
+          return {
+            id: Date.now() + Math.random(),
+            cat: g.cat || "other",
+            main: g.name || g.main,
+            name: g.name || g.main,
+            sub: g.sub || "",
+            value: g.val != null ? g.val : g.value,
+            val: g.val != null ? g.val : g.value
+          };
+        });
+        window._viewDraftEditIndex = index;
+        renderBasket();
+        switchTab("orderScreen");
+        recoverUiFocus();
+        showToast("Состав вернётся в черновик кнопкой «В черновик»");
+      };
+    }
+    window.editDraftClient = editDraftClient;
+
+    function applyOrderBasketToViewDraft() {
+      var idx = window._viewDraftEditIndex;
+      if (idx == null || !viewTransferDraft[idx]) return false;
+      var client = viewTransferDraft[idx];
+      client.address = (document.getElementById("addressInput") && document.getElementById("addressInput").value) || client.address;
+      var phoneEl = document.getElementById("phoneInput");
+      if (phoneEl) client.phone = phoneEl.value || client.phone;
+      client.basket = (basket || []).map(function (g) {
+        return { cat: g.cat, name: g.name || g.main, main: g.main || g.name, sub: g.sub || "", val: g.val != null ? g.val : g.value };
+      });
+      client.basketCount = client.basket.length;
+      client.gaps = clientGaps(client);
+      window._viewDraftEditIndex = null;
+      document.getElementById("btnMainSave").innerText = "Сохранить заказ";
+      document.getElementById("appHeaderTitle").innerText = "Бойня-Конвейер " + APP_VERSION;
+      switchTab("clientsScreen");
+      renderViewLists();
+      showToast("Состав в черновике — нажми «Сохранить переносы»");
+      return true;
+    }
+    window.applyOrderBasketToViewDraft = applyOrderBasketToViewDraft;
+
+    async function saveViewTransferDraft() {
+      if (!viewTransferDraft.length) {
+        showToast("Черновик пуст");
+        return;
+      }
+      var day = document.getElementById("viewDaySelect").value;
+      var dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
+      if (!day && !dateStr) {
+        await uiAlertAsync("Сначала выбери день");
+        return;
+      }
+      var red = viewTransferDraft.filter(function (c) { return clientGaps(c).length; });
+      if (red.length) {
+        var okGaps = await uiConfirmAsync(
+          "У " + red.length + " чел. нет адреса/телефона/состава (красные).\nВсё равно сохранить? Состав для подписок подтянется с ПП/АФК при возможности."
+        );
+        if (!okGaps) return;
+      }
+      var ok = await uiConfirmAsync("Записать в таблицу " + viewTransferDraft.length + " чел. на «" + (day || dateStr) + "»?");
+      if (!ok) return;
+      try {
+        showToast("Сохраняю…");
+        var payload = {
+          action: "pullClientsFromMonth",
+          clients: JSON.stringify(viewTransferDraft.map(function (c) {
+            return {
+              client: c.name,
+              address: c.address || "",
+              phone: c.phone || "",
+              note: c.note || "",
+              segment: c.segment || "",
+              basket: c.basket && c.basket.length ? c.basket : null
+            };
+          }))
+        };
+        if (day) payload.day = day;
+        else payload.date = dateStr;
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+        var res = await apiGet(payload, { timeoutMs: 60000, cacheTtlMs: 0 });
+        if (!res || res.status !== "success") {
+          var msg = (res && res.message) || (res && res.result && res.result.message) || "ошибка";
+          if (msg === "date_not_in_week") {
+            await uiAlertAsync("Дата вне текущей недели. Выбери день Пн–Пт.");
+            return;
+          }
+          if (msg === "unknown_action") {
+            await uiAlertAsync("Нужен Deploy Code.gs (pullClientsFromMonth).\nПока можно жать → и «Сохранить» не сработает пачкой.");
+            return;
+          }
+          await uiAlertAsync("Не удалось: " + msg);
+          return;
+        }
+        var r = res.result || {};
+        var lines = [];
+        (r.items || []).forEach(function (it) {
+          lines.push((it.client || "") + ": " + (it.outcome || ""));
+        });
+        viewTransferDraft = [];
+        showToast("Добавлено: " + (r.added || 0) + (r.already ? (", уже были: " + r.already) : "") + (r.failed ? (", ошибок: " + r.failed) : ""));
+        if (lines.length && lines.length <= 12) {
+          try { await uiAlertAsync(lines.join("\n")); } catch (eA) {}
+        }
+        await loadClientsForDay();
+      } catch (e) {
+        await uiAlertAsync(e.message || "Ошибка сети / Deploy");
+      }
+    }
+    window.saveViewTransferDraft = saveViewTransferDraft;
 
     async function loadClientsForDay() {
       ensureViewDaySelected();
@@ -3470,8 +3859,6 @@
       const box = document.getElementById("clientsContainer");
       const monthBox = document.getElementById("monthClientsContainer");
       const summary = document.getElementById("totalDaySummaryContainer");
-      const weekCountEl = document.getElementById("viewWeekCount");
-      const monthCountEl = document.getElementById("viewMonthCount");
       const deployHint = document.getElementById("viewDeployHint");
       if (!day && !dateStr) {
         box.innerHTML = '<p class="muted">Выберите день…</p>';
@@ -3479,6 +3866,7 @@
         if (summary) summary.innerHTML = "";
         loadedClientsRawData = [];
         monthClientsCache = [];
+        updateViewDraftBar();
         updateBatchBar();
         return;
       }
@@ -3489,8 +3877,6 @@
       try {
         try { _apiGetMem = Object.create(null); } catch (eClr) {}
 
-        // Неделя всегда через getClients (работает на любом Deploy).
-        // Месяц — getViewCompare (нужен свежий Code.gs).
         var weekParams = { action: "getClients" };
         var compareParams = { action: "getViewCompare" };
         if (dateStr) {
@@ -3505,7 +3891,7 @@
           apiGet(weekParams, { timeoutMs: 22000, cacheTtlMs: 0 }).catch(function (eW) {
             return { status: "error", message: eW.message || String(eW), clients: [] };
           }),
-          apiGet(compareParams, { timeoutMs: 25000, cacheTtlMs: 0 }).catch(function () {
+          apiGet(compareParams, { timeoutMs: 45000, cacheTtlMs: 0 }).catch(function () {
             return null;
           })
         ]);
@@ -3532,14 +3918,25 @@
           daySel.selectedIndex = 0;
         }
 
-        loadedClientsRawData = week;
-        monthClientsCache = month;
+        loadedClientsRawData = week.map(function (c) {
+          c.gaps = clientGaps(c);
+          return c;
+        });
+        monthClientsCache = month.map(function (c) {
+          c.gaps = clientGaps(c);
+          return c;
+        });
 
-        if (weekCountEl) weekCountEl.textContent = "(" + week.length + ")";
-        if (monthCountEl) {
-          monthCountEl.textContent = "(" + month.length + ")" +
-            (compareRes && compareRes.monthSheet ? (" · " + compareRes.monthSheet) : "");
-        }
+        // убрать из черновика тех, кто уже реально на неделе
+        var weekKeys = {};
+        loadedClientsRawData.forEach(function (c) {
+          var k = viewClientKey(c.name);
+          if (k) weekKeys[k] = true;
+        });
+        viewTransferDraft = viewTransferDraft.filter(function (d) {
+          var k = d.matchKey || viewClientKey(d.name);
+          return !(k && weekKeys[k]);
+        });
 
         const dayLabel = resolvedDay ? (" · " + resolvedDay) : "";
         const dateLabel = (compareRes && compareRes.date) || (weekRes && weekRes.date) || dateStr
@@ -3552,30 +3949,20 @@
         }
         if (deployHint && needDeploy) {
           deployHint.style.display = "block";
-          deployHint.textContent = "Справа пусто: вставь свежий Code.gs → Deploy (getViewCompare). Слева уже getClients.";
+          deployHint.textContent = "Месяц/дыры: нужен Deploy Code.gs (getViewCompare). Неделя уже из getClients.";
+        } else if (monthBox && compareRes && compareRes.dateNotInWeek && !month.length) {
+          // handled in render
         }
 
         if (weekRes && weekRes.status !== "success" && !week.length) {
           box.innerHTML = '<p class="muted">Ошибка недели: ' +
             escapeHtml((weekRes && weekRes.message) || "нет данных") + "</p>";
         } else {
-          box.innerHTML = week.length
-            ? week.map(renderWeekClientCard).join("")
-            : '<p class="muted">На неделе пусто — бери справа →</p>';
+          renderViewLists();
         }
-
-        if (monthBox) {
-          if (needDeploy) {
-            monthBox.innerHTML = '<p class="muted">Нужен Deploy Code.gs — иначе календарь месяца не читается.</p>';
-          } else if (compareRes && compareRes.dateNotInWeek && !month.length) {
-            monthBox.innerHTML = '<p class="muted">Дата вне недели — выбери Пн–Пт.</p>';
-          } else {
-            monthBox.innerHTML = month.length
-              ? month.map(renderMonthClientCard).join("")
-              : '<p class="muted">Все из месяца уже на неделе.</p>';
-          }
+        if (needDeploy && monthBox) {
+          monthBox.innerHTML = '<p class="muted">Нужен Deploy Code.gs — иначе календарь месяца не читается.</p>';
         }
-        updateBatchBar();
       } catch (err) {
         box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
         if (monthBox) monthBox.innerHTML = '<p class="muted">Сеть / Deploy</p>';
@@ -3595,13 +3982,22 @@
 
     async function toggleMonthDetail(index, event) {
       if (event && event.target.closest("button")) return;
+      var draftKeys = {};
+      viewTransferDraft.forEach(function (d) {
+        var k = d.matchKey || viewClientKey(d.name);
+        if (k) draftKeys[k] = true;
+      });
+      var visible = (monthClientsCache || []).filter(function (c) {
+        var k = c.matchKey || viewClientKey(c.name);
+        return !(k && draftKeys[k]);
+      });
       var el = document.getElementById("monthDetails_" + index);
       if (!el) return;
       var opening = !el.classList.contains("open");
       el.classList.toggle("open", opening);
       el.style.display = opening ? "block" : "none";
       if (!opening) return;
-      var client = monthClientsCache[index];
+      var client = visible[index];
       if (!client) { el.innerHTML = '<p class="muted">Нет данных</p>'; return; }
       if (client._detailHtml) { el.innerHTML = client._detailHtml; return; }
       el.innerHTML = '<p class="muted">Состав…</p>';
@@ -3620,50 +4016,75 @@
           date: dateStr || ""
         }, { timeoutMs: 15000, cacheTtlMs: 20000 });
         var basket = (sug && (sug.proposedBasket || sug.monthlyBasket)) || [];
+        client.basket = basket;
+        client.basketCount = basket.length;
+        client.gaps = clientGaps(client);
         html += '<div style="margin-top:8px;"><b>Состав</b></div>' + basketLinesHtml(basket);
         if (sug && sug.hint) html += '<div class="muted" style="font-size:11px;margin-top:6px;">' + escapeHtml(sug.hint) + "</div>";
       } catch (e) {
         html += '<div class="muted" style="margin-top:8px;">Состав с листа не подтянулся</div>';
       }
-      var safe = String(client.name || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-      html += '<button type="button" class="btn-action btn-purple" style="margin-top:10px;" onclick="pullOneFromMonth(\'' +
-        safe + '\')">Перенести на неделю →</button>';
+      html += '<button type="button" class="btn-action btn-purple" style="margin-top:10px;" onclick="stageMonthClient(' +
+        index + ')">В черновик →</button>';
+      html += '<button type="button" class="btn-action btn-blue" style="margin-top:8px;" onclick="editMonthClientGaps(' +
+        index + ')">Дополнить данные</button>';
       client._detailHtml = html;
       el.innerHTML = html;
+      renderViewLists();
     }
     window.toggleMonthDetail = toggleMonthDetail;
 
+    async function editMonthClientGaps(index) {
+      var draftKeys = {};
+      viewTransferDraft.forEach(function (d) {
+        var k = d.matchKey || viewClientKey(d.name);
+        if (k) draftKeys[k] = true;
+      });
+      var visible = (monthClientsCache || []).filter(function (c) {
+        var k = c.matchKey || viewClientKey(c.name);
+        return !(k && draftKeys[k]);
+      });
+      var client = visible[index];
+      if (!client) return;
+      // сначала в черновик, потом редактировать
+      stageMonthClient(index);
+      var di = viewTransferDraft.length - 1;
+      if (di >= 0) editDraftClient(di);
+    }
+    window.editMonthClientGaps = editMonthClientGaps;
+
     async function pullOneFromMonth(clientName) {
+      // совместимость: сразу в черновик по имени
       var name = String(clientName || "").trim();
       if (!name) return;
-      var day = document.getElementById("viewDaySelect").value;
-      var dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
-      if (!day && !dateStr) {
-        showToast("Сначала выбери день");
+      var idx = -1;
+      for (var i = 0; i < monthClientsCache.length; i++) {
+        if (viewClientKey(monthClientsCache[i].name) === viewClientKey(name) || monthClientsCache[i].name === name) {
+          idx = i; break;
+        }
+      }
+      if (idx < 0) {
+        viewTransferDraft.push({
+          name: name, matchKey: viewClientKey(name), address: "", phone: "", note: "",
+          segment: "", basket: [], basketCount: 0, gaps: ["address", "phone", "basket"], _draft: true
+        });
+        renderViewLists();
         return;
       }
-      try {
-        showToast("Переношу " + name + "…");
-        var params = { action: "pullClientFromMonth", client: name };
-        if (day) params.day = day;
-        else params.date = dateStr;
-        try { _apiGetMem = Object.create(null); } catch (eClr) {}
-        var res = await apiGet(params, { timeoutMs: 35000, cacheTtlMs: 0 });
-        if (!res || res.status !== "success") {
-          var msg = (res && res.message) || (res && res.result && res.result.message) || "ошибка";
-          if (msg === "date_not_in_week") {
-            await uiAlertAsync("Дата вне текущей недели. Выбери день Пн–Пт.");
-            return;
-          }
-          showToast("Не удалось: " + msg);
-          return;
-        }
-        var n = res.result && res.result.count != null ? Number(res.result.count) : 0;
-        showToast(n ? ("На неделе: " + name) : ("Уже был / нечего тянуть: " + name));
-        await loadClientsForDay();
-      } catch (e) {
-        showToast(e.message || "Ошибка сети / Deploy");
-      }
+      // stage by cache index filtered
+      var draftKeys = {};
+      viewTransferDraft.forEach(function (d) {
+        var k = d.matchKey || viewClientKey(d.name);
+        if (k) draftKeys[k] = true;
+      });
+      var visible = monthClientsCache.filter(function (c) {
+        var k = c.matchKey || viewClientKey(c.name);
+        return !(k && draftKeys[k]);
+      });
+      var vIdx = visible.findIndex(function (c) {
+        return viewClientKey(c.name) === viewClientKey(name) || c.name === name;
+      });
+      if (vIdx >= 0) stageMonthClient(vIdx);
     }
     window.pullOneFromMonth = pullOneFromMonth;
 
@@ -6981,39 +7402,7 @@
     window.pullWeekFromMonth = pullWeekFromMonth;
 
     async function topUpDayFromMonth() {
-      const day = document.getElementById("viewDaySelect").value;
-      const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
-      if (!day && !dateStr) {
-        await uiAlertAsync("Сначала укажите день или дату");
-        return;
-      }
-      const label = day || dateStr;
-      const ok = await uiConfirmAsync(
-        "Перенести всех из месяца на «" + label + "»?\nДобавим тех, кого ещё нет на неделе (состав с ПП/АФК/БП).\nУже стоящих не затираем."
-      );
-      if (!ok) return;
-      try {
-        showToast("Переношу всех…");
-        const params = { action: "ensureDayMaterialized", onlyMissing: "1" };
-        if (day) params.day = day;
-        else params.date = dateStr;
-        try { _apiGetMem = Object.create(null); } catch (eClr) {}
-        const res = await apiGet(params, { timeoutMs: 45000, cacheTtlMs: 0 });
-        if (!res || res.status !== "success") {
-          var msg = (res && res.result && res.result.message) || (res && res.message) || "ошибка";
-          if (msg === "date_not_in_week") {
-            await uiAlertAsync("Эта дата не стоит в текущей неделе на листе.\nВыбери день (Пн–Пт).");
-            return;
-          }
-          await uiAlertAsync("Не удалось: " + msg);
-          return;
-        }
-        const n = res && res.result ? (res.result.count || 0) : 0;
-        showToast(n ? ("Добавлено: " + n) : "Новых нет");
-        await loadClientsForDay();
-      } catch (err) {
-        await uiAlertAsync(err.message || String(err));
-      }
+      await stageAllFromMonth();
     }
     window.topUpDayFromMonth = topUpDayFromMonth;
 

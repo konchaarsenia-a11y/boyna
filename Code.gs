@@ -657,7 +657,19 @@ function doGet(e) {
       day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
       date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
       deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : "",
-      client: e.parameter.client ? decodeURIComponent(e.parameter.client) : ""
+      client: e.parameter.client ? decodeURIComponent(e.parameter.client) : "",
+      address: e.parameter.address ? decodeURIComponent(e.parameter.address) : "",
+      phone: e.parameter.phone ? decodeURIComponent(e.parameter.phone) : "",
+      note: e.parameter.note ? decodeURIComponent(e.parameter.note) : "",
+      clients: e.parameter.clients ? decodeURIComponent(e.parameter.clients) : ""
+    }, callback, false);
+  }
+  if (action === "pullClientsFromMonth") {
+    return handlePullClientsFromMonth({
+      day: e.parameter.day ? decodeURIComponent(e.parameter.day) : "",
+      date: e.parameter.date ? decodeURIComponent(e.parameter.date) : "",
+      deliveryDate: e.parameter.deliveryDate ? decodeURIComponent(e.parameter.deliveryDate) : "",
+      clients: e.parameter.clients ? decodeURIComponent(e.parameter.clients) : ""
     }, callback, false);
   }
   if (action === "materializeWeek") {
@@ -804,6 +816,9 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "pullClientFromMonth") {
     return handlePullClientFromMonth(json, callback, fromPost);
+  }
+  if (action === "pullClientsFromMonth") {
+    return handlePullClientsFromMonth(json, callback, fromPost);
   }
   if (action === "materializeWeek") {
     return handleMaterializeWeek(json, callback, fromPost);
@@ -1414,7 +1429,10 @@ function extractInstagramNick_(raw) {
 function clientMatchKey_(raw) {
   var ex = extractInstagramNick_(raw);
   var base = ex || String(raw || "").replace(/\s*\b(АФК|ПП|БП|Р)\b\s*/gi, " ").replace(/\s+/g, " ").trim();
-  return normalizeClientKey_(base);
+  // kinolog.vica ≡ Kinolog_vica — точки/подчёркивания в handle не различаем
+  var key = normalizeClientKey_(base);
+  if (ex || /^[A-Z0-9._]+$/i.test(base)) key = key.replace(/[._]/g, "");
+  return key;
 }
 
 function nicksMatch_(a, b) {
@@ -4003,12 +4021,28 @@ function handleGetViewCompare(json, callback, fromPost) {
         var cc = crmClients[i];
         var key = cc.matchKey || clientMatchKey_(cc.client);
         if (key && already[key]) continue;
+        var display = displayClientNick_(cc.client) || String(cc.client || "");
+        var gaps = [];
+        if (!String(cc.address || "").trim()) gaps.push("address");
+        if (!String(cc.phone || "").trim()) gaps.push("phone");
+        var basketCount = 0;
+        var basketHint = "";
+        try {
+          var filled = fillSubscriptionBasketForDate_(ss, crmSs, cc.client, cc.segment, resolved.date);
+          basketCount = (filled.basket || []).length;
+          basketHint = filled.hint || "";
+        } catch (eB) {}
+        if (!basketCount) gaps.push("basket");
         month.push({
-          name: displayClientNick_(cc.client) || String(cc.client || ""),
+          name: display,
+          matchKey: key || "",
           segment: cc.segment || "",
           note: cc.note || "",
           address: cc.address || "",
-          phone: cc.phone || ""
+          phone: cc.phone || "",
+          basketCount: basketCount,
+          basketHint: basketHint,
+          gaps: gaps
         });
       }
     } catch (eM) {
@@ -4047,24 +4081,243 @@ function handlePullClientFromMonth(json, callback, fromPost) {
     };
     return fromPost ? jsonpText(callback, no) : jsonp(callback, no);
   }
-  var crmSync = null;
-  try { crmSync = syncCrmIntoBookings_(ss, resolved.date); } catch (eS) {
-    crmSync = { ok: false, detail: String(eS) };
-  }
-  var result = materializeDeliveryDate_(ss, resolved.date, {
-    forceClient: client,
-    onlyMissing: true
-  });
+  var pull = pullCrmClientsToDay_(ss, resolved.date, resolved.day, [{
+    client: client,
+    address: (json && json.address) || "",
+    phone: (json && json.phone) || "",
+    note: (json && json.note) || "",
+    basket: (json && json.basket) || null
+  }]);
   try { bustClientsCache_(); } catch (eB) {}
+  var one = (pull.items && pull.items[0]) || {};
   var out = {
-    status: result && result.ok ? "success" : "error",
-    result: result,
-    crm: crmSync,
+    status: pull.ok ? "success" : "error",
+    outcome: one.outcome || pull.message || "",
+    result: {
+      ok: pull.ok,
+      count: pull.added || 0,
+      dayName: resolved.day,
+      date: dateKey_(resolved.date, tz),
+      outcome: one.outcome || "",
+      detail: one.detail || "",
+      items: pull.items || []
+    },
+    crm: pull.crm || null,
     day: resolved.day,
     date: dateKey_(resolved.date, tz),
     client: client
   };
   return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
+}
+
+/** Пачка клиентов из месяца → день (черновик «Сохранить» в Просмотре). */
+function handlePullClientsFromMonth(json, callback, fromPost) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var list = [];
+  if (json && Array.isArray(json.clients)) list = json.clients;
+  else if (json && typeof json.clients === "string") {
+    try { list = JSON.parse(json.clients); } catch (eJ) { list = []; }
+  }
+  if (!list.length && json && (json.client || json.nick)) {
+    list = [{ client: json.client || json.nick }];
+  }
+  if (!list.length) {
+    var bad = { status: "error", message: "need_clients" };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var normalized = [];
+  for (var i = 0; i < list.length; i++) {
+    var it = list[i];
+    if (typeof it === "string") normalized.push({ client: String(it).trim() });
+    else if (it && (it.client || it.name || it.nick)) {
+      normalized.push({
+        client: String(it.client || it.name || it.nick || "").trim(),
+        address: it.address || "",
+        phone: it.phone || "",
+        note: it.note || "",
+        basket: it.basket || null,
+        segment: it.segment || ""
+      });
+    }
+  }
+  normalized = normalized.filter(function (x) { return x.client; });
+  if (!normalized.length) {
+    var bad2 = { status: "error", message: "need_clients" };
+    return fromPost ? jsonpText(callback, bad2) : jsonp(callback, bad2);
+  }
+  var resolved = resolveViewDeliveryDate_(ss, json || {});
+  if (!resolved || !resolved.date || !resolved.day) {
+    var no = {
+      status: "error",
+      message: (resolved && resolved.dateNotInWeek) ? "date_not_in_week" : "need_day_or_date"
+    };
+    return fromPost ? jsonpText(callback, no) : jsonp(callback, no);
+  }
+  var pull = pullCrmClientsToDay_(ss, resolved.date, resolved.day, normalized);
+  try { bustClientsCache_(); } catch (eB) {}
+  var out = {
+    status: pull.ok ? "success" : "error",
+    result: pull,
+    day: resolved.day,
+    date: dateKey_(resolved.date, tz)
+  };
+  return fromPost ? jsonpText(callback, out) : jsonp(callback, out);
+}
+
+/**
+ * Надёжный перенос: CRM → бронь (с revive cancelled) → день.
+ * Если бронь не сматчилась — пишет напрямую из календаря месяца.
+ */
+function pullCrmClientsToDay_(ss, deliveryDate, dayName, clients) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var dateStr = dateKey_(deliveryDate, tz);
+  var crmSync = null;
+  var forceNames = clients.map(function (c) { return c.client; });
+  try {
+    crmSync = syncCrmIntoBookings_(ss, deliveryDate, {
+      forceClients: forceNames,
+      reviveCancelled: true
+    });
+  } catch (eS) {
+    crmSync = { ok: false, detail: String(eS) };
+  }
+
+  var weekKeys = {};
+  try {
+    var weekData = getClientsData_(ss, dayName);
+    (weekData.clients || []).forEach(function (cl) {
+      var k = clientMatchKey_(cl.name);
+      if (k) weekKeys[k] = { name: cl.name, basketLen: (cl.basket || []).length };
+    });
+  } catch (eW) {}
+
+  var items = [];
+  var added = 0;
+  var already = 0;
+  var failed = 0;
+  var crmSs = null;
+  try { crmSs = getCrmSpreadsheet_(); } catch (eC) {}
+
+  for (var i = 0; i < clients.length; i++) {
+    var req = clients[i];
+    var name = String(req.client || "").trim();
+    var key = clientMatchKey_(name);
+    var onWeek = key && weekKeys[key] ? weekKeys[key] : null;
+
+    if (onWeek && onWeek.basketLen > 0 && !(req.basket && req.basket.length)) {
+      // уже на неделе с составом — только мета, если прислали
+      if (req.address || req.phone || req.note) {
+        writeBasketToDayColumn_(ss, dayName, onWeek.name || name, req.address, mergePullNote_(req), [], {});
+      }
+      already++;
+      items.push({ client: name, outcome: "already_on_week", detail: onWeek.name });
+      continue;
+    }
+
+    var basket = Array.isArray(req.basket) ? req.basket : null;
+    var address = String(req.address || "").trim();
+    var note = mergePullNote_(req);
+    var segment = String(req.segment || "").trim();
+
+    if ((!basket || !basket.length) && crmSs) {
+      try {
+        var crmList = readCrmClientsForDate_(crmSs, deliveryDate);
+        var hit = null;
+        for (var c = 0; c < crmList.length; c++) {
+          if (nicksMatch_(crmList[c].client, name) || clientMatchKey_(crmList[c].client) === key) {
+            hit = crmList[c];
+            break;
+          }
+        }
+        if (hit) {
+          if (!address) address = hit.address || "";
+          if (!segment) segment = hit.segment || "";
+          if (!String(req.phone || "").trim() && hit.phone) {
+            note = mergePullNote_({
+              phone: hit.phone,
+              note: [req.note, hit.note].filter(Boolean).join("; "),
+              segment: segment
+            });
+          } else if (hit.note && (!req.note || String(req.note).indexOf(hit.note) < 0)) {
+            note = mergePullNote_({
+              phone: req.phone || hit.phone,
+              note: [req.note, hit.note].filter(Boolean).join("; "),
+              segment: segment
+            });
+          }
+          var filled = fillSubscriptionBasketForDate_(ss, crmSs, hit.client, segment || hit.segment, deliveryDate);
+          basket = filled.basket || [];
+          if (filled.hint) note = (note ? note + " " : "") + filled.hint;
+        }
+      } catch (eFill) {}
+    }
+
+    // 1) через materialize (брони)
+    var mat = materializeDeliveryDate_(ss, deliveryDate, {
+      forceClient: name,
+      onlyMissing: true,
+      skipCrm: true
+    });
+    if (mat && mat.count > 0) {
+      added += mat.count;
+      if (key) weekKeys[key] = { name: name, basketLen: (basket && basket.length) || 1 };
+      items.push({ client: name, outcome: "added", detail: "booking", count: mat.count });
+      continue;
+    }
+
+    // 2) напрямую в столбец дня
+    var write = writeBasketToDayColumn_(ss, dayName, name, address, note, basket || [], {
+      skipIfHasQty: false
+    });
+    if (write && write.ok && !write.skipped) {
+      added++;
+      if (key) weekKeys[key] = { name: name, basketLen: (basket && basket.length) || (write.shell ? 0 : 1) };
+      items.push({
+        client: name,
+        outcome: write.shell ? "shell" : (write.created ? "added" : "updated"),
+        detail: write.shell ? "no_basket" : "direct",
+        col: write.col
+      });
+      continue;
+    }
+
+    if (onWeek) {
+      already++;
+      items.push({ client: name, outcome: "already_on_week", detail: onWeek.name });
+    } else if (write && write.message === "no_free_columns") {
+      failed++;
+      items.push({ client: name, outcome: "no_free_columns" });
+    } else {
+      failed++;
+      items.push({
+        client: name,
+        outcome: "not_found",
+        detail: (write && write.message) || (mat && mat.message) || "no_booking_or_crm"
+      });
+    }
+  }
+
+  return {
+    ok: failed === 0 || added > 0,
+    date: dateStr,
+    dayName: dayName,
+    added: added,
+    already: already,
+    failed: failed,
+    count: added,
+    items: items,
+    crm: crmSync
+  };
+}
+
+function mergePullNote_(req) {
+  req = req || {};
+  var parts = [];
+  if (req.segment) parts.push("[SEG:" + String(req.segment).toUpperCase() + "]");
+  if (req.phone) parts.push("[TEL:" + String(req.phone).trim() + "]");
+  if (req.note) parts.push(String(req.note).trim());
+  return parts.join(" ").trim();
 }
 
 function handleEnsureDayMaterialized(json, callback, fromPost) {
@@ -5058,7 +5311,18 @@ function lookupContactAddress_(crmSs, nick) {
  * Подтягивает клиентов из CRM-календаря месяца в Брони_Заказов.
  * Не затирает розничные брони (source=retail) и не пустые правки менеджера.
  */
-function syncCrmIntoBookings_(ss, deliveryDate) {
+function syncCrmIntoBookings_(ss, deliveryDate, opts) {
+  opts = opts || {};
+  var forceNames = (opts.forceClients || []).map(function (n) { return String(n || "").trim(); }).filter(Boolean);
+  var forceOnly = forceNames.length > 0;
+  function isForced_(name) {
+    if (!forceOnly) return false;
+    for (var fi = 0; fi < forceNames.length; fi++) {
+      if (nicksMatch_(name, forceNames[fi])) return true;
+    }
+    return false;
+  }
+  var reviveCancelled = opts.reviveCancelled === true || forceOnly;
   var crmSs;
   try { crmSs = getCrmSpreadsheet_(); } catch (eOpen) {
     return { ok: false, message: "crm_open_failed", detail: String(eOpen) };
@@ -5070,32 +5334,39 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
   var all = readAllBookings_();
   var added = 0;
   var skipped = 0;
+  var revived = 0;
 
   for (var i = 0; i < clients.length; i++) {
     var c = clients[i];
+    var forced = isForced_(c.client);
+    if (forceOnly && !forced) continue;
     var existing = null;
-    var wasCancelled = false;
+    var cancelledRow = null;
     for (var j = 0; j < all.length; j++) {
       var bd = parseFlexibleDate_(all[j].date, tz);
       if (!bd || dateKey_(bd, tz) !== dateStr) continue;
       if (!nicksMatch_(all[j].client, c.client)) continue;
       if (String(all[j].status) === "cancelled") {
-        wasCancelled = true;
+        cancelledRow = all[j];
         continue;
       }
       existing = all[j];
       break;
     }
-    // удалили вручную — не возвращать из CRM-календаря
-    if (wasCancelled && !existing) {
+    // удалили вручную — не возвращать из CRM, кроме явного force/revive
+    if (cancelledRow && !existing && !(reviveCancelled && forced)) {
       skipped++;
       continue;
     }
-    if (existing && String(existing.source) === "retail") {
+    if (cancelledRow && !existing && reviveCancelled && forced) {
+      existing = cancelledRow;
+      revived++;
+    }
+    if (existing && String(existing.source) === "retail" && !forced) {
       skipped++;
       continue;
     }
-    if (existing && existing.basket && existing.basket.length) {
+    if (existing && existing.basket && existing.basket.length && !forced) {
       skipped++;
       continue;
     }
@@ -5124,7 +5395,7 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
     var rowVals = [
       id, dateStr, clientName, subId || "", address, note,
       JSON.stringify(basket), "subscription",
-      existing && String(existing.status) === "pulled" ? "pulled" : "planned",
+      "planned",
       existing ? existing.dayName : "", now,
       existing ? (existing.pulledAt || "") : ""
     ];
@@ -5135,7 +5406,14 @@ function syncCrmIntoBookings_(ss, deliveryDate) {
       added++;
     }
   }
-  return { ok: true, date: dateStr, fromCalendar: clients.length, added: added, skipped: skipped };
+  return {
+    ok: true,
+    date: dateStr,
+    fromCalendar: clients.length,
+    added: added,
+    skipped: skipped,
+    revived: revived
+  };
 }
 
 /**
