@@ -56,8 +56,10 @@
           return;
         }
       }
-      // --- здесь оставь СВОЁ обычное приветствие /start (курьер и т.д.) ---
-      telegramSendText_(chat.id, "Привет! Ты в списке курьеров Бойни. Когда сменщик пришлёт маршрут — придёт сюда.");
+      // --- обычный /start: роль по ID или «Запросить доступ» (buildStartGreeting_) ---
+      var greet = buildStartGreeting_(from, name);
+      if (greet.markup) telegramSendMarkup_(chat.id, greet.text, greet.markup);
+      else telegramSendText_(chat.id, greet.text);
     }
 
 */

@@ -2241,7 +2241,13 @@ function upsertCourier_(chatId, name, username) {
 function handleTelegramUpdate_(update) {
   try {
     if (update && update.callback_query) {
-      handleDeficitCallback_(update.callback_query);
+      var cq0 = update.callback_query;
+      var cqData = String((cq0 && cq0.data) || "");
+      if (cqData === "access_req") {
+        handleAccessRequestCallback_(cq0);
+        return;
+      }
+      handleDeficitCallback_(cq0);
       return;
     }
     var msg = update.message || update.edited_message;
@@ -2250,10 +2256,23 @@ function handleTelegramUpdate_(update) {
     if (chat.type !== "private") return;
     var from = msg.from || {};
     var name = [from.first_name, from.last_name].filter(Boolean).join(" ").trim();
-    upsertCourier_(chat.id, name, from.username || "");
     var text = String(msg.text || "");
+    var isEdit = !update.message && !!update.edited_message;
+
+    // антидубль webhook: один update_id — один ответ
+    try {
+      var uid = update && update.update_id != null ? String(update.update_id) : "";
+      if (uid) {
+        var cacheUid = CacheService.getScriptCache();
+        if (cacheUid.get("tg_uid_" + uid)) return;
+        cacheUid.put("tg_uid_" + uid, "1", 180);
+      }
+    } catch (eUid) {}
+
+    upsertCourier_(chat.id, name, from.username || "");
+
     var startMatch = text.match(/^\/start(?:\s+(\S+))?/i);
-    if (startMatch) {
+    if (startMatch && !isEdit) {
       var payload = String(startMatch[1] || "");
       // Вход из нативного GBI: /start gbi_<token>
       if (/^gbi_/i.test(payload)) {
@@ -2294,7 +2313,17 @@ function handleTelegramUpdate_(update) {
           return;
         }
       }
-      telegramSendText_(chat.id, "Привет! Ты в списке курьеров Бойни. Когда сменщик пришлёт маршрут — придёт сюда.");
+      // Обычный /start — по telegramId из листа «Доступы»
+      var greet = buildStartGreeting_(from, name);
+      if (greet.markup) telegramSendMarkup_(chat.id, greet.text, greet.markup);
+      else telegramSendText_(chat.id, greet.text);
+      return;
+    }
+
+    // текстовый запрос доступа
+    if (!isEdit && /^(запросить\s+доступ|\/request(?:@\w+)?)$/i.test(text.trim())) {
+      processAccessRequestFromUser_(from, name, chat.id, null);
+      return;
     }
   } catch (eTg) {
     try {
@@ -2303,6 +2332,130 @@ function handleTelegramUpdate_(update) {
       }
     } catch (eAns) {}
   }
+}
+
+function roleLabelRu_(role) {
+  var map = {
+    owner: "владелец",
+    manager: "менеджер",
+    cutter: "нарезчик",
+    courier: "курьер",
+    logistics: "логистика / склад",
+    all: "полный доступ",
+    pending: "ожидает одобрения",
+    denied: "отказано",
+    none: "нет доступа"
+  };
+  var key = String(role || "").toLowerCase();
+  return map[key] || (key || "неизвестно");
+}
+
+/** Ответ на /start: роль по ID или предложение запросить доступ. */
+function buildStartGreeting_(from, name) {
+  var tid = String((from && from.id) || "").trim();
+  var hello = "Привет" + (name ? ", " + name : "") + "!";
+  if (!tid) {
+    return { kind: "noid", text: hello + "\nНе удалось прочитать Telegram ID." };
+  }
+  if (isOwnerId_(tid)) {
+    try { upsertAccessRow_(tid, name, (from && from.username) || "", "owner", "active"); } catch (eO) {}
+    return {
+      kind: "owner",
+      text: hello + "\nТвоя роль: " + roleLabelRu_("owner") + ".\nID: " + tid +
+        "\nОткрывай мини-приложение Бойня-Конвейер."
+    };
+  }
+  var row = findAccessById_(tid);
+  if (row) {
+    var role = String(row.role || "").toLowerCase();
+    var status = String(row.status || "").toLowerCase();
+    if (status === "denied" || role === "denied") {
+      return {
+        kind: "denied",
+        text: hello + "\nДоступ закрыт.\nID: " + tid + "\nЕсли это ошибка — напиши владельцу."
+      };
+    }
+    if (status === "pending" || role === "pending") {
+      return {
+        kind: "pending",
+        text: hello + "\nЗапрос уже есть — ждём одобрения владельцем.\nID: " + tid,
+        markup: { inline_keyboard: [[{ text: "Повторить запрос", callback_data: "access_req" }]] }
+      };
+    }
+    if (status === "active" || role === "owner" || role === "manager" || role === "cutter" ||
+        role === "courier" || role === "logistics" || role === "all") {
+      var extra = role === "courier"
+        ? "\nКогда сменщик пришлёт маршрут — придёт сюда."
+        : "\nОткрывай мини-приложение Бойня-Конвейер.";
+      return {
+        kind: "role_" + role,
+        text: hello + "\nТвоя роль: " + roleLabelRu_(role) + ".\nID: " + tid + extra
+      };
+    }
+  }
+  return {
+    kind: "none",
+    text: hello + "\nТебя ещё нет в доступах Бойни.\nID: " + tid +
+      "\nНажми кнопку — отправим запрос владельцу.",
+    markup: { inline_keyboard: [[{ text: "Запросить доступ", callback_data: "access_req" }]] }
+  };
+}
+
+function notifyOwnersAccessRequest_(telegramId, name, username) {
+  var text = "Запрос доступа в Бойню\nID: " + telegramId +
+    "\nИмя: " + (name || "") +
+    "\n@" + (username || "") +
+    "\nНазначьте роль во вкладке Люди.";
+  try {
+    var owners = getOwnerTelegramIds_();
+    for (var i = 0; i < owners.length; i++) {
+      try { telegramSendText_(owners[i], text); } catch (e) {}
+    }
+    var chat = PropertiesService.getScriptProperties().getProperty("TELEGRAM_CHAT_ID");
+    if (chat) try { telegramSendText_(chat, text); } catch (e2) {}
+  } catch (e3) {}
+}
+
+function processAccessRequestFromUser_(from, name, chatId, callbackId) {
+  var tid = String((from && from.id) || "").trim();
+  var username = (from && from.username) || "";
+  if (!tid) {
+    if (callbackId) telegramAnswerCallback_(callbackId, "Нет ID");
+    return;
+  }
+  if (isOwnerId_(tid)) {
+    upsertAccessRow_(tid, name, username, "owner", "active");
+    if (callbackId) telegramAnswerCallback_(callbackId, "Вы владелец");
+    telegramSendText_(chatId, "Ты владелец — доступ уже есть.");
+    return;
+  }
+  var existing = findAccessById_(tid);
+  if (existing && existing.status === "active" && existing.role !== "pending" && existing.role !== "denied") {
+    if (callbackId) telegramAnswerCallback_(callbackId, "Уже есть доступ");
+    telegramSendText_(chatId, "Доступ уже есть.\nРоль: " + roleLabelRu_(existing.role) + ".\nID: " + tid);
+    return;
+  }
+  try {
+    var c = CacheService.getScriptCache();
+    if (c.get("access_req_" + tid)) {
+      if (callbackId) telegramAnswerCallback_(callbackId, "Уже отправляли недавно");
+      else telegramSendText_(chatId, "Запрос недавно уже отправляли — подожди пару минут.");
+      return;
+    }
+    c.put("access_req_" + tid, "1", 300);
+  } catch (eLim) {}
+  upsertAccessRow_(tid, name, username, "pending", "pending");
+  notifyOwnersAccessRequest_(tid, name, username);
+  if (callbackId) telegramAnswerCallback_(callbackId, "Запрос отправлен");
+  telegramSendText_(chatId, "Запрос отправлен владельцу. Жди назначения роли.\nID: " + tid);
+}
+
+function handleAccessRequestCallback_(cq) {
+  if (!cq) return;
+  var from = cq.from || {};
+  var name = [from.first_name, from.last_name].filter(Boolean).join(" ").trim();
+  var chatId = cq.message && cq.message.chat ? cq.message.chat.id : from.id;
+  processAccessRequestFromUser_(from, name, chatId, cq.id);
 }
 
 function handleRegisterCourier(json, callback, fromPost) {
@@ -5751,16 +5904,7 @@ function handleRequestAccess(json, callback, fromPost) {
   }
   upsertAccessRow_(telegramId, json.name || "", json.username || "", "pending", "pending");
   try {
-    var owners = getOwnerTelegramIds_();
-    var text = "Запрос доступа в Бойню\nID: " + telegramId +
-      "\nИмя: " + (json.name || "") +
-      "\n@" + (json.username || "") +
-      "\nНазначьте роль во вкладке Люди.";
-    for (var i = 0; i < owners.length; i++) {
-      try { telegramSendText_(owners[i], text); } catch (e) {}
-    }
-    var chat = PropertiesService.getScriptProperties().getProperty("TELEGRAM_CHAT_ID");
-    if (chat) try { telegramSendText_(chat, text); } catch (e2) {}
+    notifyOwnersAccessRequest_(telegramId, json.name || "", json.username || "");
   } catch (e3) {}
   var ok = { status: "success", role: "pending", access: "pending" };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
