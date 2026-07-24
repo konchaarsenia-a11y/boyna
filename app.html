@@ -304,23 +304,31 @@
       font-size: 13px; font-weight: 700; color: var(--accent-color);
       margin: 8px 0 4px; text-align: center;
     }
+    .subs-search-wrap { margin-top: 8px; }
+    .subs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 4px;
+    }
     .sub-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 10px; margin-bottom: 4px;
+      display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+      padding: 8px 9px; margin-bottom: 0;
       background: #1c1c1e; border: 1px solid var(--border-color); border-radius: 10px;
       cursor: pointer; -webkit-tap-highlight-color: transparent;
+      min-width: 0;
     }
     .sub-row:active { background: #252528; }
     .sub-row-main { flex: 1 1 auto; min-width: 0; }
     .sub-row-nick {
-      font-size: 13px; font-weight: 700; color: #f2f2f7;
+      font-size: 12px; font-weight: 700; color: #f2f2f7;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .sub-row-meta {
-      font-size: 11px; color: var(--text-muted); margin-top: 2px;
+      font-size: 10px; color: var(--text-muted); margin-top: 1px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .sub-row-chevron { flex: 0 0 auto; color: var(--text-muted); font-size: 16px; opacity: 0.6; }
+    .sub-row-chevron { display: none; }
     .sub-detail-basket {
       margin-top: 8px; max-height: 40vh; overflow-y: auto;
       border-top: 1px dashed var(--border-color); padding-top: 8px;
@@ -860,7 +868,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle" title="Удерживайте 1 сек — разблокировать UI">Бойня-Конвейер v7.10.44</div>
+          <div class="header-main" id="appHeaderTitle" title="Удерживайте 1 сек — разблокировать UI">Бойня-Конвейер v7.10.45</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -1216,6 +1224,10 @@
             <button class="btn-action btn-blue" type="button" style="margin:0;flex:1;padding:8px;" onclick="loadSubscriptions()">Обновить</button>
             <span class="subs-count" id="subsCount" style="margin:0;flex:0 0 auto;"></span>
           </div>
+          <div class="subs-search-wrap form-group" style="margin-bottom:0;">
+            <input type="search" id="subsSearchInput" placeholder="Поиск по нику…" autocomplete="off"
+              inputmode="search" oninput="onSubsSearchInput()">
+          </div>
         </div>
         <div id="subsContainer"><p class="muted">Загрузите список…</p></div>
       </div>
@@ -1468,7 +1480,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.44";
+    const APP_VERSION = "v7.10.45";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -8604,6 +8616,8 @@
       var countEl = document.getElementById("subsCount");
       if (countEl) countEl.textContent = "";
       if (subsSegment === "Опросник") {
+        window._subsListFull = [];
+        window._subsListCache = [];
         box.innerHTML = '<p class="muted">Опросник: даты БП2/ПП1, +4/+6 — каркас. Лист подключим после деплоя полного F.</p>';
         return;
       }
@@ -8611,32 +8625,84 @@
       try {
         var res = await apiGet({ action: "listSubscriptions" }, { timeoutMs: 25000, cacheTtlMs: 15000 });
         if (!res || res.status !== "success") {
+          window._subsListFull = [];
+          window._subsListCache = [];
           box.innerHTML = '<p class="muted">CRM недоступна (нужен доступ Apps Script к таблице подписок)</p>';
           return;
         }
         var list = (res.subscriptions || []).filter(function (s) {
           return !subsSegment || s.sheet === subsSegment;
         });
-        if (countEl) countEl.textContent = list.length + " чел.";
-        if (!list.length) {
-          box.innerHTML = '<p class="muted">Пусто в ' + escapeHtml(subsSegment) + "</p>";
-          return;
-        }
-        box.innerHTML = list.map(function (s, i) {
-          var nick = s.nick || s.label || "";
-          var meta = [s.subId || "", "N=" + (s.deliveries || 0), s.status || ""].filter(Boolean).join(" · ");
-          return '<div class="sub-row" role="button" tabindex="0" onclick="openSubDetail(' + i + ')">' +
-            '<div class="sub-row-main">' +
-            '<div class="sub-row-nick">' + escapeHtml(nick) + "</div>" +
-            '<div class="sub-row-meta">' + escapeHtml(meta) + "</div>" +
-            '</div><div class="sub-row-chevron">›</div></div>';
-        }).join("");
-        window._subsListCache = list;
+        window._subsListFull = list;
+        renderSubsList();
       } catch (e) {
+        window._subsListFull = [];
+        window._subsListCache = [];
         box.innerHTML = '<p class="muted">Ошибка</p>';
       }
     }
     window.loadSubscriptions = loadSubscriptions;
+
+    function normSubsSearch(s) {
+      return String(s || "")
+        .toLowerCase()
+        .replace(/ё/g, "е")
+        .replace(/[._\s\-]+/g, "");
+    }
+
+    function subsMatchesQuery(s, qNorm) {
+      if (!qNorm) return true;
+      var nick = normSubsSearch(s.nick || s.label || "");
+      var label = normSubsSearch(s.label || "");
+      var subId = normSubsSearch(s.subId || "");
+      if (nick.indexOf(qNorm) >= 0 || label.indexOf(qNorm) >= 0 || subId.indexOf(qNorm) >= 0) return true;
+      // «мягкий» матч: игнор точек/подчёркиваний уже в norm; ещё — все символы запроса идут по порядку
+      var hay = nick || label;
+      var qi = 0;
+      for (var i = 0; i < hay.length && qi < qNorm.length; i++) {
+        if (hay.charAt(i) === qNorm.charAt(qi)) qi++;
+      }
+      return qi === qNorm.length;
+    }
+
+    function renderSubsList() {
+      var box = document.getElementById("subsContainer");
+      var countEl = document.getElementById("subsCount");
+      if (!box) return;
+      var full = window._subsListFull || [];
+      var inp = document.getElementById("subsSearchInput");
+      var qNorm = normSubsSearch(inp ? inp.value : "");
+      var list = full.filter(function (s) { return subsMatchesQuery(s, qNorm); });
+      window._subsListCache = list;
+      if (countEl) {
+        countEl.textContent = qNorm
+          ? (list.length + " / " + full.length)
+          : (full.length + " чел.");
+      }
+      if (!full.length) {
+        box.innerHTML = '<p class="muted">Пусто в ' + escapeHtml(subsSegment) + "</p>";
+        return;
+      }
+      if (!list.length) {
+        box.innerHTML = '<p class="muted">Никого по «' + escapeHtml((inp && inp.value) || "") + '»</p>';
+        return;
+      }
+      box.innerHTML = '<div class="subs-grid">' + list.map(function (s, i) {
+        var nick = s.nick || s.label || "";
+        var meta = ["N=" + (s.deliveries || 0), s.status || ""].filter(Boolean).join(" · ");
+        return '<div class="sub-row" role="button" tabindex="0" onclick="openSubDetail(' + i + ')">' +
+          '<div class="sub-row-main">' +
+          '<div class="sub-row-nick">' + escapeHtml(nick) + "</div>" +
+          (meta ? '<div class="sub-row-meta">' + escapeHtml(meta) + "</div>" : "") +
+          "</div></div>";
+      }).join("") + "</div>";
+    }
+    window.renderSubsList = renderSubsList;
+
+    function onSubsSearchInput() {
+      try { renderSubsList(); } catch (e) {}
+    }
+    window.onSubsSearchInput = onSubsSearchInput;
 
     var currentSubDetail = null;
 
