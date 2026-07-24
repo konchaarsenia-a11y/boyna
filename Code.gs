@@ -2259,19 +2259,8 @@ function handleTelegramUpdate_(update) {
     var text = String(msg.text || "");
     var isEdit = !update.message && !!update.edited_message;
 
-    // антидубль webhook: один update_id — один ответ
-    try {
-      var uid = update && update.update_id != null ? String(update.update_id) : "";
-      if (uid) {
-        var cacheUid = CacheService.getScriptCache();
-        if (cacheUid.get("tg_uid_" + uid)) return;
-        cacheUid.put("tg_uid_" + uid, "1", 180);
-      }
-    } catch (eUid) {}
-
-    upsertCourier_(chat.id, name, from.username || "");
-
-    var startMatch = text.match(/^\/start(?:\s+(\S+))?/i);
+    // /start и /start@BotName и /start payload
+    var startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?/i);
     if (startMatch && !isEdit) {
       var payload = String(startMatch[1] || "");
       // Вход из нативного GBI: /start gbi_<token>
@@ -2289,9 +2278,18 @@ function handleTelegramUpdate_(update) {
               600
             );
           } catch (eCache) {}
+          // сначала ответ пользователю
+          telegramSendText_(
+            chat.id,
+            "✅ GBI: Telegram подключён.\n" +
+              "Имя: " + (name || "—") + "\n" +
+              "ID: " + from.id + "\n\n" +
+              "Вернись в приложение — вход подтянется сам."
+          );
           try {
             var tid = String(from.id);
-            var existing = findAccessById_(tid);
+            var existing = null;
+            try { existing = findAccessById_(tid); } catch (eFind) {}
             var role = "pending";
             var status = "pending";
             if (isOwnerId_(tid)) {
@@ -2303,32 +2301,52 @@ function handleTelegramUpdate_(update) {
             }
             upsertAccessRow_(tid, name, from.username || "", role, status);
           } catch (eAcc) {}
-          telegramSendText_(
-            chat.id,
-            "✅ GBI: Telegram подключён.\n" +
-              "Имя: " + (name || "—") + "\n" +
-              "ID: " + from.id + "\n\n" +
-              "Вернись в приложение — вход подтянется сам."
-          );
           return;
         }
       }
-      // Обычный /start — по telegramId из листа «Доступы»
-      var greet = buildStartGreeting_(from, name);
-      if (greet.markup) telegramSendMarkup_(chat.id, greet.text, greet.markup);
-      else telegramSendText_(chat.id, greet.text);
+      // Обычный /start — сначала ответ в Telegram, без записи в таблицы
+      var greet;
+      try {
+        greet = buildStartGreeting_(from, name);
+      } catch (eGreet) {
+        greet = {
+          kind: "fallback",
+          text: "Привет" + (name ? ", " + name : "") + "!\nID: " + (from.id || "—") +
+            "\nНе удалось проверить доступ. Напиши: Запросить доступ"
+        };
+      }
+      if (!greet || !greet.text) {
+        greet = { text: "Привет! ID: " + (from.id || "—") };
+      }
+      var sent = null;
+      try {
+        if (greet.markup) sent = telegramSendMarkup_(chat.id, greet.text, greet.markup);
+      } catch (eMk) { sent = null; }
+      if (!sent || sent.ok === false) {
+        try { telegramSendText_(chat.id, greet.text); } catch (eTx) {}
+      }
+      // тяжёлое — после ответа (не блокирует пользователя)
+      try { upsertCourier_(chat.id, name, from.username || ""); } catch (eUp) {}
       return;
     }
 
+    try { upsertCourier_(chat.id, name, from.username || ""); } catch (eUp2) {}
+
     // текстовый запрос доступа
     if (!isEdit && /^(запросить\s+доступ|\/request(?:@\w+)?)$/i.test(text.trim())) {
-      processAccessRequestFromUser_(from, name, chat.id, null);
+      try {
+        processAccessRequestFromUser_(from, name, chat.id, null);
+      } catch (eReq) {
+        try { telegramSendText_(chat.id, "Не удалось отправить запрос. Попробуй ещё раз."); } catch (eTx2) {}
+      }
       return;
     }
   } catch (eTg) {
     try {
       if (update && update.callback_query && update.callback_query.id) {
         telegramAnswerCallback_(update.callback_query.id, "Ошибка обработки");
+      } else if (update && update.message && update.message.chat) {
+        telegramSendText_(update.message.chat.id, "Ошибка бота на /start. Напиши владельцу.");
       }
     } catch (eAns) {}
   }
@@ -2350,22 +2368,24 @@ function roleLabelRu_(role) {
   return map[key] || (key || "неизвестно");
 }
 
-/** Ответ на /start: роль по ID или предложение запросить доступ. */
+/** Ответ на /start: роль по ID или предложение запросить доступ. Без записи в таблицу. */
 function buildStartGreeting_(from, name) {
   var tid = String((from && from.id) || "").trim();
   var hello = "Привет" + (name ? ", " + name : "") + "!";
   if (!tid) {
     return { kind: "noid", text: hello + "\nНе удалось прочитать Telegram ID." };
   }
-  if (isOwnerId_(tid)) {
-    try { upsertAccessRow_(tid, name, (from && from.username) || "", "owner", "active"); } catch (eO) {}
+  var isOwner = false;
+  try { isOwner = isOwnerId_(tid); } catch (eOwn) { isOwner = false; }
+  if (isOwner) {
     return {
       kind: "owner",
       text: hello + "\nТвоя роль: " + roleLabelRu_("owner") + ".\nID: " + tid +
         "\nОткрывай мини-приложение Бойня-Конвейер."
     };
   }
-  var row = findAccessById_(tid);
+  var row = null;
+  try { row = findAccessById_(tid); } catch (eFind) { row = null; }
   if (row) {
     var role = String(row.role || "").toLowerCase();
     var status = String(row.status || "").toLowerCase();
@@ -5702,12 +5722,17 @@ function getAccessSheet_() {
 }
 
 function getOwnerTelegramIds_() {
+  try {
+    var cachedOwners = CacheService.getScriptCache().get("owner_ids_v1");
+    if (cachedOwners) return JSON.parse(cachedOwners);
+  } catch (eC0) {}
   var props = PropertiesService.getScriptProperties();
   var raw = props.getProperty("OWNER_TELEGRAM_IDS") || "";
   var ids = raw.split(/[,;\s]+/).map(function (s) { return String(s || "").trim(); }).filter(Boolean);
   for (var i = 0; i < OWNER_IDS_FALLBACK_.length; i++) {
     if (ids.indexOf(String(OWNER_IDS_FALLBACK_[i])) < 0) ids.push(String(OWNER_IDS_FALLBACK_[i]));
   }
+  try { CacheService.getScriptCache().put("owner_ids_v1", JSON.stringify(ids), 300); } catch (eC1) {}
   return ids;
 }
 
@@ -5780,11 +5805,44 @@ function readAccessRows_() {
 function findAccessById_(telegramId) {
   var id = String(telegramId || "").trim();
   if (!id) return null;
-  var rows = readAccessRows_();
-  for (var i = 0; i < rows.length; i++) {
-    if (rows[i].telegramId === id) return rows[i];
+  try {
+    var cached = CacheService.getScriptCache().get("acc_row_" + id);
+    if (cached === "__none__") return null;
+    if (cached) return JSON.parse(cached);
+  } catch (eC) {}
+
+  var sh = getAccessSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) {
+    try { CacheService.getScriptCache().put("acc_row_" + id, "__none__", 90); } catch (eN0) {}
+    return null;
   }
-  return null;
+  // только колонка ID — быстрее, чем весь лист
+  var idCol = sh.getRange(2, 1, last - 1, 1).getValues();
+  var rowIndex = -1;
+  for (var i = 0; i < idCol.length; i++) {
+    if (String(idCol[i][0] || "").trim() === id) {
+      rowIndex = i + 2;
+      break;
+    }
+  }
+  if (rowIndex < 0) {
+    try { CacheService.getScriptCache().put("acc_row_" + id, "__none__", 90); } catch (eN1) {}
+    return null;
+  }
+  var data = sh.getRange(rowIndex, 1, 1, 7).getValues()[0];
+  var row = {
+    rowIndex: rowIndex,
+    telegramId: String(data[0] || "").trim(),
+    name: String(data[1] || ""),
+    username: String(data[2] || ""),
+    role: String(data[3] || "pending").toLowerCase(),
+    status: String(data[4] || "pending").toLowerCase(),
+    requestedAt: data[5],
+    note: String(data[6] || "")
+  };
+  try { CacheService.getScriptCache().put("acc_row_" + id, JSON.stringify(row), 180); } catch (eP) {}
+  return row;
 }
 
 function roleTabsFor_(role) {
@@ -5873,17 +5931,40 @@ function handleGetMyAccess(json, callback, fromPost) {
 }
 
 function upsertAccessRow_(telegramId, name, username, role, status) {
+  var id = String(telegramId || "").trim();
+  try { CacheService.getScriptCache().remove("acc_row_" + id); } catch (eRm) {}
   var sh = getAccessSheet_();
-  var existing = findAccessById_(telegramId);
+  var existing = findAccessById_(id);
   var now = new Date();
+  var rowObj;
   if (existing) {
+    rowObj = {
+      rowIndex: existing.rowIndex,
+      telegramId: id,
+      name: name || existing.name,
+      username: username || existing.username,
+      role: String(role || "").toLowerCase(),
+      status: String(status || "").toLowerCase(),
+      requestedAt: existing.requestedAt || now,
+      note: existing.note || ""
+    };
     sh.getRange(existing.rowIndex, 1, 1, 7).setValues([[
-      telegramId, name || existing.name, username || existing.username,
-      role, status, existing.requestedAt || now, existing.note || ""
+      id, rowObj.name, rowObj.username, role, status, rowObj.requestedAt, rowObj.note
     ]]);
   } else {
-    sh.appendRow([telegramId, name, username, role, status, now, ""]);
+    sh.appendRow([id, name, username, role, status, now, ""]);
+    rowObj = {
+      rowIndex: sh.getLastRow(),
+      telegramId: id,
+      name: name || "",
+      username: username || "",
+      role: String(role || "").toLowerCase(),
+      status: String(status || "").toLowerCase(),
+      requestedAt: now,
+      note: ""
+    };
   }
+  try { CacheService.getScriptCache().put("acc_row_" + id, JSON.stringify(rowObj), 180); } catch (eP) {}
 }
 
 function handleRequestAccess(json, callback, fromPost) {
