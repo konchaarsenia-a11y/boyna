@@ -744,6 +744,22 @@ function doGet(e) {
       segment: e.parameter.segment ? decodeURIComponent(e.parameter.segment) : ""
     }, callback, false);
   }
+  if (action === "saveSubscription") {
+    return handleSaveSubscription({
+      nick: e.parameter.nick ? decodeURIComponent(e.parameter.nick) : "",
+      label: e.parameter.label ? decodeURIComponent(e.parameter.label) : "",
+      subId: e.parameter.subId ? decodeURIComponent(e.parameter.subId) : "",
+      sheet: e.parameter.sheet ? decodeURIComponent(e.parameter.sheet) : "",
+      segment: e.parameter.segment ? decodeURIComponent(e.parameter.segment) : "",
+      deliveries: e.parameter.deliveries,
+      ppStatus: e.parameter.ppStatus ? decodeURIComponent(e.parameter.ppStatus) : "",
+      wishes: e.parameter.wishes ? decodeURIComponent(e.parameter.wishes) : "",
+      address: e.parameter.address ? decodeURIComponent(e.parameter.address) : "",
+      phone: e.parameter.phone ? decodeURIComponent(e.parameter.phone) : "",
+      note: e.parameter.note ? decodeURIComponent(e.parameter.note) : "",
+      factCost: e.parameter.factCost || ""
+    }, callback, false);
+  }
   if (action === "getAssembly") {
     return handleGetAssembly({
       day: e.parameter.day ? decodeURIComponent(e.parameter.day) : ""
@@ -903,6 +919,9 @@ function handleApiAction(json, callback, fromPost) {
   }
   if (action === "getSubscription") {
     return handleGetSubscription(json, callback, fromPost);
+  }
+  if (action === "saveSubscription") {
+    return handleSaveSubscription(json, callback, fromPost);
   }
   if (action === "pushSubscriptionToDay") {
     return handlePushSubscriptionToDay(json, callback, fromPost);
@@ -5922,17 +5941,155 @@ function handleGetSubscription(json, callback, fromPost) {
   }
   var nick = String(json.nick || json.client || "").trim();
   var subId = String(json.subId || "").trim();
-  var found = findSubscriberBasket_(crmSs, nick || subId, json.segment || "ПП");
+  var segment = String(json.segment || json.sheet || "ПП").trim() || "ПП";
+  var found = findSubscriberBasket_(crmSs, nick || subId, segment);
   var contact = lookupContactAddress_(crmSs, nick);
+  var deliveries = 0;
+  var status = "";
+  var label = nick;
+  var factCost = "";
+  var rowIndex = 0;
+  try {
+    var shName = found.sheet || segment;
+    var data = getCrmSheetValuesFast_(crmSs, shName);
+    if (data && data.length >= 3) {
+      var headers = data[0];
+      for (var r = 2; r < data.length; r++) {
+        var cell = String(data[r][0] || "");
+        if (!cell.trim()) continue;
+        if (subId && String(data[r][1] || "").trim() === subId) {
+          // ok
+        } else if (!nicksMatch_(cell, nick)) continue;
+        label = cell.replace(/\s+/g, " ").trim();
+        deliveries = Number(data[r][2]) || 0;
+        status = String(data[r][3] || "").trim();
+        if (!found.wishes) found.wishes = String(data[r][4] || "").trim();
+        if (!found.subId) found.subId = String(data[r][1] || "").trim();
+        rowIndex = r + 1;
+        for (var fc = 0; fc < headers.length; fc++) {
+          var h = String(headers[fc] || "").toUpperCase();
+          if (h.indexOf("ФАКТ") >= 0 && h.indexOf("СТОИМ") >= 0) {
+            factCost = data[r][fc] != null && data[r][fc] !== "" ? String(data[r][fc]) : "";
+            break;
+          }
+        }
+        break;
+      }
+    }
+  } catch (eRow) {}
   var ok = {
     status: "success",
-    nick: nick,
+    nick: extractInstagramNick_(label) || nick,
+    label: label,
     subId: found.subId || subId,
     basket: found.basket || [],
     wishes: found.wishes || "",
     address: contact.address || "",
+    phone: contact.phone || "",
     note: contact.note || "",
-    sheet: found.sheet || ""
+    sheet: found.sheet || segment,
+    deliveries: deliveries,
+    ppStatus: status,
+    factCost: factCost,
+    rowIndex: rowIndex
+  };
+  return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
+}
+
+/** Правка карточки подписки: мета + контакты; состав — если передан basket. */
+function handleSaveSubscription(json, callback, fromPost) {
+  var crmSs;
+  try { crmSs = getCrmSpreadsheet_(); } catch (e) {
+    var bad = { status: "error", message: "crm_unavailable", detail: String(e) };
+    return fromPost ? jsonpText(callback, bad) : jsonp(callback, bad);
+  }
+  var nick = String(json.nick || json.client || "").trim();
+  var label = String(json.label || nick).trim() || nick;
+  if (!nick && !label) {
+    var need = { status: "error", message: "need_nick" };
+    return fromPost ? jsonpText(callback, need) : jsonp(callback, need);
+  }
+  var sheetName = String(json.sheet || json.segment || "ПП").trim() || "ПП";
+  var sh = findSheetByBaseName_(crmSs, sheetName);
+  if (!sh) {
+    var no = { status: "error", message: "sheet_missing", sheet: sheetName };
+    return fromPost ? jsonpText(callback, no) : jsonp(callback, no);
+  }
+  var subId = String(json.subId || "").trim();
+  var deliveriesN = Number(json.deliveries != null ? json.deliveries : json.deliveriesN) || 0;
+  var ppStatus = String(json.ppStatus || json.status || "").trim();
+  var wishes = String(json.wishes || "").trim();
+  var factCost = json.factCost != null && json.factCost !== "" ? json.factCost : null;
+  var basket = Array.isArray(json.basket) ? json.basket : null;
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var data = sh.getDataRange().getValues();
+  var rowIdx = -1;
+  for (var r = 2; r < data.length; r++) {
+    if (subId && String(data[r][1] || "").trim() === subId) { rowIdx = r; break; }
+    if (nicksMatch_(data[r][0], nick) || nicksMatch_(data[r][0], label)) { rowIdx = r; break; }
+  }
+  if (rowIdx < 0) {
+    var miss = { status: "error", message: "not_found" };
+    return fromPost ? jsonpText(callback, miss) : jsonp(callback, miss);
+  }
+  if (basket && basket.length) {
+    var rowVals = writePpBasketToRowValues_(
+      headers, basket, label, subId || String(data[rowIdx][1] || ""),
+      deliveriesN || Number(data[rowIdx][2]) || 1,
+      ppStatus || String(data[rowIdx][3] || "") || "ПП1",
+      wishes || String(data[rowIdx][4] || ""),
+      factCost
+    );
+    while (rowVals.length < headers.length) rowVals.push("");
+    sh.getRange(rowIdx + 1, 1, rowIdx + 1, headers.length).setValues([rowVals.slice(0, headers.length)]);
+  } else {
+    sh.getRange(rowIdx + 1, 1).setValue(label);
+    if (headers.length > 1) sh.getRange(rowIdx + 1, 2).setValue(subId || String(data[rowIdx][1] || ""));
+    if (headers.length > 2 && deliveriesN > 0) sh.getRange(rowIdx + 1, 3).setValue(deliveriesN);
+    if (headers.length > 3 && ppStatus) sh.getRange(rowIdx + 1, 4).setValue(ppStatus);
+    if (headers.length > 4) sh.getRange(rowIdx + 1, 5).setValue(wishes);
+    if (factCost != null) {
+      for (var fc = 0; fc < headers.length; fc++) {
+        var h = String(headers[fc] || "").toUpperCase();
+        if (h.indexOf("ФАКТ") >= 0 && h.indexOf("СТОИМ") >= 0) {
+          sh.getRange(rowIdx + 1, fc + 1).setValue(Number(factCost) || factCost);
+          break;
+        }
+      }
+    }
+  }
+  try {
+    var addr = String(json.address || "").trim();
+    var phone = String(json.phone || "").trim();
+    var note = String(json.note || "").trim();
+    var displayName = String(json.displayName || "").trim();
+    var matchNick = extractInstagramNick_(label) || nick;
+    if (addr || phone || note || displayName) {
+      var contacts = findSheetByBaseName_(crmSs, "Контакты");
+      if (contacts && contacts.getLastRow() >= 1) {
+        var cd = contacts.getDataRange().getValues();
+        var foundC = false;
+        for (var cr = 1; cr < cd.length; cr++) {
+          if (!nicksMatch_(cd[cr][0], matchNick) && !nicksMatch_(cd[cr][0], label)) continue;
+          if (displayName) contacts.getRange(cr + 1, 2).setValue(displayName);
+          if (addr) contacts.getRange(cr + 1, 4).setValue(addr);
+          if (phone) contacts.getRange(cr + 1, 5).setValue(phone);
+          if (note || wishes) contacts.getRange(cr + 1, 7).setValue(note || wishes);
+          foundC = true;
+          break;
+        }
+        if (!foundC) {
+          contacts.appendRow([matchNick, displayName, "", addr, phone, "", note || wishes]);
+        }
+      }
+    }
+  } catch (eC) {}
+  var ok = {
+    status: "success",
+    nick: extractInstagramNick_(label) || nick,
+    label: label,
+    sheet: sheetName,
+    row: rowIdx + 1
   };
   return fromPost ? jsonpText(callback, ok) : jsonp(callback, ok);
 }

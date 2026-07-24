@@ -291,6 +291,31 @@
       color: var(--text-muted);
       font-size: 13px;
     }
+    .subs-count {
+      font-size: 13px; font-weight: 700; color: var(--accent-color);
+      margin: 8px 0 4px; text-align: center;
+    }
+    .sub-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; margin-bottom: 4px;
+      background: #1c1c1e; border: 1px solid var(--border-color); border-radius: 10px;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    .sub-row:active { background: #252528; }
+    .sub-row-main { flex: 1 1 auto; min-width: 0; }
+    .sub-row-nick {
+      font-size: 13px; font-weight: 700; color: #f2f2f7;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sub-row-meta {
+      font-size: 11px; color: var(--text-muted); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sub-row-chevron { flex: 0 0 auto; color: var(--text-muted); font-size: 16px; opacity: 0.6; }
+    .sub-detail-basket {
+      margin-top: 8px; max-height: 40vh; overflow-y: auto;
+      border-top: 1px dashed var(--border-color); padding-top: 8px;
+    }
     .client-item-card.is-gap {
       border-color: #ff453a !important;
       box-shadow: inset 0 0 0 1px rgba(255,69,58,0.35);
@@ -821,7 +846,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.39</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.40</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -1162,13 +1187,63 @@
           <button type="button" class="seg-btn" data-seg="БП" onclick="setSubsSegment('БП')">БП</button>
           <button type="button" class="seg-btn" data-seg="Опросник" onclick="setSubsSegment('Опросник')">Опросник</button>
         </div>
-        <button class="btn-action btn-blue" type="button" onclick="loadSubscriptions()">Обновить</button>
-        <div class="form-group" style="margin-top:12px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+          <button class="btn-action btn-blue" type="button" style="margin:0;flex:1;padding:8px;" onclick="loadSubscriptions()">Обновить</button>
+          <span class="subs-count" id="subsCount" style="margin:0;flex:0 0 auto;"></span>
+        </div>
+        <div class="form-group" style="margin-top:10px;margin-bottom:0;">
           <label>Дата выгрузки состава</label>
           <input type="date" id="subPushDate">
         </div>
       </div>
       <div id="subsContainer"><p class="muted">Загрузите список…</p></div>
+    </div>
+
+    <!-- КАРТОЧКА ПОДПИСКИ -->
+    <div id="subDetailScreen" class="screen">
+      <div class="card">
+        <button type="button" class="seg-btn" style="margin:0 0 10px;" onclick="closeSubDetail()">← К списку</button>
+        <div class="section-title" style="margin-top:0;" id="subDetailTitle">Подписка</div>
+        <input type="hidden" id="subDetailNick" value="">
+        <input type="hidden" id="subDetailSheet" value="">
+        <div class="form-group">
+          <label>Ник / строка</label>
+          <input type="text" id="subDetailLabel" placeholder="ник">
+        </div>
+        <div class="form-group">
+          <label>ID подписки</label>
+          <input type="text" id="subDetailSubId" placeholder="subId">
+        </div>
+        <div class="form-group">
+          <label>Доставок / мес (N)</label>
+          <input type="number" id="subDetailDeliveries" min="1" max="8" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Статус</label>
+          <input type="text" id="subDetailStatus" placeholder="ПП1 / …">
+        </div>
+        <div class="form-group">
+          <label>Пожелания</label>
+          <textarea id="subDetailWishes" rows="3" placeholder="замены, нарезка…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Адрес</label>
+          <input type="text" id="subDetailAddress" placeholder="улица, дом">
+        </div>
+        <div class="form-group">
+          <label>Телефон</label>
+          <input type="text" id="subDetailPhone" placeholder="+375…" inputmode="tel">
+        </div>
+        <div class="form-group">
+          <label>Факт стоимость</label>
+          <input type="number" id="subDetailFact" step="0.01" inputmode="decimal">
+        </div>
+        <div class="muted" style="font-size:12px;">Состав</div>
+        <div class="sub-detail-basket" id="subDetailBasket"><p class="muted">—</p></div>
+        <button class="btn-save" type="button" style="margin-top:12px;" onclick="saveSubDetail()">Сохранить</button>
+        <button class="btn-action btn-blue" type="button" style="margin-top:8px;" onclick="openSubDetailInOrder()">В заказ</button>
+        <button class="btn-action btn-orange" type="button" style="margin-top:8px;" onclick="pushSubDetailToDay()">Выгрузить на дату</button>
+      </div>
     </div>
 
     <!-- СТАТИСТИКА -->
@@ -1372,7 +1447,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.39";
+    const APP_VERSION = "v7.10.40";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -1513,8 +1588,8 @@
     }
     window.ensureTelegramId = ensureTelegramId;
     const ROLE_TABS = {
-      all: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"],
-      owner: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"],
+      all: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "subDetailScreen", "statsScreen", "peopleScreen"],
+      owner: ["orderScreen", "cuttingScreen", "courierScreen", "warehouseScreen", "clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "subDetailScreen", "statsScreen", "peopleScreen"],
       manager: ["orderScreen", "clientsScreen", "priceScreen", "deferredScreen"],
       cutter: ["cuttingScreen"],
       courier: ["courierScreen"],
@@ -1535,7 +1610,7 @@
       "крафт": true
     };
     let assemblyCache = null;
-    const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "statsScreen", "peopleScreen"];
+    const FLYOUT_SCREENS = ["clientsScreen", "priceScreen", "deferredScreen", "subsScreen", "subDetailScreen", "statsScreen", "peopleScreen"];
     let deferredCache = [];
     let deferredOpenCount = 0;
     let deferredCacheAt = 0;
@@ -2872,7 +2947,13 @@
       } catch (e2) {}
       try {
         if (screenId === "warehouseScreen") loadWarehouse();
-        if (screenId === "subsScreen") loadSubscriptions();
+        if (screenId === "subsScreen") {
+          document.getElementById("appHeaderTitle").innerText = "Подписки · " + APP_VERSION;
+          loadSubscriptions();
+        }
+        if (screenId === "subDetailScreen") {
+          document.getElementById("appHeaderTitle").innerText = "Карточка · " + APP_VERSION;
+        }
         if (screenId === "statsScreen") loadStats();
         if (screenId === "deferredScreen") openTasksDrawer();
         if (screenId === "priceScreen") try { syncPriceEnrollUi(); } catch (eEn) {}
@@ -8378,34 +8459,158 @@
 
     async function loadSubscriptions() {
       var box = document.getElementById("subsContainer");
+      var countEl = document.getElementById("subsCount");
+      if (countEl) countEl.textContent = "";
       if (subsSegment === "Опросник") {
         box.innerHTML = '<p class="muted">Опросник: даты БП2/ПП1, +4/+6 — каркас. Лист подключим после деплоя полного F.</p>';
         return;
       }
-      box.innerHTML = '<p class="muted">Загрузка CRM…</p>';
+      box.innerHTML = '<p class="muted">Загрузка…</p>';
       try {
-        var res = await apiGet({ action: "listSubscriptions" });
+        var res = await apiGet({ action: "listSubscriptions" }, { timeoutMs: 25000, cacheTtlMs: 15000 });
         if (!res || res.status !== "success") {
           box.innerHTML = '<p class="muted">CRM недоступна (нужен доступ Apps Script к таблице подписок)</p>';
           return;
         }
-        box.innerHTML = (res.subscriptions || []).filter(function (s) {
+        var list = (res.subscriptions || []).filter(function (s) {
           return !subsSegment || s.sheet === subsSegment;
-        }).map(function (s) {
-          var safeNick = String(s.nick || "").replace(/'/g, "\\'");
-          return '<div class="card" style="margin-bottom:8px;">' +
-            '<b>' + (s.nick || s.label) + '</b> <span class="muted">' + (s.subId || "") + ' · ' + (s.sheet || "") + '</span>' +
-            '<div class="muted" style="font-size:12px;margin-top:4px;">доставок/мес: ' + (s.deliveries || 0) +
-            (s.wishes ? ' · ' + s.wishes : '') + '</div>' +
-            '<button type="button" class="btn-action btn-orange" style="margin-top:8px;" onclick="pushSubToDay(\'' + safeNick + '\',\'' + (s.subId || "") + '\')">Выгрузить на дату</button>' +
-            '<button type="button" class="btn-action btn-blue" style="margin-top:8px;" onclick="openSubInOrder(\'' + safeNick + '\')">В заказ</button>' +
-            '</div>';
-        }).join("") || '<p class="muted">Пусто в ' + escapeHtml(subsSegment) + '</p>';
+        });
+        if (countEl) countEl.textContent = list.length + " чел.";
+        if (!list.length) {
+          box.innerHTML = '<p class="muted">Пусто в ' + escapeHtml(subsSegment) + "</p>";
+          return;
+        }
+        box.innerHTML = list.map(function (s, i) {
+          var nick = s.nick || s.label || "";
+          var meta = [s.subId || "", "N=" + (s.deliveries || 0), s.status || ""].filter(Boolean).join(" · ");
+          return '<div class="sub-row" role="button" tabindex="0" onclick="openSubDetail(' + i + ')">' +
+            '<div class="sub-row-main">' +
+            '<div class="sub-row-nick">' + escapeHtml(nick) + "</div>" +
+            '<div class="sub-row-meta">' + escapeHtml(meta) + "</div>" +
+            "</div><div class="sub-row-chevron">›</div></div>";
+        }).join("");
+        window._subsListCache = list;
       } catch (e) {
         box.innerHTML = '<p class="muted">Ошибка</p>';
       }
     }
     window.loadSubscriptions = loadSubscriptions;
+
+    var currentSubDetail = null;
+
+    async function openSubDetail(index) {
+      var list = window._subsListCache || [];
+      var s = list[index];
+      if (!s) return;
+      switchTab("subDetailScreen");
+      document.getElementById("subDetailTitle").textContent = "Загрузка…";
+      document.getElementById("subDetailNick").value = s.nick || "";
+      document.getElementById("subDetailSheet").value = s.sheet || subsSegment || "ПП";
+      document.getElementById("subDetailLabel").value = s.label || s.nick || "";
+      document.getElementById("subDetailSubId").value = s.subId || "";
+      document.getElementById("subDetailDeliveries").value = s.deliveries || "";
+      document.getElementById("subDetailStatus").value = s.status || "";
+      document.getElementById("subDetailWishes").value = s.wishes || "";
+      document.getElementById("subDetailAddress").value = "";
+      document.getElementById("subDetailPhone").value = "";
+      document.getElementById("subDetailFact").value = "";
+      document.getElementById("subDetailBasket").innerHTML = '<p class="muted">Состав…</p>';
+      try {
+        var res = await apiGet({
+          action: "getSubscription",
+          nick: s.nick || s.label || "",
+          subId: s.subId || "",
+          segment: s.sheet || subsSegment || "ПП"
+        }, { timeoutMs: 22000, cacheTtlMs: 0 });
+        if (!res || res.status !== "success") {
+          showToast("Не удалось открыть карточку");
+          return;
+        }
+        currentSubDetail = res;
+        document.getElementById("subDetailTitle").textContent = (res.nick || s.nick || "Подписка") + " · " + (res.sheet || "");
+        document.getElementById("subDetailNick").value = res.nick || s.nick || "";
+        document.getElementById("subDetailSheet").value = res.sheet || s.sheet || "";
+        document.getElementById("subDetailLabel").value = res.label || res.nick || "";
+        document.getElementById("subDetailSubId").value = res.subId || "";
+        document.getElementById("subDetailDeliveries").value = res.deliveries || s.deliveries || "";
+        document.getElementById("subDetailStatus").value = res.ppStatus || s.status || "";
+        document.getElementById("subDetailWishes").value = res.wishes || "";
+        document.getElementById("subDetailAddress").value = res.address || "";
+        document.getElementById("subDetailPhone").value = res.phone || "";
+        document.getElementById("subDetailFact").value = res.factCost || "";
+        var basket = res.basket || [];
+        document.getElementById("subDetailBasket").innerHTML = basket.length
+          ? basketLinesHtml(basket)
+          : '<p class="muted">Состав пуст</p>';
+      } catch (e) {
+        showToast(e.message || "Ошибка сети");
+      }
+    }
+    window.openSubDetail = openSubDetail;
+
+    function closeSubDetail() {
+      currentSubDetail = null;
+      switchTab("subsScreen");
+    }
+    window.closeSubDetail = closeSubDetail;
+
+    async function saveSubDetail() {
+      var nick = (document.getElementById("subDetailNick").value || "").trim();
+      var label = (document.getElementById("subDetailLabel").value || "").trim();
+      var sheet = (document.getElementById("subDetailSheet").value || "").trim() || "ПП";
+      if (!nick && !label) {
+        showToast("Нет ника");
+        return;
+      }
+      try {
+        showToast("Сохраняю…");
+        var payload = {
+          action: "saveSubscription",
+          nick: nick || label,
+          label: label || nick,
+          subId: (document.getElementById("subDetailSubId").value || "").trim(),
+          sheet: sheet,
+          segment: sheet,
+          deliveries: document.getElementById("subDetailDeliveries").value || "",
+          ppStatus: (document.getElementById("subDetailStatus").value || "").trim(),
+          wishes: (document.getElementById("subDetailWishes").value || "").trim(),
+          address: (document.getElementById("subDetailAddress").value || "").trim(),
+          phone: (document.getElementById("subDetailPhone").value || "").trim(),
+          note: (document.getElementById("subDetailWishes").value || "").trim(),
+          factCost: document.getElementById("subDetailFact").value || ""
+        };
+        var res = await apiGet(payload, { timeoutMs: 30000, cacheTtlMs: 0 });
+        if (!res || res.status !== "success") {
+          var msg = (res && res.message) || "ошибка";
+          if (msg === "unknown_action") {
+            await uiAlertAsync("Нужен Deploy Code.gs (saveSubscription)");
+            return;
+          }
+          showToast("Не сохранилось: " + msg);
+          return;
+        }
+        showToast("Сохранено");
+        try { _apiGetMem = Object.create(null); } catch (eClr) {}
+      } catch (e) {
+        showToast(e.message || "Ошибка");
+      }
+    }
+    window.saveSubDetail = saveSubDetail;
+
+    async function openSubDetailInOrder() {
+      var nick = (document.getElementById("subDetailNick").value || document.getElementById("subDetailLabel").value || "").trim();
+      if (!nick) return;
+      await openSubInOrder(nick);
+    }
+    window.openSubDetailInOrder = openSubDetailInOrder;
+
+    async function pushSubDetailToDay() {
+      var nick = (document.getElementById("subDetailNick").value || "").trim();
+      var subId = (document.getElementById("subDetailSubId").value || "").trim();
+      if (!nick) return;
+      await pushSubToDay(nick, subId);
+    }
+    window.pushSubDetailToDay = pushSubDetailToDay;
 
     async function pushSubToDay(nick, subId) {
       var date = (document.getElementById("subPushDate") && document.getElementById("subPushDate").value) || "";
