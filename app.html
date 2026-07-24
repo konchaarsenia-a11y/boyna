@@ -846,7 +846,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.40</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.41</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -1180,23 +1180,30 @@
 
     <!-- ПОДПИСКИ -->
     <div id="subsScreen" class="screen">
-      <div class="card">
-        <div class="subs-tabs" id="subsTabs">
-          <button type="button" class="seg-btn active" data-seg="ПП" onclick="setSubsSegment('ПП')">ПП</button>
-          <button type="button" class="seg-btn" data-seg="АФК" onclick="setSubsSegment('АФК')">АФК</button>
-          <button type="button" class="seg-btn" data-seg="БП" onclick="setSubsSegment('БП')">БП</button>
-          <button type="button" class="seg-btn" data-seg="Опросник" onclick="setSubsSegment('Опросник')">Опросник</button>
+      <div class="card" id="subsGateCard">
+        <div class="section-title" style="margin-top:0;">Подписки</div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px;">Просмотр списка — по паролю.</div>
+        <div class="form-group">
+          <label>Пароль</label>
+          <input type="password" id="subsPasswordInput" placeholder="••••••" inputmode="numeric" autocomplete="off">
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
-          <button class="btn-action btn-blue" type="button" style="margin:0;flex:1;padding:8px;" onclick="loadSubscriptions()">Обновить</button>
-          <span class="subs-count" id="subsCount" style="margin:0;flex:0 0 auto;"></span>
-        </div>
-        <div class="form-group" style="margin-top:10px;margin-bottom:0;">
-          <label>Дата выгрузки состава</label>
-          <input type="date" id="subPushDate">
-        </div>
+        <button class="btn-action btn-blue" type="button" onclick="unlockSubsScreen()">Открыть</button>
       </div>
-      <div id="subsContainer"><p class="muted">Загрузите список…</p></div>
+      <div id="subsMainWrap" style="display:none;">
+        <div class="card">
+          <div class="subs-tabs" id="subsTabs">
+            <button type="button" class="seg-btn active" data-seg="ПП" onclick="setSubsSegment('ПП')">ПП</button>
+            <button type="button" class="seg-btn" data-seg="АФК" onclick="setSubsSegment('АФК')">АФК</button>
+            <button type="button" class="seg-btn" data-seg="БП" onclick="setSubsSegment('БП')">БП</button>
+            <button type="button" class="seg-btn" data-seg="Опросник" onclick="setSubsSegment('Опросник')">Опросник</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <button class="btn-action btn-blue" type="button" style="margin:0;flex:1;padding:8px;" onclick="loadSubscriptions()">Обновить</button>
+            <span class="subs-count" id="subsCount" style="margin:0;flex:0 0 auto;"></span>
+          </div>
+        </div>
+        <div id="subsContainer"><p class="muted">Загрузите список…</p></div>
+      </div>
     </div>
 
     <!-- КАРТОЧКА ПОДПИСКИ -->
@@ -1242,7 +1249,6 @@
         <div class="sub-detail-basket" id="subDetailBasket"><p class="muted">—</p></div>
         <button class="btn-save" type="button" style="margin-top:12px;" onclick="saveSubDetail()">Сохранить</button>
         <button class="btn-action btn-blue" type="button" style="margin-top:8px;" onclick="openSubDetailInOrder()">В заказ</button>
-        <button class="btn-action btn-orange" type="button" style="margin-top:8px;" onclick="pushSubDetailToDay()">Выгрузить на дату</button>
       </div>
     </div>
 
@@ -1447,7 +1453,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.40";
+    const APP_VERSION = "v7.10.41";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2949,9 +2955,13 @@
         if (screenId === "warehouseScreen") loadWarehouse();
         if (screenId === "subsScreen") {
           document.getElementById("appHeaderTitle").innerText = "Подписки · " + APP_VERSION;
-          loadSubscriptions();
+          enterSubsScreen();
         }
         if (screenId === "subDetailScreen") {
+          if (!isSubsUnlocked()) {
+            switchTab("subsScreen");
+            return;
+          }
           document.getElementById("appHeaderTitle").innerText = "Карточка · " + APP_VERSION;
         }
         if (screenId === "statsScreen") loadStats();
@@ -8457,7 +8467,58 @@
     }
     window.loadWarehousePreview = loadWarehousePreview;
 
+    const SUBS_VIEW_PASSWORD = "708080";
+
+    function isSubsUnlocked() {
+      try { return sessionStorage.getItem("subsUnlocked") === "1"; } catch (e) { return !!window._subsUnlocked; }
+    }
+
+    function setSubsUnlocked(ok) {
+      window._subsUnlocked = !!ok;
+      try {
+        if (ok) sessionStorage.setItem("subsUnlocked", "1");
+        else sessionStorage.removeItem("subsUnlocked");
+      } catch (e) {}
+    }
+
+    function enterSubsScreen() {
+      var gate = document.getElementById("subsGateCard");
+      var main = document.getElementById("subsMainWrap");
+      if (isSubsUnlocked()) {
+        if (gate) gate.style.display = "none";
+        if (main) main.style.display = "";
+        loadSubscriptions();
+        return;
+      }
+      if (gate) gate.style.display = "";
+      if (main) main.style.display = "none";
+      var inp = document.getElementById("subsPasswordInput");
+      if (inp) {
+        inp.value = "";
+        setTimeout(function () { try { inp.focus(); } catch (eF) {} }, 50);
+      }
+    }
+    window.enterSubsScreen = enterSubsScreen;
+
+    function unlockSubsScreen() {
+      var inp = document.getElementById("subsPasswordInput");
+      var val = inp ? String(inp.value || "").trim() : "";
+      if (val !== SUBS_VIEW_PASSWORD) {
+        showToast("Неверный пароль");
+        if (inp) { inp.value = ""; inp.focus(); }
+        return;
+      }
+      setSubsUnlocked(true);
+      enterSubsScreen();
+      showToast("Ок");
+    }
+    window.unlockSubsScreen = unlockSubsScreen;
+
     async function loadSubscriptions() {
+      if (!isSubsUnlocked()) {
+        enterSubsScreen();
+        return;
+      }
       var box = document.getElementById("subsContainer");
       var countEl = document.getElementById("subsCount");
       if (countEl) countEl.textContent = "";
@@ -8499,6 +8560,10 @@
     var currentSubDetail = null;
 
     async function openSubDetail(index) {
+      if (!isSubsUnlocked()) {
+        switchTab("subsScreen");
+        return;
+      }
       var list = window._subsListCache || [];
       var s = list[index];
       if (!s) return;
@@ -8603,22 +8668,6 @@
       await openSubInOrder(nick);
     }
     window.openSubDetailInOrder = openSubDetailInOrder;
-
-    async function pushSubDetailToDay() {
-      var nick = (document.getElementById("subDetailNick").value || "").trim();
-      var subId = (document.getElementById("subDetailSubId").value || "").trim();
-      if (!nick) return;
-      await pushSubToDay(nick, subId);
-    }
-    window.pushSubDetailToDay = pushSubDetailToDay;
-
-    async function pushSubToDay(nick, subId) {
-      var date = (document.getElementById("subPushDate") && document.getElementById("subPushDate").value) || "";
-      if (!date) { await uiAlertAsync("Укажите дату выгрузки"); return; }
-      await apiPost({ action: "pushSubscriptionToDay", nick: nick, subId: subId, date: date });
-      showToast("Бронь " + nick + " на " + date);
-    }
-    window.pushSubToDay = pushSubToDay;
 
     async function openSubInOrder(nick) {
       try {
