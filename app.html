@@ -214,6 +214,83 @@
     }
     .view-col-head b { font-size: 13px; }
     .view-col.is-month { border-color: rgba(175,82,222,0.4); }
+    /* одинаковые карточки месяца — глаз не прыгает */
+    .view-col.is-month .client-item-card.view-month-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 118px;
+      padding: 10px 8px;
+      box-sizing: border-box;
+    }
+    .view-month-card .client-main-row {
+      flex-wrap: nowrap;
+      align-items: center;
+      min-height: 36px;
+    }
+    .view-month-card .client-title-wrap {
+      width: auto;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .view-month-card .client-title {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      white-space: normal;
+      line-height: 1.2;
+      max-height: 2.4em;
+    }
+    .view-month-card .client-right-block {
+      width: auto;
+      margin-top: 0;
+      flex: 0 0 auto;
+    }
+    .view-month-card .view-field {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.3;
+      min-height: 1.3em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .view-month-card .view-field.is-empty { opacity: 0.45; }
+    .view-month-card .client-meta-row {
+      margin-top: auto;
+      min-height: 22px;
+    }
+    .view-skel {
+      pointer-events: none;
+      opacity: 0.85;
+    }
+    .view-skel .view-skel-line {
+      height: 10px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #2c2c2e 25%, #3a3a3c 50%, #2c2c2e 75%);
+      background-size: 200% 100%;
+      animation: viewSkel 1.1s ease-in-out infinite;
+      margin: 6px 0;
+    }
+    .view-skel .view-skel-line.w40 { width: 40%; }
+    .view-skel .view-skel-line.w70 { width: 70%; }
+    .view-skel .view-skel-line.w90 { width: 90%; }
+    @keyframes viewSkel {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+    .view-col.is-dimmed { opacity: 0.55; }
+    .view-idle {
+      min-height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px 8px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
     .client-item-card.is-gap {
       border-color: #ff453a !important;
       box-shadow: inset 0 0 0 1px rgba(255,69,58,0.35);
@@ -734,7 +811,7 @@
     <div class="app-top" id="appTopBar">
       <div class="app-top-inner">
         <div class="header-row">
-          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.37</div>
+          <div class="header-main" id="appHeaderTitle">Бойня-Конвейер v7.10.38</div>
           <button type="button" class="tasks-menu-btn" id="tasksMenuBtn" onclick="toggleTasksDrawer()" title="Задачи" aria-label="Задачи">
             <span class="tasks-burger" aria-hidden="true"><span></span></span>
             <span class="tasks-badge" id="tasksBadge" hidden>0</span>
@@ -936,7 +1013,7 @@
           <label>Или дата</label>
           <input type="date" id="viewDate" onchange="onViewDateChange()">
         </div>
-        <div class="muted" style="font-size:12px;">Слева — неделя, справа — месяц. «→» в черновик (ещё не в таблице). Потом «Сохранить переносы». Красные — нет адреса/телефона/состава.</div>
+        <div class="muted" style="font-size:12px;">Выбери день или дату — тогда загрузим. Слева неделя (если день в текущей), справа месяц. «→» в черновик → «Сохранить переносы».</div>
         <div id="viewDeployHint" class="muted" style="display:none;font-size:12px;margin-top:8px;color:#ff9f0a;"></div>
       </div>
       <div id="totalDaySummaryContainer"></div>
@@ -952,16 +1029,16 @@
               </span>
             </div>
           </div>
-          <div id="clientsContainer"><p class="muted">Выберите день…</p></div>
+          <div id="clientsContainer"><div class="view-idle">Выберите день или дату</div></div>
         </div>
         <div class="view-col is-month" id="viewMonthCol">
           <div class="view-col-head">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
               <b>Месяц <span class="muted" id="viewMonthCount"></span></b>
-              <button type="button" class="btn-action btn-purple" style="margin:0;padding:6px 10px;font-size:11px;" onclick="stageAllFromMonth()">Все →</button>
+              <button type="button" class="btn-action btn-purple" id="viewStageAllBtn" style="margin:0;padding:6px 10px;font-size:11px;" onclick="stageAllFromMonth()">Все →</button>
             </div>
           </div>
-          <div id="monthClientsContainer"><p class="muted">—</p></div>
+          <div id="monthClientsContainer"><div class="view-idle">Выберите день или дату</div></div>
         </div>
       </div>
 
@@ -1284,7 +1361,7 @@
   <script>
     const GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzph2uAYgSd3Ja5XDoi647YkAIRDw2SfRIcgEUlaDW82aLpbzkgS36Zq9V5QXxqPNF7/exec";
     const DEFAULT_CITY = "Минск";
-    const APP_VERSION = "v7.10.37";
+    const APP_VERSION = "v7.10.38";
     const YANDEX_ROUTE_PAGE = "https://konchaarsenia-a11y.github.io/superboyna/yandex-route.html";
     const MINSK_CENTER = { lat: 53.9023, lon: 27.5619 };
     const MINSK_RADIUS_KM = 20;
@@ -2774,7 +2851,8 @@
         }
         if (screenId === "clientsScreen") {
           document.getElementById("appHeaderTitle").innerText = "Просмотр · " + APP_VERSION;
-          try { ensureViewDaySelected(); loadClientsForDay(); } catch (eV) {}
+          // не грузим сами — только после выбора дня/даты
+          try { resetViewIdleIfEmpty(); } catch (eV) {}
         }
       } catch (e) {}
       try {
@@ -3418,6 +3496,43 @@
 
     let monthClientsCache = [];
     let viewTransferDraft = []; // черновик переноса: визуально слева, в таблицу после «Сохранить»
+    let viewDateOnlyMonth = false; // дата вне текущей недели — только колонка месяца
+
+    function viewLoadingSkeletonHtml() {
+      var card = function () {
+        return '<div class="client-item-card view-month-card view-skel">' +
+          '<div class="view-skel-line w70"></div>' +
+          '<div class="view-skel-line w90"></div>' +
+          '<div class="view-skel-line w40"></div>' +
+          '</div>';
+      };
+      return card() + card() + card();
+    }
+
+    function resetViewIdleIfEmpty() {
+      var day = document.getElementById("viewDaySelect") && document.getElementById("viewDaySelect").value;
+      var dateStr = document.getElementById("viewDate") && document.getElementById("viewDate").value;
+      if (day || dateStr) return;
+      var idle = '<div class="view-idle">Выберите день или дату</div>';
+      var box = document.getElementById("clientsContainer");
+      var monthBox = document.getElementById("monthClientsContainer");
+      if (box) box.innerHTML = idle;
+      if (monthBox) monthBox.innerHTML = idle;
+      var summary = document.getElementById("totalDaySummaryContainer");
+      if (summary) summary.innerHTML = "";
+      var weekCountEl = document.getElementById("viewWeekCount");
+      var monthCountEl = document.getElementById("viewMonthCount");
+      if (weekCountEl) weekCountEl.textContent = "";
+      if (monthCountEl) monthCountEl.textContent = "";
+      var weekCol = document.getElementById("viewWeekCol");
+      if (weekCol) weekCol.classList.remove("is-dimmed");
+      viewDateOnlyMonth = false;
+      loadedClientsRawData = [];
+      monthClientsCache = [];
+      updateViewDraftBar();
+      updateBatchBar();
+    }
+    window.resetViewIdleIfEmpty = resetViewIdleIfEmpty;
 
     function viewClientKey(raw) {
       var s = String(raw || "").replace(/\s+/g, " ").trim();
@@ -3490,13 +3605,20 @@
         return renderWeekClientCard(c, i, true);
       }).join("");
       if (box) {
-        box.innerHTML = (weekHtml || draftHtml)
-          ? (weekHtml + draftHtml)
-          : '<p class="muted">На неделе пусто — бери справа →</p>';
+        if (viewDateOnlyMonth) {
+          box.innerHTML = '<div class="view-idle">Этой даты нет в текущей неделе.<br>Смотри только месяц справа.</div>';
+        } else {
+          box.innerHTML = (weekHtml || draftHtml)
+            ? (weekHtml + draftHtml)
+            : '<div class="view-idle">На неделе пусто — бери справа →</div>';
+        }
       }
       if (weekCountEl) {
-        weekCountEl.textContent = "(" + (loadedClientsRawData.length + viewTransferDraft.length) +
-          (viewTransferDraft.length ? (" · +" + viewTransferDraft.length + " черн.") : "") + ")";
+        if (viewDateOnlyMonth) weekCountEl.textContent = "(—)";
+        else {
+          weekCountEl.textContent = "(" + (loadedClientsRawData.length + viewTransferDraft.length) +
+            (viewTransferDraft.length ? (" · +" + viewTransferDraft.length + " черн.") : "") + ")";
+        }
       }
 
       var visibleMonth = (monthClientsCache || []).filter(function (c) {
@@ -3506,9 +3628,17 @@
       if (monthBox) {
         monthBox.innerHTML = visibleMonth.length
           ? visibleMonth.map(function (c, i) { return renderMonthClientCard(c, i); }).join("")
-          : '<p class="muted">Все из месяца уже на неделе / в черновике.</p>';
+          : '<div class="view-idle">' + (viewDateOnlyMonth ? "В календаре на эту дату пусто" : "Все из месяца уже на неделе / в черновике.") + "</div>";
       }
       if (monthCountEl) monthCountEl.textContent = "(" + visibleMonth.length + ")";
+      var weekCol = document.getElementById("viewWeekCol");
+      if (weekCol) weekCol.classList.toggle("is-dimmed", !!viewDateOnlyMonth);
+      var stageAllBtn = document.getElementById("viewStageAllBtn");
+      if (stageAllBtn) {
+        stageAllBtn.disabled = !!viewDateOnlyMonth;
+        stageAllBtn.style.opacity = viewDateOnlyMonth ? "0.4" : "";
+        stageAllBtn.title = viewDateOnlyMonth ? "Сначала выбери день текущей недели" : "";
+      }
       updateViewDraftBar();
       updateBatchBar();
     }
@@ -3585,28 +3715,40 @@
       var nick = String(client.name || client.nick || client.client || "").trim() || ("#" + (index + 1));
       var gaps = clientGaps(client);
       var gapClass = gaps.length ? " is-gap" : "";
-      var seg = client.segment ? ('<span class="client-badge">' + escapeHtml(client.segment) + "</span>") : "";
+      var seg = client.segment
+        ? ('<span class="client-badge">' + escapeHtml(client.segment) + "</span>")
+        : '<span class="client-badge">—</span>';
       var gapBadge = gaps.length
         ? ('<span class="gap-badge">нет: ' + escapeHtml(gapLabels(gaps).join(", ")) + "</span>")
         : "";
-      var bits = [];
-      if (client.address) bits.push("📍 " + escapeHtml(client.address));
-      if (client.phone) bits.push(escapeHtml(client.phone));
-      if (client.note) bits.push(escapeHtml(String(client.note).slice(0, 80)));
-      return '<div class="client-item-card' + gapClass + '" id="monthCard_' + index + '" style="border-color:rgba(175,82,222,0.35);">' +
-        '<div class="client-main-row" style="align-items:flex-start;" onclick="toggleMonthDetail(' + index + ', event)">' +
+      var addr = String(client.address || "").trim();
+      var phone = String(client.phone || "").trim();
+      var addrHtml = addr
+        ? ('<div class="view-field" title="' + escapeHtml(addr) + '">📍 ' + escapeHtml(addr) + "</div>")
+        : '<div class="view-field is-empty">📍 —</div>';
+      var phoneHtml = phone
+        ? ('<div class="view-field">' + escapeHtml(phone) + "</div>")
+        : '<div class="view-field is-empty">тел —</div>';
+      var stageBtn = viewDateOnlyMonth
+        ? '<button type="button" class="btn-action btn-purple" style="margin:0;padding:8px 10px;font-size:11px;opacity:0.4;" disabled title="Дата вне недели">→</button>'
+        : '<button type="button" class="btn-action btn-purple" style="margin:0;padding:8px 10px;font-size:11px;" onclick="stageMonthClient(' + index + ')">→</button>';
+      return '<div class="client-item-card view-month-card' + gapClass + '" id="monthCard_' + index + '">' +
+        '<div class="client-main-row" onclick="toggleMonthDetail(' + index + ', event)">' +
         '<div class="client-title-wrap"><span class="client-title">' + escapeHtml(nick) + "</span></div>" +
-        '<div class="client-right-block" style="width:auto;margin-top:0;flex:0 0 auto;" onclick="event.stopPropagation()">' +
-        '<button type="button" class="btn-action btn-purple" style="margin:0;padding:8px 10px;font-size:11px;" ' +
-        'onclick="stageMonthClient(' + index + ')">→</button></div>' +
+        '<div class="client-right-block" onclick="event.stopPropagation()">' + stageBtn + "</div>" +
         "</div>" +
-        '<div class="client-meta-row">' + seg + gapBadge + ' <span class="view-tap-hint">тап — состав</span></div>' +
-        (bits.length ? ('<div class="delivery-info-box muted" style="font-size:12px;">' + bits.join("<br>") + "</div>") : "") +
+        addrHtml +
+        phoneHtml +
+        '<div class="client-meta-row">' + seg + gapBadge + ' <span class="view-tap-hint">тап</span></div>' +
         '<div class="client-order-details" id="monthDetails_' + index + '"><p class="muted">Загрузка состава…</p></div>' +
         "</div>";
     }
 
     function stageMonthClient(index) {
+      if (viewDateOnlyMonth) {
+        showToast("Дата вне недели — сначала выбери Пн–Пт");
+        return;
+      }
       // index в отфильтрованном списке — ищем по видимым
       var draftKeys = {};
       viewTransferDraft.forEach(function (d) {
@@ -3642,6 +3784,10 @@
     window.stageMonthClient = stageMonthClient;
 
     function stageAllFromMonth() {
+      if (viewDateOnlyMonth) {
+        showToast("Дата вне недели — сначала выбери Пн–Пт");
+        return;
+      }
       var draftKeys = {};
       viewTransferDraft.forEach(function (d) {
         var k = d.matchKey || viewClientKey(d.name);
@@ -3853,69 +3999,74 @@
     window.saveViewTransferDraft = saveViewTransferDraft;
 
     async function loadClientsForDay() {
-      ensureViewDaySelected();
       const day = document.getElementById("viewDaySelect").value;
       const dateStr = (document.getElementById("viewDate") && document.getElementById("viewDate").value) || "";
       const box = document.getElementById("clientsContainer");
       const monthBox = document.getElementById("monthClientsContainer");
       const summary = document.getElementById("totalDaySummaryContainer");
       const deployHint = document.getElementById("viewDeployHint");
+      viewDateOnlyMonth = false;
       if (!day && !dateStr) {
-        box.innerHTML = '<p class="muted">Выберите день…</p>';
-        if (monthBox) monthBox.innerHTML = '<p class="muted">—</p>';
-        if (summary) summary.innerHTML = "";
-        loadedClientsRawData = [];
-        monthClientsCache = [];
-        updateViewDraftBar();
-        updateBatchBar();
+        resetViewIdleIfEmpty();
         return;
       }
       if (summary) summary.innerHTML = "";
       if (deployHint) { deployHint.style.display = "none"; deployHint.textContent = ""; }
-      box.innerHTML = loadingDanceHtml("Неделя…");
-      if (monthBox) monthBox.innerHTML = '<p class="muted">Месяц…</p>';
+      var skel = viewLoadingSkeletonHtml();
+      box.innerHTML = skel;
+      if (monthBox) monthBox.innerHTML = skel;
       try {
         try { _apiGetMem = Object.create(null); } catch (eClr) {}
 
-        var weekParams = { action: "getClients" };
         var compareParams = { action: "getViewCompare" };
-        if (dateStr) {
-          weekParams.date = dateStr;
-          compareParams.date = dateStr;
-        } else {
-          weekParams.day = day;
-          compareParams.day = day;
+        if (dateStr) compareParams.date = dateStr;
+        else compareParams.day = day;
+
+        var compareRes = null;
+        try {
+          compareRes = await apiGet(compareParams, { timeoutMs: 45000, cacheTtlMs: 0 });
+        } catch (eC) {
+          compareRes = null;
         }
 
-        var pair = await Promise.all([
-          apiGet(weekParams, { timeoutMs: 22000, cacheTtlMs: 0 }).catch(function (eW) {
-            return { status: "error", message: eW.message || String(eW), clients: [] };
-          }),
-          apiGet(compareParams, { timeoutMs: 45000, cacheTtlMs: 0 }).catch(function () {
-            return null;
-          })
-        ]);
-        var weekRes = pair[0];
-        var compareRes = pair[1];
-
         var needDeploy = !compareRes || compareRes.status !== "success" || !Array.isArray(compareRes.month);
+        var dateNotInWeek = !!(compareRes && compareRes.dateNotInWeek);
+        if (dateStr && (dateNotInWeek || (compareRes && compareRes.status === "success" && !compareRes.day))) {
+          viewDateOnlyMonth = true;
+        }
 
-        var week = (weekRes && weekRes.status === "success" && Array.isArray(weekRes.clients))
-          ? weekRes.clients
-          : ((compareRes && Array.isArray(compareRes.week)) ? compareRes.week : []);
+        var week = [];
+        var weekRes = null;
+        if (!viewDateOnlyMonth) {
+          var weekParams = { action: "getClients" };
+          if (dateStr && compareRes && compareRes.day) weekParams.day = compareRes.day;
+          else if (day) weekParams.day = day;
+          else if (dateStr) weekParams.date = dateStr;
+          if (weekParams.day || weekParams.date) {
+            try {
+              weekRes = await apiGet(weekParams, { timeoutMs: 22000, cacheTtlMs: 0 });
+            } catch (eW) {
+              weekRes = { status: "error", message: eW.message || String(eW), clients: [] };
+            }
+          }
+          week = (weekRes && weekRes.status === "success" && Array.isArray(weekRes.clients))
+            ? weekRes.clients
+            : ((compareRes && Array.isArray(compareRes.week)) ? compareRes.week : []);
+        }
+
         var month = (!needDeploy && compareRes && Array.isArray(compareRes.month)) ? compareRes.month : [];
 
         const daySel = document.getElementById("viewDaySelect");
-        var resolvedDay = (compareRes && compareRes.day) || (weekRes && weekRes.day) || day || "";
-        if (resolvedDay && daySel) {
+        var resolvedDay = (compareRes && compareRes.day) || (weekRes && weekRes.day) || (!dateStr ? day : "") || "";
+        if (viewDateOnlyMonth && daySel) {
+          daySel.selectedIndex = 0;
+        } else if (resolvedDay && daySel) {
           for (let i = 0; i < daySel.options.length; i++) {
             if (daySel.options[i].value === resolvedDay || daySel.options[i].text === resolvedDay) {
               daySel.selectedIndex = i;
               break;
             }
           }
-        } else if (compareRes && compareRes.dateNotInWeek && daySel) {
-          daySel.selectedIndex = 0;
         }
 
         loadedClientsRawData = week.map(function (c) {
@@ -3927,7 +4078,6 @@
           return c;
         });
 
-        // убрать из черновика тех, кто уже реально на неделе
         var weekKeys = {};
         loadedClientsRawData.forEach(function (c) {
           var k = viewClientKey(c.name);
@@ -3937,38 +4087,36 @@
           var k = d.matchKey || viewClientKey(d.name);
           return !(k && weekKeys[k]);
         });
+        if (viewDateOnlyMonth) viewTransferDraft = [];
 
-        const dayLabel = resolvedDay ? (" · " + resolvedDay) : "";
-        const dateLabel = (compareRes && compareRes.date) || (weekRes && weekRes.date) || dateStr
-          ? (" · " + ((compareRes && compareRes.date) || (weekRes && weekRes.date) || dateStr))
+        const dayLabel = resolvedDay && !viewDateOnlyMonth ? (" · " + resolvedDay) : "";
+        const dateLabel = (compareRes && compareRes.date) || dateStr
+          ? (" · " + ((compareRes && compareRes.date) || dateStr))
           : "";
-        const warn = compareRes && compareRes.dateNotInWeek ? " · дата вне недели" : "";
         if (summary) {
-          summary.innerHTML = '<div class="total-summary-badge">Неделя: ' + week.length +
-            " · месяц: " + month.length + dayLabel + dateLabel + warn + "</div>";
+          summary.innerHTML = '<div class="total-summary-badge">' +
+            (viewDateOnlyMonth
+              ? ("Месяц: " + month.length + dateLabel + " · нет в текущей неделе")
+              : ("Неделя: " + week.length + " · месяц: " + month.length + dayLabel + dateLabel)) +
+            "</div>";
         }
         if (deployHint && needDeploy) {
           deployHint.style.display = "block";
-          deployHint.textContent = "Месяц/дыры: нужен Deploy Code.gs (getViewCompare). Неделя уже из getClients.";
-        } else if (monthBox && compareRes && compareRes.dateNotInWeek && !month.length) {
-          // handled in render
+          deployHint.textContent = "Месяц: нужен Deploy Code.gs (getViewCompare).";
         }
 
-        if (weekRes && weekRes.status !== "success" && !week.length) {
-          box.innerHTML = '<p class="muted">Ошибка недели: ' +
-            escapeHtml((weekRes && weekRes.message) || "нет данных") + "</p>";
-        } else {
-          renderViewLists();
-        }
+        renderViewLists();
         if (needDeploy && monthBox) {
-          monthBox.innerHTML = '<p class="muted">Нужен Deploy Code.gs — иначе календарь месяца не читается.</p>';
+          monthBox.innerHTML = '<div class="view-idle">Нужен Deploy Code.gs — календарь месяца не читается.</div>';
         }
       } catch (err) {
-        box.innerHTML = '<p class="muted">Ошибка: ' + escapeHtml(err.message || String(err)) + "</p>";
-        if (monthBox) monthBox.innerHTML = '<p class="muted">Сеть / Deploy</p>';
+        var errIdle = '<div class="view-idle">Ошибка: ' + escapeHtml(err.message || String(err)) + "</div>";
+        box.innerHTML = errIdle;
+        if (monthBox) monthBox.innerHTML = errIdle;
         updateBatchBar();
       }
     }
+
     window.loadClientsForDay = loadClientsForDay;
 
     function toggleOrderDetail(index, event) {
